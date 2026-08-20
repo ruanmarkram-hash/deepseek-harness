@@ -2,38 +2,20 @@
 
 English | [中文](README.zh.md)
 
-`@deepseek-ai/dsh-pairing-protocol` is the version-one wire vocabulary for accountless phone pairing. It is a pure parser and sequencing library shared by the Electron desktop trust anchor, an Expo client, and a future relay. It does not generate keys, encrypt or decrypt data, store secrets, connect to the relay, or approve a device.
+`@deepseek-ai/dsh-pairing-protocol` is the version-two accountless pairing, key-confirmation, and foreground-only encrypted session-envelope library shared by the Electron desktop, Expo phone, and Cloudflare relay. It supplies protocol primitives, not a live application connection.
 
 ## Surface
 
-```ts
-import {
-  acceptRelayFrame,
-  parsePairingBootstrap,
-  parseRelayFrame,
-  validateMobileCapabilities,
-} from '@deepseek-ai/dsh-pairing-protocol'
+The desktop creates a fresh X25519 pair and puts only its canonical 32-byte base64url public key in the short-lived `dsh-pairing:v2:` QR bootstrap. The QR also contains the public pairing and desktop ids, fixed mobile capability set, `wss:` relay URL, expiry, and the mobile-only relay credential. The desktop relay credential and every ephemeral secret stay outside the QR.
 
-declare const scannedQr: string
-declare const relayMessage: string
-declare const previousSequence: number
+The phone creates its own X25519 pair through an injected `PairingRandomSource`, then sends an exact `mobile-init` control with its public key, allowed requested capabilities, and a bounded nonce-prefixed XChaCha20-Poly1305 proof. The proof key is HKDF-SHA-256 over X25519 shared secret and a transcript binding the protocol version, pairing id, both device ids, both public keys, and capabilities. The desktop verifies that proof before explicit approval, then sends a similarly bound `desktop-accept` proof. The phone verifies it before opening its local application-frame gate.
 
-const bootstrap = parsePairingBootstrap(scannedQr)
-const requested = validateMobileCapabilities(['session:read', 'turn:send'])
-const frame = parseRelayFrame(JSON.parse(relayMessage))
-const lastAcceptedSequence = acceptRelayFrame(previousSequence, frame)
-```
+After local proof verification, `createMobileSessionCipher()` derives separate in-memory XChaCha20-Poly1305 keys for desktop-to-mobile and mobile-to-desktop envelopes. Each envelope authenticates the immutable relay routing fields, admits only the next contiguous sequence in its direction, and erases both directional keys when closed. The plaintext grammar is closed and text-only: desktop-to-mobile permits `session-snapshot`, `text-delta`, `turn-state`, and `error`; mobile-to-desktop permits only `send-text` and `cancel-turn`. Snapshot counts and every text field are bounded before encryption or after decryption.
 
-`parsePairingBootstrap` accepts exactly `dsh-pairing:v1:<canonical-base64url-utf8-json>`. The JSON object carries a `wss:` relay URL without user info, query, or fragment; public opaque pairing and desktop ids; a short-lived relay bearer token; an expiry no more than five minutes away; and the desktop-declared mobile capability set. The relay token is sensitive. Callers keep it in secure platform storage only for the active pairing and never place it in logs, analytics, URLs, or durable session history.
+The relay validates field bounds and forwards controls and opaque frames unchanged. It cannot decrypt either proof or a frame. A desktop acceptance is required before it forwards frames, while clients must verify the corresponding proof and call `confirmPairingKey().requireConfirmed()` before creating or opening a session cipher. This is a foreground-only transport foundation: active secrets, directional keys, and sequence state stay only in process memory. Call `destroyPairingEphemeralKeyPair()` and erase the cipher, which revokes the confirmation, on close, expiry, or desktop revocation.
 
-`parseRelayFrame` accepts an exact versioned JSON envelope: the pairing id, distinct sender and recipient device ids, a positive sequence at most `MAX_RELAY_SEQUENCE`, and canonical base64url ciphertext bounded to 64 KiB before encoding. The package cannot inspect ciphertext. The relay forwards it as opaque data, while callers own authenticated encryption, key verification, replay-state persistence, and close/rekey behavior.
+The only mobile capabilities are `session:read`, `session:subscribe`, `turn:send`, and `turn:cancel`. This package has no computer-use, filesystem, credentials, workspace, administration, session creation, attachment, or arbitrary-session capability.
 
-The desktop approves only the `MOBILE_PAIRING_CAPABILITIES` allowlist: `session:read`, `session:subscribe`, `turn:send`, and `turn:cancel`. `validateMobileCapabilities` fails closed for every other string, duplicate, empty set, or non-string item. This vocabulary deliberately contains no computer-use, filesystem, credential, workspace, or administrative capability.
+## Limitations
 
-For every `(pairingId, senderDeviceId, recipientDeviceId)` direction, callers retain one `lastAcceptedSequence`, initialized to `0`. `acceptRelayFrame` admits only the next contiguous sequence. Duplicate frames, gaps, invalid counters, and exhausted counters fail closed with a `PairingProtocolError.code`; recovery and re-pairing decisions remain outside this package.
-
-## Known Limitations and Deferred Work
-
-- **Cryptography stays external** — this package does not choose an AEAD, derive keys, verify device keys, or bind encrypted handshake transcripts. The Electron host and native client must use audited platform cryptography before they send or accept a frame.
-- **No authority or storage** — relay token storage, desktop confirmation, capability grants, device revocation, reconnect state, and Durable Object routing need their own platform implementations.
-- **No relay behavior** — a relay may validate only its own transport token and routing fields. It must not inspect, transform, replay, or retain plaintext because none is present in this protocol package.
+The package has no WebSocket client, secure-storage provider, user-approval UI, live desktop or mobile app wiring, or DSH session gateway. It does not select a session, send a turn to DSH, receive a live DSH stream, reconnect in the background, or expose a general DSH API. Desktop and mobile integrations must supply platform CSPRNG adapters, retain active secrets only in memory, verify proofs before application traffic, and map the fixed allowlist to safe operations for one desktop-selected session. The relay never becomes a general DSH API proxy.

@@ -1,7 +1,10 @@
 import { randomBytes } from 'node:crypto'
 import {
+  createPairingEphemeralKeyPair,
+  destroyPairingEphemeralKeyPair,
   MOBILE_PAIRING_CAPABILITIES,
   PAIRING_PROTOCOL_VERSION,
+  type PairingEphemeralKeyPair,
 } from '@deepseek-ai/dsh-pairing-protocol'
 
 const PAIRING_TTL_MS = 4 * 60 * 1_000
@@ -41,6 +44,7 @@ interface RelayUrls {
 interface ActiveDesktopPairing {
   readonly desktopRelayToken: string
   readonly desktopDeviceId: string
+  readonly ephemeralKeyPair: PairingEphemeralKeyPair
   readonly expiresAt: number
   readonly pairingId: string
 }
@@ -101,6 +105,7 @@ function createCandidate(now: number, nextBytes: (size: number) => Uint8Array): 
     desktopDeviceId,
     desktopRelayToken,
     mobileRelayToken,
+    ephemeralKeyPair: createPairingEphemeralKeyPair({ randomBytes: nextBytes }),
     expiresAt: now + PAIRING_TTL_MS,
   }
 }
@@ -111,6 +116,7 @@ function qrValue(candidate: PairingCandidate, relayUrl: string): string {
     relayUrl,
     pairingId: candidate.pairingId,
     desktopDeviceId: candidate.desktopDeviceId,
+    desktopEphemeralPublicKey: candidate.ephemeralKeyPair.publicKey,
     relayToken: candidate.mobileRelayToken,
     expiresAt: candidate.expiresAt,
     capabilities: MOBILE_PAIRING_CAPABILITIES,
@@ -135,6 +141,7 @@ export class DesktopPairingBridge {
   private readonly clock: () => number
   private readonly nextBytes: (size: number) => Uint8Array
   private active: ActiveDesktopPairing | undefined
+  private pending: PairingCandidate | undefined
   private currentState: DesktopPairingState = { status: 'idle' }
   private attempt = 0
 
@@ -171,6 +178,7 @@ export class DesktopPairingBridge {
     if (this.currentState.status === 'ready') throw new Error('DSH Desktop mobile pairing is already active.')
     const candidate = createCandidate(this.clock(), this.nextBytes)
     const attempt = ++this.attempt
+    this.pending = candidate
     this.currentState = { status: 'creating' }
     const endpoint = new URL(encodeURIComponent(candidate.pairingId), this.relayUrls.createUrl)
     let response: Response
@@ -186,17 +194,20 @@ export class DesktopPairingBridge {
         body: JSON.stringify({
           version: PAIRING_PROTOCOL_VERSION,
           desktopDeviceId: candidate.desktopDeviceId,
+          desktopEphemeralPublicKey: candidate.ephemeralKeyPair.publicKey,
           mobileRelayToken: candidate.mobileRelayToken,
           expiresAt: candidate.expiresAt,
         }),
       })
     } catch {
       if (attempt !== this.attempt) throw new Error('DSH Desktop mobile pairing creation was closed.')
+      this.discardPending(candidate)
       this.currentState = { status: 'failed', reason: 'relay-request-failed' }
       throw new Error('DSH Desktop could not create a mobile pairing at the relay.')
     }
     if (attempt !== this.attempt) throw new Error('DSH Desktop mobile pairing creation was closed.')
     if (response.status !== 201) {
+      this.discardPending(candidate)
       this.currentState = { status: 'failed', reason: 'relay-rejected' }
       throw new Error('DSH Desktop mobile pairing was rejected by the relay.')
     }
@@ -205,15 +216,18 @@ export class DesktopPairingBridge {
       relayBody = await response.json()
     } catch {
       if (attempt !== this.attempt) throw new Error('DSH Desktop mobile pairing creation was closed.')
+      this.discardPending(candidate)
       this.currentState = { status: 'failed', reason: 'relay-response-invalid' }
       throw new Error('DSH Desktop mobile pairing received an invalid relay response.')
     }
     if (attempt !== this.attempt) throw new Error('DSH Desktop mobile pairing creation was closed.')
     if (candidate.expiresAt <= this.clock()) {
+      this.discardPending(candidate)
       this.currentState = { status: 'failed', reason: 'relay-response-invalid' }
       throw new Error('DSH Desktop mobile pairing expired before the relay responded.')
     }
     if (!relayResponseMatchesExpiry(relayBody, candidate.expiresAt)) {
+      this.discardPending(candidate)
       this.currentState = { status: 'failed', reason: 'relay-response-invalid' }
       throw new Error('DSH Desktop mobile pairing received an invalid relay response.')
     }
@@ -221,8 +235,10 @@ export class DesktopPairingBridge {
       pairingId: candidate.pairingId,
       desktopDeviceId: candidate.desktopDeviceId,
       desktopRelayToken: candidate.desktopRelayToken,
+      ephemeralKeyPair: candidate.ephemeralKeyPair,
       expiresAt: candidate.expiresAt,
     }
+    this.pending = undefined
     this.currentState = {
       status: 'ready',
       pairingId: candidate.pairingId,
@@ -240,14 +256,37 @@ export class DesktopPairingBridge {
   /** Clear the locally retained desktop credential without creating a relay control channel. */
   close(): void {
     this.attempt += 1
-    this.active = undefined
+    this.discardActive()
+    this.discardPending()
     this.currentState = { status: 'idle' }
   }
 
   /** Discard an expired desktop credential before it can block a new pairing. */
   private expireActivePairing(): void {
-    if (this.active === undefined || this.active.expiresAt > this.clock()) return
+    const now = this.clock()
+    if (this.active !== undefined && this.active.expiresAt <= now) {
+      this.discardActive()
+      this.currentState = { status: 'idle' }
+    }
+    if (this.pending !== undefined && this.pending.expiresAt <= now) {
+      this.attempt += 1
+      this.discardPending()
+      this.currentState = { status: 'idle' }
+    }
+  }
+
+  /** Erase the active key material alongside the desktop-only relay credential. */
+  private discardActive(): void {
+    if (this.active === undefined) return
+    destroyPairingEphemeralKeyPair(this.active.ephemeralKeyPair)
     this.active = undefined
-    this.currentState = { status: 'idle' }
+  }
+
+  /** Erase a failed or cancelled attempt before it can become active. */
+  private discardPending(candidate?: PairingCandidate): void {
+    const pending = candidate ?? this.pending
+    if (pending === undefined) return
+    destroyPairingEphemeralKeyPair(pending.ephemeralKeyPair)
+    if (this.pending === pending) this.pending = undefined
   }
 }

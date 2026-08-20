@@ -4,7 +4,12 @@ import {
   acceptRelayFrame,
   PAIRING_PROTOCOL_VERSION,
 } from '@deepseek-ai/dsh-pairing-protocol'
-import type { MobilePairingCapability, RelayFrame } from '@deepseek-ai/dsh-pairing-protocol'
+import type {
+  DesktopPairingAccept,
+  MobilePairingCapability,
+  MobilePairingInit,
+  RelayFrame,
+} from '@deepseek-ai/dsh-pairing-protocol'
 import { DurableObject } from 'cloudflare:workers'
 import {
   MAX_CREATION_BODY_BYTES,
@@ -26,7 +31,7 @@ export interface Env {
 
 const METADATA_KEY = 'pairing'
 const SEQUENCE_KEY_PREFIX = 'sequence:'
-const PROTOCOL_NAME = 'dsh-pairing-v1'
+const PROTOCOL_NAME = 'dsh-pairing-v2'
 const INTERNAL_ACTION = 'x-dsh-relay-action'
 const INTERNAL_PAIRING_ID = 'x-dsh-relay-pairing-id'
 const WEBSOCKET_UPGRADE = 'websocket'
@@ -378,11 +383,11 @@ export class PairingRoom extends DurableObject<Env> {
       case 'desktop-hello':
         this.acceptDesktop(socket, attachment, metadata, control.desktopDeviceId)
         return
-      case 'mobile-request':
-        await this.requestMobile(socket, attachment, metadata, control)
+      case 'mobile-init':
+        await this.initializeMobile(socket, attachment, metadata, control)
         return
       case 'desktop-accept':
-        await this.acceptMobile(socket, attachment, metadata, control.mobileDeviceId)
+        await this.acceptMobile(socket, attachment, metadata, control)
         return
       case 'desktop-revoke':
         if (attachment.peer !== 'desktop') {
@@ -403,11 +408,11 @@ export class PairingRoom extends DurableObject<Env> {
     this.send(socket, { type: 'desktop-ready', version: PAIRING_PROTOCOL_VERSION, pairingId: metadata.pairingId, expiresAt: metadata.expiresAt })
   }
 
-  private async requestMobile(
+  private async initializeMobile(
     socket: WebSocket,
     attachment: ConnectionAttachment,
     metadata: PairingMetadata,
-    control: Extract<RelayControl, { readonly type: 'mobile-request' }>,
+    control: MobilePairingInit,
   ): Promise<void> {
     if (attachment.peer !== 'mobile-pending' || this.peerSocket('mobile', control.mobileDeviceId, socket) !== undefined) {
       this.reject(socket, 'mobile-denied')
@@ -428,37 +433,32 @@ export class PairingRoom extends DurableObject<Env> {
       : metadata
     if (mobile === null) await this.ctx.storage.put(METADATA_KEY, next)
     socket.serializeAttachment({ ...attachment, peer: 'mobile', deviceId: control.mobileDeviceId })
-    if (next.status === 'accepted') {
-      this.sendAccepted(socket, next)
-      return
-    }
+    if (next.status === 'accepted') return
     if (desktop === undefined) {
       this.reject(socket, 'desktop-offline')
       return
     }
-    this.send(desktop, {
-      type: 'mobile-request',
-      version: PAIRING_PROTOCOL_VERSION,
-      pairingId: next.pairingId,
-      mobileDeviceId: control.mobileDeviceId,
-      capabilities: control.capabilities,
-    })
+    this.send(desktop, control)
   }
 
   private async acceptMobile(
     socket: WebSocket,
     attachment: ConnectionAttachment,
     metadata: PairingMetadata,
-    mobileDeviceId: string,
+    control: DesktopPairingAccept,
   ): Promise<void> {
-    if (attachment.peer !== 'desktop' || metadata.status !== 'pending' || metadata.mobile?.deviceId !== mobileDeviceId) {
+    if (
+      attachment.peer !== 'desktop'
+      || metadata.status !== 'pending'
+      || metadata.mobile?.deviceId !== control.mobileDeviceId
+    ) {
       this.reject(socket, 'mobile-not-pending')
       return
     }
     const next: PairingMetadata = { ...metadata, status: 'accepted' }
     await this.ctx.storage.put(METADATA_KEY, next)
-    const mobile = this.peerSocket('mobile', mobileDeviceId)
-    if (mobile !== undefined) this.sendAccepted(mobile, next)
+    const mobile = this.peerSocket('mobile', control.mobileDeviceId)
+    if (mobile !== undefined) this.send(mobile, control)
   }
 
   private async forwardFrame(
@@ -522,11 +522,7 @@ export class PairingRoom extends DurableObject<Env> {
     }
   }
 
-  private sendAccepted(socket: WebSocket, metadata: PairingMetadata): void {
-    this.send(socket, { type: 'pairing-accepted', version: PAIRING_PROTOCOL_VERSION, pairingId: metadata.pairingId, expiresAt: metadata.expiresAt })
-  }
-
-  private send(socket: WebSocket, payload: Record<string, unknown>): void {
+  private send(socket: WebSocket, payload: object): void {
     try {
       socket.send(JSON.stringify(payload))
     } catch {
