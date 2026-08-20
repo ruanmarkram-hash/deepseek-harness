@@ -114,6 +114,23 @@ describe('virtualManifest', () => {
     }
   })
 
+  it('skips an empty optional-platform directory before finding an installed payload', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-notices-optional-platform-'))
+    try {
+      const name = '@scope/pkg'
+      const version = '3.0.0'
+      const store = join(root, 'store')
+      mkdirSync(join(store, `${name.replace('/', '+')}@${version}-unsupported`, 'node_modules'), { recursive: true })
+      const manifestDir = join(store, `${name.replace('/', '+')}@${version}`, 'node_modules', name)
+      mkdirSync(manifestDir, { recursive: true })
+      writeFileSync(join(manifestDir, 'package.json'), JSON.stringify({ name, version, license: 'BSD-3-Clause' }))
+
+      expect(virtualManifest(store, name)).toMatchObject({ name, version, license: 'BSD-3-Clause' })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('returns undefined when neither the prefix nor the content scan finds the package', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-notices-miss-'))
     try {

@@ -1,0 +1,31 @@
+{
+  "name": "@deepseek-ai/dsh-mobile",
+  "description": "native client shell for authenticated remote DeepSeek Harness sessions",
+  "version": "0.1.0-rc.8",
+  "private": true,
+  "main": "expo/AppEntry",
+  "scripts": {
+    "check": "pnpm --filter @deepseek-ai/dsh-pairing-protocol exec tsc -b && tsc --noEmit",
+    "preexport": "pnpm --filter @deepseek-ai/dsh-pairing-protocol exec tsc -b",
+    "start": "expo start",
+    "ios": "expo start --ios",
+    "android": "expo start --android",
+    "export": "expo export"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/dsh-pairing-protocol": "workspace:^",
+    "expo": "~57.0.12",
+    "expo-crypto": "~57.0.1",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.2",
+    "react-native-web": "^0.21.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "~19.2.2",
+    "typescript": "~6.0.3"
+  }
+}

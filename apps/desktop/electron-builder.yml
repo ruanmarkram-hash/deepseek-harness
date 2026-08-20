@@ -1,0 +1,34 @@
+appId: ai.dsh.desktop
+productName: DSH Desktop
+directories:
+  app: ../../.dsh-build/desktop-app
+  output: ../../.dsh-build/packages
+files:
+  - dist/**
+  - package.json
+  - '!node_modules/**'
+extraResources:
+  # The canonical DeepSeek mark is reused verbatim for native desktop surfaces.
+  - from: ../../website/public/favicon.svg
+    to: dsh-icon.svg
+  # electron-builder excludes a source root literally named node_modules. Copy
+  # the runtime manifest and dependency directory as separate resource roots.
+  - from: ../../.dsh-build/desktop-runtime/package.json
+    to: dsh-runtime/package.json
+  - from: ../../.dsh-build/desktop-runtime/node_modules
+    to: dsh-runtime/node_modules
+    filter:
+      - '**/*'
+asar: true
+npmRebuild: false
+mac:
+  category: public.app-category.developer-tools
+  icon: assets/DeepSeek.icns
+  target:
+    - target: dmg
+      arch:
+        - arm64
+    - target: zip
+      arch:
+        - arm64
+  identity: null

@@ -1,0 +1,28 @@
+{
+  "name": "@deepseek-ai/dsh-desktop",
+  "description": "macOS desktop shell that supervises a local DeepSeek Harness web runtime",
+  "version": "0.1.0-rc.8",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "check": "pnpm run build",
+    "dev": "pnpm run build && electron dist/main.js",
+    "stage:runtime": "tsx ../../scripts/build-desktop-runtime.ts",
+    "package:macos:staged": "electron-builder --config electron-builder.yml --mac --arm64 --publish never",
+    "package:macos": "pnpm run build && pnpm run stage:runtime && pnpm run package:macos:staged",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/dsh-pairing-protocol": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "electron": "43.4.1",
+    "electron-builder": "26.15.3",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}
