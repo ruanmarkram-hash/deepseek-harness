@@ -757,6 +757,10 @@
         "@deepseek-ai/.+"
       ]
     },
+    "apps/mobile": {
+      "ignore": ["App.tsx"],
+      "ignoreDependencies": ["expo-status-bar", "expo-updates"]
+    },
     "packages/client/modules": {
       "entry": [
         "tests/**/*.spec.ts"
