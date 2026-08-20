@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { app, BrowserWindow, dialog, shell } from 'electron'
+import { runtimeCommand } from './runtime-command.js'
 import { localHarnessUrl, trustedRuntimeNavigation } from './runtime-url.js'
 import { desktopWebPreferences } from './window-security.js'
 
@@ -28,34 +29,21 @@ function exitsGracefully(exited: Promise<void>): Promise<boolean> {
   })
 }
 
-interface RuntimeCommand {
-  readonly command: string
-  readonly args: readonly string[]
-  readonly env: NodeJS.ProcessEnv
-}
-
 /** Resolve the local Harness process without accepting a renderer-provided executable path. */
-function runtimeCommand(): RuntimeCommand {
-  const configured = process.env.DSH_DESKTOP_RUNTIME
-  if (configured !== undefined && configured !== '') {
-    return { command: configured, args: ['web', '--no-open', '--port', '0'], env: process.env }
-  }
-  if (app.isPackaged) {
-    throw new Error('DSH Desktop needs its packaged Harness runtime, but no packaged runtime is available.')
-  }
-  return {
-    command: process.execPath,
-    args: ['--import', 'tsx/esm', `${SOURCE_ROOT}apps/cli/src/bin.ts`, 'web', '--no-open', '--port', '0'],
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-  }
-}
-
 /** Start the bundled development runtime and resolve when its local URL is published. */
 function startRuntime(): Promise<URL> {
   expectedRuntimeExit = false
-  const command = runtimeCommand()
+  const command = runtimeCommand({
+    appDataPath: app.getPath('userData'),
+    executablePath: process.execPath,
+    inheritedEnv: process.env,
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    runtimeOverride: process.env.DSH_DESKTOP_RUNTIME,
+    sourceRoot: SOURCE_ROOT,
+  })
   const child = spawn(command.command, [...command.args], {
-    cwd: SOURCE_ROOT,
+    cwd: command.cwd,
     env: command.env,
     stdio: ['ignore', 'pipe', 'pipe'],
   })

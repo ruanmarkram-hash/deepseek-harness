@@ -9,12 +9,16 @@
     "build": "tsc --project tsconfig.json",
     "check": "pnpm run build",
     "dev": "pnpm run build && electron dist/main.js",
+    "stage:runtime": "tsx ../../scripts/build-desktop-runtime.ts",
+    "package:macos:staged": "electron-builder --config electron-builder.yml --mac --arm64 --publish never",
+    "package:macos": "pnpm run build && pnpm run stage:runtime && pnpm run package:macos:staged",
     "test": "vitest run --config vitest.config.ts"
   },
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^22.0.0",
     "electron": "43.4.1",
+    "electron-builder": "26.15.3",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"
   }

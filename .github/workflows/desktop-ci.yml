@@ -4,7 +4,10 @@ on:
   pull_request:
     paths:
       - 'apps/desktop/**'
+      - 'apps/desktop-runtime/**'
       - '.github/workflows/desktop-ci.yml'
+      - 'scripts/build-desktop-runtime.ts'
+      - 'scripts/build-desktop-runtime.spec.ts'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
@@ -28,3 +31,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @deepseek-ai/dsh-desktop run test
       - run: pnpm --filter @deepseek-ai/dsh-desktop run check
+      - run: pnpm --filter @deepseek-ai/dsh-desktop run stage:runtime
+      - run: pnpm --filter @deepseek-ai/dsh-desktop run package:macos:staged
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dsh-desktop-macos-arm64
+          path: .dsh-build/packages/*
+          if-no-files-found: error
+          retention-days: 7
