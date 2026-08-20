@@ -89,7 +89,7 @@ describe('DesktopPairingBridge', () => {
       desktopEphemeralPublicKey: expect.stringMatching(/^[A-Za-z0-9_-]{32,256}$/u),
       relayToken: expect.stringMatching(/^[A-Za-z0-9_-]{32,256}$/u),
       expiresAt: NOW + 240_000,
-      capabilities: ['session:read', 'session:subscribe', 'turn:send', 'turn:cancel'],
+      capabilities: ['session:read', 'session:subscribe', 'turn:send'],
     })
     expect(requestBody).not.toHaveProperty('desktopRelayToken')
     expect(request?.headers.get('authorization')).not.toContain(mobileRelayToken)
@@ -109,6 +109,12 @@ describe('DesktopPairingBridge', () => {
       expiresAt: NOW + 240_000,
     })
     expect(JSON.stringify(bridge.state())).not.toContain(qr.relayToken as string)
+    const connection = bridge.connection()
+    expect(connection.relayConnectUrl).toBe(`wss://dsh-mobile-relay.example.workers.dev/v1/pairings/${bootstrap.pairingId}/connect`)
+    expect(connection.bootstrap.relayToken).not.toBe(mobileRelayToken)
+    expect(connection.bootstrap.desktopEphemeralPublicKey).toBe(qr.desktopEphemeralPublicKey)
+    bridge.eraseEphemeralKey()
+    expectErased(connection.ephemeralKeyPair.secretKey)
   })
 
   it('fails closed on relay rejection, has no overlapping creation, and clears the retained desktop credential', async () => {

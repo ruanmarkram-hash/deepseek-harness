@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-20-desktop-owned-mobile-pairing-bridge.md
-2026-08-20-desktop-owned-mobile-pairing-bridge.md: 68f8fd49ef3b57687d0c943814993c60f986c2a5
-2026-08-20-desktop-owned-mobile-pairing-bridge.zh.md: 6fde77ffb1ae1b909954f0b1b3cc30cef1a8638a
+2026-08-20-desktop-owned-mobile-pairing-bridge.md: 6c4c17720c16bcdec4813e631e3bd4a0618a1e99
+2026-08-20-desktop-owned-mobile-pairing-bridge.zh.md: 39b95994423f4b5a41066e1695a9f0cc778bf16a

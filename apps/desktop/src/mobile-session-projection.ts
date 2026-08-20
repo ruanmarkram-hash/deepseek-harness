@@ -34,11 +34,6 @@ export interface ValidatedMobilePrompt {
   readonly text: string
 }
 
-/** A desktop-validated cancellation request for the currently selected session. */
-export interface ValidatedMobileCancellation {
-  readonly handle: string
-}
-
 /** Platform primitives owned by the Electron main process. */
 export interface MobileSessionProjectionOptions {
   readonly randomBytes?: (size: number) => Uint8Array
@@ -127,15 +122,14 @@ function projectHistory(value: unknown): readonly MobileSessionText[] {
   for (let index = first; index < value.length; index += 1) {
     const message = projectEvent(value[index])
     if (message !== undefined) messages.push(message)
-    if (messages.length === MAX_VISIBLE_MESSAGES) break
   }
-  return messages
+  return messages.slice(-MAX_VISIBLE_MESSAGES)
 }
 
 /**
  * Keep an in-memory, desktop-owned mapping between DSH session keys and opaque
- * mobile handles. It projects only text-message events and validates only prompt
- * and cancellation requests for the explicitly selected current handle.
+ * mobile handles. It projects only text-message events and validates prompts
+ * for the explicitly selected current handle.
  */
 export class MobileSessionProjection {
   private readonly nextBytes: (size: number) => Uint8Array
@@ -208,13 +202,8 @@ export class MobileSessionProjection {
     return { handle: active.handle, text: prompt }
   }
 
-  /**
-   * Validate a cancellation request for the explicitly selected current handle only.
-   *
-   * @param handle - Opaque handle returned by {@link project} and accepted by {@link select}.
-   * @returns A bounded cancellation command for a future allowlisted desktop session bridge.
-   */
-  validateCancellation(handle: unknown): ValidatedMobileCancellation {
+  /** Confirm that an opaque handle is the selected current desktop session. */
+  validateSelectedHandle(handle: unknown): { readonly handle: string } {
     return { handle: this.selectedActiveHandle(handle).handle }
   }
 

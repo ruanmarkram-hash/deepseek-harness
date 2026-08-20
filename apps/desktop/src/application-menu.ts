@@ -7,7 +7,11 @@ import type { MenuItemConstructorOptions } from 'electron'
  * @param platform Platform string, injected so the macOS menu can be tested.
  * @returns Electron menu template without renderer-to-host commands.
  */
-export function desktopMenuTemplate(applicationName: string, platform: NodeJS.Platform): MenuItemConstructorOptions[] {
+export function desktopMenuTemplate(
+  applicationName: string,
+  platform: NodeJS.Platform,
+  openMobilePairing?: () => void,
+): MenuItemConstructorOptions[] {
   const template: MenuItemConstructorOptions[] = []
   if (platform === 'darwin') {
     template.push({
@@ -45,6 +49,10 @@ export function desktopMenuTemplate(applicationName: string, platform: NodeJS.Pl
         { type: 'separator' },
         { role: 'togglefullscreen' },
       ],
+    },
+    {
+      label: 'Mobile',
+      submenu: [{ label: 'Pair DSH Mobile…', click: () => openMobilePairing?.() }],
     },
     {
       label: 'Window',

@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-20-mobile-disconnected-session-preview.md
-2026-08-20-mobile-disconnected-session-preview.md: 9b37e4b7873f0ac93e4ef38016d47b6fac71d402
-2026-08-20-mobile-disconnected-session-preview.zh.md: 98c10e63f2b43a141fd340b011a3e1eaeb46cd07

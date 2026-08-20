@@ -8,6 +8,9 @@ files:
   - package.json
   - '!node_modules/**'
 extraResources:
+  # The canonical DeepSeek mark is reused verbatim for native desktop surfaces.
+  - from: ../../website/public/favicon.svg
+    to: dsh-icon.svg
   # electron-builder excludes a source root literally named node_modules. Copy
   # the runtime manifest and dependency directory as separate resource roots.
   - from: ../../.dsh-build/desktop-runtime/package.json
@@ -20,6 +23,7 @@ asar: true
 npmRebuild: false
 mac:
   category: public.app-category.developer-tools
+  icon: assets/DeepSeek.icns
   target:
     - target: dmg
       arch:

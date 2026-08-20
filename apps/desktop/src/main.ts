@@ -1,7 +1,16 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, dialog, Menu, screen, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, screen, shell } from 'electron'
 import { desktopMenuTemplate } from './application-menu.js'
+import { LocalSessionApi } from './local-session-api.js'
+import { DesktopMobileTransport, type DesktopMobileTransportState } from './mobile-live-transport.js'
+import { DesktopPairingBridge } from './mobile-pairing.js'
+import { trustedDesktopRelayOrigin } from './mobile-relay-config.js'
+import { PairingSessionPicker } from './pairing-session-picker.js'
+import { pairingWindowDocument, pairingWindowOptions, trustedPairingNavigation } from './pairing-window.js'
 import { runtimeCommand } from './runtime-command.js'
 import { localHarnessUrl, trustedRuntimeNavigation } from './runtime-url.js'
 import { desktopWebPreferences } from './window-security.js'
@@ -18,8 +27,133 @@ let quitting = false
 let expectedRuntimeExit = false
 let shutdown: Promise<void> | undefined
 let persistedWindowState: DesktopWindowState | undefined
+let pairingWindow: BrowserWindow | undefined
+let mobileTransport: DesktopMobileTransport | undefined
+const sessionPicker = new PairingSessionPicker()
 
 const RUNTIME_SHUTDOWN_TIMEOUT_MS = 5_000
+
+function pickerId(): string {
+  return `dshpicker_${randomBytes(16).toString('base64url')}`
+}
+
+/** Load the repository's canonical DeepSeek mark for every desktop-owned surface. */
+function desktopMarkPath(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'dsh-icon.svg')
+    : join(SOURCE_ROOT, 'website/public/favicon.svg')
+}
+
+function desktopMark(): Electron.NativeImage {
+  return nativeImage.createFromPath(desktopMarkPath())
+}
+
+function desktopMarkDataUrl(): string {
+  return `data:image/svg+xml;base64,${readFileSync(desktopMarkPath()).toString('base64')}`
+}
+
+function publishMobileState(state: DesktopMobileTransportState): void {
+  pairingWindow?.webContents.send('dsh-pairing:state', state)
+}
+
+function showMobileDialog(options: Electron.MessageBoxOptions): Promise<Electron.MessageBoxReturnValue> {
+  const parent = pairingWindow ?? window
+  return parent === undefined ? dialog.showMessageBox(options) : dialog.showMessageBox(parent, options)
+}
+
+function approveMobilePairing(): Promise<boolean> {
+  return showMobileDialog({
+    type: 'question',
+    buttons: ['Reject', 'Allow'],
+    defaultId: 0,
+    cancelId: 0,
+    message: 'Allow this phone to pair with DSH?',
+    detail: 'It can view one text-only session and request queued text prompts. It cannot access tools, files, credentials, settings, or computer use.',
+  }).then(result => result.response === 1)
+}
+
+function approveMobilePrompt(text: string): Promise<boolean> {
+  const preview = text.length > 1_024 ? `${text.slice(0, 1_024)}…` : text
+  return showMobileDialog({
+    type: 'question',
+    buttons: ['Reject', 'Send'],
+    defaultId: 0,
+    cancelId: 0,
+    message: 'Send this mobile prompt to DSH?',
+    detail: preview,
+  }).then(result => result.response === 1)
+}
+
+function createMobileTransport(runtimeUrl: URL): DesktopMobileTransport {
+  return new DesktopMobileTransport(
+    new DesktopPairingBridge({ relayBaseUrl: trustedDesktopRelayOrigin() }),
+    new LocalSessionApi(runtimeUrl),
+    {
+      approvePairing: () => approveMobilePairing(),
+      approvePrompt: text => approveMobilePrompt(text),
+    },
+    undefined,
+    publishMobileState,
+  )
+}
+
+async function openMobilePairing(): Promise<void> {
+  if (window === undefined) return
+  if (pairingWindow !== undefined) {
+    pairingWindow.focus()
+    return
+  }
+  try {
+    mobileTransport ??= createMobileTransport(localHarnessUrl(window.webContents.getURL()))
+  } catch (error) {
+    dialog.showErrorBox('DSH Mobile pairing unavailable', error instanceof Error ? error.message : 'DSH Desktop could not prepare mobile pairing.')
+    return
+  }
+  const pairing = new BrowserWindow(pairingWindowOptions(window))
+  const transport = mobileTransport
+  pairingWindow = pairing
+  sessionPicker.open(pairing, transport)
+  pairing.once('ready-to-show', () => { pairing.show() })
+  pairing.once('closed', () => {
+    sessionPicker.close(pairing)
+    if (pairingWindow !== pairing) return
+    pairingWindow = undefined
+    if (mobileTransport === transport) {
+      mobileTransport.close()
+      mobileTransport = undefined
+    }
+  })
+  const pairingUrl = `data:text/html;charset=utf-8,${encodeURIComponent(pairingWindowDocument(desktopMarkDataUrl()))}`
+  const preventPairingNavigation = (event: Electron.Event, target: string): void => {
+    if (!trustedPairingNavigation(target, pairingUrl)) event.preventDefault()
+  }
+  pairing.webContents.on('will-navigate', preventPairingNavigation)
+  pairing.webContents.on('will-redirect', preventPairingNavigation)
+  pairing.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  await pairing.loadURL(pairingUrl)
+}
+
+ipcMain.handle('dsh-pairing:sessions', async (event) => {
+  const transport = mobileTransport
+  const pairing = pairingWindow
+  if (transport === undefined || pairing === undefined || event.sender !== pairing.webContents) throw new Error('DSH Desktop pairing is unavailable.')
+  return sessionPicker.list(pairing, transport, pickerId)
+})
+
+ipcMain.handle('dsh-pairing:start', async (event, selection: unknown) => {
+  const transport = mobileTransport
+  const pairing = pairingWindow
+  if (transport === undefined || pairing === undefined || event.sender !== pairing.webContents) throw new Error('DSH Desktop pairing is unavailable.')
+  const session = sessionPicker.take(pairing, transport, selection)
+  if (session === undefined) throw new Error('DSH Desktop rejected the session selection.')
+  return transport.start(session)
+})
+
+ipcMain.handle('dsh-pairing:close', (event) => {
+  const pairing = pairingWindow
+  if (pairing === undefined || event.sender !== pairing.webContents) throw new Error('DSH Desktop pairing is unavailable.')
+  pairing.close()
+})
 
 /** Resolve whether the runtime exits before the graceful-shutdown timeout. */
 function exitsGracefully(exited: Promise<void>): Promise<boolean> {
@@ -101,9 +235,14 @@ function startRuntime(): Promise<URL> {
 async function openHarnessWindow(): Promise<void> {
   await shutdown
   const runtimeUrl = await startRuntime()
+  sessionPicker.close()
+  pairingWindow?.close()
+  mobileTransport?.close()
+  mobileTransport = undefined
   const trustedOrigin = runtimeUrl.origin
   window = new BrowserWindow({
     ...desktopWindowOptions(persistedWindowState, process.platform),
+    icon: desktopMark(),
     webPreferences: desktopWebPreferences,
   })
   if (persistedWindowState?.isMaximized) window.maximize()
@@ -131,6 +270,7 @@ async function openHarnessWindow(): Promise<void> {
     }
   })
   window.once('closed', () => {
+    pairingWindow?.close()
     window = undefined
     void stopRuntime()
   })
@@ -190,7 +330,10 @@ function showStartupFailure(error: unknown): void {
 
 void app.whenReady().then(() => {
   app.setName(APPLICATION_NAME)
+  if (process.platform === 'darwin') app.dock?.setIcon(desktopMark())
   persistedWindowState = visibleDesktopWindowState(readDesktopWindowState(app.getPath('userData')), screen.getAllDisplays().map(({ workArea }) => workArea))
-  Menu.setApplicationMenu(Menu.buildFromTemplate(desktopMenuTemplate(APPLICATION_NAME, process.platform)))
+  Menu.setApplicationMenu(Menu.buildFromTemplate(
+    desktopMenuTemplate(APPLICATION_NAME, process.platform, () => { void openMobilePairing() }),
+  ))
   return openHarnessWindow()
 }).catch(showStartupFailure)

@@ -2,13 +2,22 @@ import { randomBytes } from 'node:crypto'
 import {
   createPairingEphemeralKeyPair,
   destroyPairingEphemeralKeyPair,
-  MOBILE_PAIRING_CAPABILITIES,
   PAIRING_PROTOCOL_VERSION,
+  validatePairingBootstrap,
+  type PairingBootstrap,
   type PairingEphemeralKeyPair,
+  type MobilePairingCapability,
 } from '@deepseek-ai/dsh-pairing-protocol'
 
 const PAIRING_TTL_MS = 4 * 60 * 1_000
 const PAIRING_SECRET_BYTES = 32
+
+/** The foreground desktop release intentionally does not expose turn cancellation. */
+export const DESKTOP_MOBILE_CAPABILITIES = [
+  'session:read',
+  'session:subscribe',
+  'turn:send',
+] as const satisfies readonly MobilePairingCapability[]
 
 /** Non-secret pairing state available to the Electron main process. */
 export type DesktopPairingState =
@@ -26,6 +35,17 @@ export interface DesktopPairingBootstrap {
   readonly expiresAt: number
   readonly pairingId: string
   readonly qrValue: string
+}
+
+/**
+ * Main-process-only material used by the desktop transport after QR creation.
+ * It is deliberately not suitable for a renderer or persisted state.
+ */
+export interface DesktopPairingConnection {
+  readonly bootstrap: PairingBootstrap
+  readonly desktopRelayToken: string
+  readonly ephemeralKeyPair: PairingEphemeralKeyPair
+  readonly relayConnectUrl: string
 }
 
 /** Options owned by the Electron main process, never a renderer. */
@@ -119,7 +139,7 @@ function qrValue(candidate: PairingCandidate, relayUrl: string): string {
     desktopEphemeralPublicKey: candidate.ephemeralKeyPair.publicKey,
     relayToken: candidate.mobileRelayToken,
     expiresAt: candidate.expiresAt,
-    capabilities: MOBILE_PAIRING_CAPABILITIES,
+    capabilities: DESKTOP_MOBILE_CAPABILITIES,
   })
   return `dsh-pairing:v${PAIRING_PROTOCOL_VERSION}:${Buffer.from(payload, 'utf8').toString('base64url')}`
 }
@@ -251,6 +271,40 @@ export class DesktopPairingBridge {
       expiresAt: candidate.expiresAt,
       qrValue: qrValue(candidate, this.relayUrls.qrRelayUrl),
     }
+  }
+
+  /**
+   * Return the active main-process connection material for one immediately
+   * created QR pairing. The bootstrap's relay token is the desktop credential
+   * only because the desktop cryptographic transcript never consumes a bearer
+   * token; the mobile-only token remains confined to the QR string.
+   */
+  connection(): DesktopPairingConnection {
+    this.expireActivePairing()
+    const active = this.active
+    if (active === undefined) throw new Error('DSH Desktop has no active mobile pairing.')
+    const bootstrap = validatePairingBootstrap({
+      version: PAIRING_PROTOCOL_VERSION,
+      relayUrl: this.relayUrls.qrRelayUrl,
+      pairingId: active.pairingId,
+      desktopDeviceId: active.desktopDeviceId,
+      desktopEphemeralPublicKey: active.ephemeralKeyPair.publicKey,
+      relayToken: active.desktopRelayToken,
+      expiresAt: active.expiresAt,
+      capabilities: DESKTOP_MOBILE_CAPABILITIES,
+    }, this.clock())
+    const connectUrl = new URL(`v1/pairings/${encodeURIComponent(active.pairingId)}/connect`, this.relayUrls.qrRelayUrl)
+    return {
+      bootstrap,
+      desktopRelayToken: active.desktopRelayToken,
+      ephemeralKeyPair: active.ephemeralKeyPair,
+      relayConnectUrl: connectUrl.href,
+    }
+  }
+
+  /** Erase the one-time X25519 secret once transport keys have been derived. */
+  eraseEphemeralKey(): void {
+    if (this.active !== undefined) destroyPairingEphemeralKeyPair(this.active.ephemeralKeyPair)
   }
 
   /** Clear the locally retained desktop credential without creating a relay control channel. */

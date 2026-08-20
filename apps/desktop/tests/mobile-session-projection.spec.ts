@@ -107,7 +107,7 @@ describe('MobileSessionProjection', () => {
     }])
   })
 
-  it('requires an explicitly selected live handle for prompts and cancellations', () => {
+  it('requires an explicitly selected live handle for prompts and error replies', () => {
     const projection = new MobileSessionProjection({ randomBytes: byteSource() })
     const [first, second] = projection.project([
       { sessionKey: 'session-one', history: history(user('one')) },
@@ -122,9 +122,9 @@ describe('MobileSessionProjection', () => {
       handle: firstHandle,
       text: 'hello from mobile',
     })
-    expect(projection.validateCancellation(firstHandle)).toEqual({ handle: firstHandle })
+    expect(projection.validateSelectedHandle(firstHandle)).toEqual({ handle: firstHandle })
     expect(() => projection.validatePrompt(secondHandle, 'wrong selected session')).toThrow('unselected mobile session handle')
-    expect(() => projection.validateCancellation(secondHandle)).toThrow('unselected mobile session handle')
+    expect(() => projection.validateSelectedHandle(secondHandle)).toThrow('unselected mobile session handle')
   })
 
   it.each([
@@ -152,7 +152,7 @@ describe('MobileSessionProjection', () => {
     projection.project([])
 
     expect(() => projection.validatePrompt(handle, 'still here?')).toThrow('rejected the mobile session handle')
-    expect(() => projection.validateCancellation(handle)).toThrow('rejected the mobile session handle')
+    expect(() => projection.validateSelectedHandle(handle)).toThrow('rejected the mobile session handle')
   })
 
   it('never creates a visible handle for malformed or duplicate desktop session keys', () => {
@@ -180,7 +180,7 @@ describe('MobileSessionProjection', () => {
     const shifted = projection.project(sources.slice(1))
 
     expect(shifted).toHaveLength(24)
-    expect(() => projection.validateCancellation(firstHandle)).toThrow('rejected the mobile session handle')
+    expect(() => projection.validateSelectedHandle(firstHandle)).toThrow('rejected the mobile session handle')
   })
 
   it('fits every projected history into the encrypted snapshot message limits', () => {
@@ -192,5 +192,23 @@ describe('MobileSessionProjection', () => {
 
     expect(view?.messages).toHaveLength(24)
     expect(view?.messages.every(message => Buffer.byteLength(message.text, 'utf8') <= 2 * 1_024)).toBe(true)
+  })
+
+  it('keeps the newest safe message tail when a local session exceeds the mobile cap', () => {
+    const projection = new MobileSessionProjection({ randomBytes: byteSource() })
+    const events = Array.from({ length: 30 }, (_, index) => assistant(`message-${index + 1}`))
+    const initial = projection.project([{ sessionKey: 'session-a', history: history(...events) }])[0]
+
+    expect(initial?.messages).toHaveLength(24)
+    expect(initial?.messages[0]).toEqual({ role: 'assistant', text: 'message-7' })
+    expect(initial?.messages.at(-1)).toEqual({ role: 'assistant', text: 'message-30' })
+
+    const appended = projection.project([{
+      sessionKey: 'session-a',
+      history: history(...events, assistant('just-appended')),
+    }])[0]
+    expect(appended?.messages).toHaveLength(24)
+    expect(appended?.messages[0]).toEqual({ role: 'assistant', text: 'message-8' })
+    expect(appended?.messages.at(-1)).toEqual({ role: 'assistant', text: 'just-appended' })
   })
 })

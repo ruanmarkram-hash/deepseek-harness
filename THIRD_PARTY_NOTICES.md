@@ -62,6 +62,7 @@ External packages that a workspace package resolves at runtime. The tier covers 
 | [`e2b`](https://github.com/e2b-dev/e2b) | MIT |
 | [`eventsource-parser`](https://github.com/rexxars/eventsource-parser) | MIT |
 | [`expo`](https://github.com/expo/expo) | MIT |
+| [`expo-crypto`](https://github.com/expo/expo) | MIT |
 | [`expo-status-bar`](https://github.com/expo/expo) | MIT |
 | [`fflate`](https://github.com/101arrowz/fflate) | MIT |
 | [`immer`](https://github.com/immerjs/immer) | MIT |
