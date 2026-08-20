@@ -15,6 +15,9 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/dsh-pairing-protocol": "workspace:^"
+  },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "electron": "43.4.1",

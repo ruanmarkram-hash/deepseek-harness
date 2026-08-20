@@ -5,6 +5,8 @@
   "private": true,
   "main": "expo/AppEntry",
   "scripts": {
+    "check": "pnpm --filter @deepseek-ai/dsh-pairing-protocol exec tsc -b && tsc --noEmit",
+    "preexport": "pnpm --filter @deepseek-ai/dsh-pairing-protocol exec tsc -b",
     "start": "expo start",
     "ios": "expo start --ios",
     "android": "expo start --android",
@@ -12,6 +14,7 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@deepseek-ai/dsh-pairing-protocol": "workspace:^",
     "expo": "~57.0.12",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",

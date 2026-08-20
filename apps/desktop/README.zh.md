@@ -10,4 +10,6 @@
 
 原生宿主会在本地页面准备就绪前保持隐藏，仅在上次窗口位置与当前显示器工作区域相交时恢复该位置，并使用 macOS 内嵌式标题栏。它会保留最大化窗口的普通位置以供下次启动使用。它的原生“文件”“编辑”“视图”和“窗口”菜单保留标准的重新加载、缩放、全屏和焦点快捷键，不会新增从渲染器到宿主的命令。
 
+`src/mobile-pairing.ts` 是面向已配置 HTTPS Cloudflare relay origin 的仅主进程配对创建器。它会生成相互独立的高熵公开 id、桌面端凭据和移动端凭据；只在创建 header 中发送桌面端凭据；并只在短时 `dsh-pairing:v1:` QR bootstrap 中返回移动端凭据。它的 state 没有渲染器 IPC、WebSocket、DSH session、filesystem、credential、tool 或 computer-use 操作。该 bridge 只在内存中保留桌面端凭据，供未来仅宿主拥有的连接使用，并会在关闭时清除。
+
 macOS 签名、公证、自动更新和原生计算机使用集成仍是独立工作。该外壳不会声明或授予辅助功能或屏幕录制权限。

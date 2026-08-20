@@ -10,4 +10,6 @@ For development, first build the Harness runtime from the repository root, then 
 
 The native host starts hidden until the local page is ready, restores prior placement only when it intersects a current display work area, and uses the macOS inset title bar. It retains a maximized window's normal placement for the next launch. Its native File, Edit, View, and Window menus retain standard reload, zoom, full-screen, and focus shortcuts without adding renderer-to-host commands.
 
+`src/mobile-pairing.ts` is a main-process-only pairing creator for the configured HTTPS Cloudflare relay origin. It generates separate high-entropy public ids, desktop credential, and mobile credential; sends only the desktop credential in the creation header; and returns the mobile credential only inside a short-lived `dsh-pairing:v1:` QR bootstrap. Its state has no renderer IPC, WebSocket, DSH session, filesystem, credential, tool, or computer-use operation. The bridge stores the desktop credential only in memory for a future host-owned connection and clears it on close.
+
 macOS signing, notarization, automatic updates, and native computer-use integration remain separate work. This shell does not claim or grant Accessibility or Screen Recording permission.

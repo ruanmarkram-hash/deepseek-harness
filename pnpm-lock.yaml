@@ -369,6 +369,10 @@ importers:
         version: 10.0.0
 
   apps/desktop:
+    dependencies:
+      '@deepseek-ai/dsh-pairing-protocol':
+        specifier: workspace:^
+        version: link:../../packages/mobile/pairing-protocol
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
@@ -454,6 +458,9 @@ importers:
 
   apps/mobile:
     dependencies:
+      '@deepseek-ai/dsh-pairing-protocol':
+        specifier: workspace:^
+        version: link:../../packages/mobile/pairing-protocol
       expo:
         specifier: ~57.0.12
         version: 57.0.14(@babel/core@7.29.7(supports-color@10.2.2))(@expo/dom-webview@57.0.1)(react-dom@19.2.3(react@19.2.3))(react-native-web@0.21.2(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.3)(supports-color@10.2.2))(react@19.2.3)(supports-color@10.2.2)(typescript@6.0.3)
