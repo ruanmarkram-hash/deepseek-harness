@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["@cloudflare/workers-types", "@cloudflare/vitest-pool-workers/types"],
+    "paths": {
+      "@deepseek-ai/dsh-pairing-protocol": ["../../packages/mobile/pairing-protocol/lib/types/index.d.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
+}

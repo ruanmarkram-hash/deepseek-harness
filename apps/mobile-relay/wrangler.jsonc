@@ -1,0 +1,41 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "dsh-mobile-relay",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-20",
+  "workers_dev": true,
+  "alias": {
+    "@deepseek-ai/dsh-pairing-protocol": "../../packages/mobile/pairing-protocol/src/index.ts"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PAIRINGS",
+        "class_name": "PairingRoom"
+      },
+      {
+        "name": "PAIRING_ALLOCATOR",
+        "class_name": "PairingAllocator"
+      }
+    ]
+  },
+  "ratelimits": [
+    {
+      "name": "PAIRING_CREATIONS_PER_IP",
+      "namespace_id": "731082061",
+      "simple": {
+        "limit": 2,
+        "period": 60
+      }
+    }
+  ],
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["PairingRoom", "PairingAllocator"]
+    }
+  ]
+}

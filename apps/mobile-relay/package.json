@@ -1,0 +1,24 @@
+{
+  "name": "@deepseek-ai/dsh-mobile-relay",
+  "description": "Cloudflare Workers relay for short-lived encrypted DSH mobile pairing",
+  "version": "0.1.0-rc.8",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "pnpm --filter @deepseek-ai/dsh-pairing-protocol exec tsc -b && tsc --noEmit --project tsconfig.json",
+    "test": "vitest run --config vitest.config.ts",
+    "deploy:dry-run": "wrangler deploy --dry-run",
+    "deploy": "wrangler deploy"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/dsh-pairing-protocol": "workspace:^"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.22.0",
+    "@cloudflare/workers-types": "5.20260820.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8",
+    "wrangler": "4.124.0"
+  }
+}
