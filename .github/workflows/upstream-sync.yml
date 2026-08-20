@@ -1,0 +1,66 @@
+name: Synchronize DeepSeek Harness upstream
+
+on:
+  schedule:
+    - cron: '17 2 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: dsh-upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  synchronize:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: master
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/deepseek-ai/deepseek-harness.git
+          git fetch upstream master
+          git config user.name 'dsh-upstream-sync[bot]'
+          git config user.email 'dsh-upstream-sync[bot]@users.noreply.github.com'
+
+      - name: Create a reviewable synchronization pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git merge-base --is-ancestor upstream/master HEAD; then
+            echo 'Upstream is already merged.'
+            exit 0
+          fi
+          open_sync_count=$(gh pr list --base master --state open --json headRefName --jq '[.[] | select(.headRefName | startswith("automation/upstream-"))] | length')
+          if [ "$open_sync_count" -gt 0 ]; then
+            echo 'An upstream synchronization pull request is already open.'
+            exit 0
+          fi
+          branch="automation/upstream-${GITHUB_RUN_ID}"
+          git switch --create "$branch"
+          if ! git merge --no-ff --no-edit upstream/master; then
+            git merge --abort
+            echo 'Upstream merge requires a manual resolution.' >&2
+            exit 1
+          fi
+          pnpm install --frozen-lockfile
+          pnpm run check:ci
+          pnpm --filter @deepseek-ai/dsh-desktop run test
+          pnpm --filter @deepseek-ai/dsh-desktop run check
+          ./node_modules/.bin/tsc --project apps/mobile/tsconfig.json --noEmit
+          pnpm --filter @deepseek-ai/dsh-mobile run export
+          git push --set-upstream origin "$branch"
+          gh pr create --base master --head "$branch" --title 'chore: synchronize DeepSeek Harness upstream' --body 'Automated upstream synchronization. Review the merge and the desktop/mobile checks before merging.'
