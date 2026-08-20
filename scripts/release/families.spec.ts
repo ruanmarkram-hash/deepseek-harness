@@ -41,11 +41,13 @@ afterEach(() => {
 })
 
 describe('release families', () => {
-  it('excludes private experimental packages from the dsh release', () => {
+  it('excludes private workspaces from the dsh release', () => {
     const members = releaseFamily('dsh').members(resolve(import.meta.dirname, '../..'))
 
     expect(members.some(member => member.directory.startsWith('packages/experimental/'))).toBe(false)
     expect(members.map(member => member.name)).not.toContain('@deepseek-ai/dsh-experimental-agent-team')
+    expect(members.map(member => member.name)).not.toContain('@deepseek-ai/dsh-desktop')
+    expect(members.map(member => member.name)).not.toContain('@deepseek-ai/dsh-mobile')
   })
 
   it('bumps private dsh packages without adding release tags', () => {
