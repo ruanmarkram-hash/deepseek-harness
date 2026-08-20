@@ -1,18 +1,23 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, dialog, shell } from 'electron'
+import { app, BrowserWindow, dialog, Menu, screen, shell } from 'electron'
+import { desktopMenuTemplate } from './application-menu.js'
 import { runtimeCommand } from './runtime-command.js'
 import { localHarnessUrl, trustedRuntimeNavigation } from './runtime-url.js'
 import { desktopWebPreferences } from './window-security.js'
+import { desktopWindowOptions, savedDesktopWindowState, type DesktopWindowState, visibleDesktopWindowState } from './window-presentation.js'
+import { readDesktopWindowState, writeDesktopWindowState } from './window-state.js'
 
 const SOURCE_ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 const READY_URL = /dsh web: (http:\/\/[^\s]+)/u
+const APPLICATION_NAME = 'DSH Desktop'
 
 let window: BrowserWindow | undefined
 let runtime: ChildProcess | undefined
 let quitting = false
 let expectedRuntimeExit = false
 let shutdown: Promise<void> | undefined
+let persistedWindowState: DesktopWindowState | undefined
 
 const RUNTIME_SHUTDOWN_TIMEOUT_MS = 5_000
 
@@ -98,11 +103,10 @@ async function openHarnessWindow(): Promise<void> {
   const runtimeUrl = await startRuntime()
   const trustedOrigin = runtimeUrl.origin
   window = new BrowserWindow({
-    minHeight: 640,
-    minWidth: 960,
-    title: 'DSH Desktop',
+    ...desktopWindowOptions(persistedWindowState, process.platform),
     webPreferences: desktopWebPreferences,
   })
+  if (persistedWindowState?.isMaximized) window.maximize()
   const preventExternalNavigation = (event: Electron.Event, target: string): void => {
     if (!trustedRuntimeNavigation(target, trustedOrigin)) event.preventDefault()
   }
@@ -112,6 +116,19 @@ async function openHarnessWindow(): Promise<void> {
     const target = new URL(url)
     if (target.protocol === 'https:' || target.protocol === 'mailto:') void shell.openExternal(url)
     return { action: 'deny' }
+  })
+  window.once('ready-to-show', () => {
+    window?.show()
+  })
+  window.on('close', () => {
+    const target = window
+    if (target === undefined) return
+    persistedWindowState = savedDesktopWindowState(target.getBounds(), target.getNormalBounds(), target.isMaximized())
+    try {
+      writeDesktopWindowState(app.getPath('userData'), persistedWindowState)
+    } catch (error) {
+      console.error('DSH Desktop could not save its window placement.', error)
+    }
   })
   window.once('closed', () => {
     window = undefined
@@ -171,4 +188,9 @@ function showStartupFailure(error: unknown): void {
   app.quit()
 }
 
-void app.whenReady().then(openHarnessWindow).catch(showStartupFailure)
+void app.whenReady().then(() => {
+  app.setName(APPLICATION_NAME)
+  persistedWindowState = visibleDesktopWindowState(readDesktopWindowState(app.getPath('userData')), screen.getAllDisplays().map(({ workArea }) => workArea))
+  Menu.setApplicationMenu(Menu.buildFromTemplate(desktopMenuTemplate(APPLICATION_NAME, process.platform)))
+  return openHarnessWindow()
+}).catch(showStartupFailure)

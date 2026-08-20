@@ -10,7 +10,7 @@ Web 应用是本地 Harness 运行时的浏览器界面。它没有可安装的 
 
 ## 决定
 
-该 fork 在 `apps/` 下包含两个私有产品工作区。`apps/desktop` 启动本地 DSH Web 运行时，并在禁用 Node integration 的 Electron 窗口中只渲染其 loopback URL。其私有 `apps/desktop-runtime` 部署根会把不含符号链接的已构建 DSH 闭包提供到打包应用的 `Resources/dsh-runtime` 目录。桌面主进程通过 Electron Node 模式启动该固定入口，把 `DSH_HOME` 置于 Electron 用户数据目录下，并在打包应用中忽略 `DSH_DESKTOP_RUNTIME`。`apps/mobile` 是仅接受 HTTPS 远程网关地址的 Expo 原生外壳。
+该 fork 在 `apps/` 下包含两个私有产品工作区。`apps/desktop` 启动本地 DSH Web 运行时，并在禁用 Node integration 的 Electron 窗口中只渲染其 loopback URL。其私有 `apps/desktop-runtime` 部署根会把不含符号链接的已构建 DSH 闭包提供到打包应用的 `Resources/dsh-runtime` 目录。桌面主进程通过 Electron Node 模式启动该固定入口，把 `DSH_HOME` 置于 Electron 用户数据目录下，并在打包应用中忽略 `DSH_DESKTOP_RUNTIME`。宿主仅在已验证的窗口位置与当前显示器工作区域相交时恢复该位置，保留最大化窗口下的普通边界，在显示原生窗口前等待本地页面，并且只提供用于浏览器焦点控制的标准原生菜单。`apps/mobile` 是仅接受 HTTPS 远程网关地址的 Expo 原生外壳。
 
 移动网关仍是用户认证、会话访问、流式消息、文件和操作策略的权威来源。包括计算机控制在内的桌面专属能力不会通过该产品拓扑提供给移动客户端。
 
