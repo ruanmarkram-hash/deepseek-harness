@@ -1,0 +1,11 @@
+{
+  "cli": {
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "production": {
+      "autoIncrement": true,
+      "distribution": "store"
+    }
+  }
+}
