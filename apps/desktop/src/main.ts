@@ -18,7 +18,9 @@ const RUNTIME_SHUTDOWN_TIMEOUT_MS = 5_000
 /** Resolve whether the runtime exits before the graceful-shutdown timeout. */
 function exitsGracefully(exited: Promise<void>): Promise<boolean> {
   return new Promise((resolve) => {
-    const timeout = setTimeout(() => resolve(false), RUNTIME_SHUTDOWN_TIMEOUT_MS)
+    const timeout = setTimeout(() => {
+      resolve(false)
+    }, RUNTIME_SHUTDOWN_TIMEOUT_MS)
     void exited.then(() => {
       clearTimeout(timeout)
       resolve(true)
@@ -72,16 +74,28 @@ function startRuntime(): Promise<URL> {
       const match = READY_URL.exec(output)
       if (match?.[1] === undefined) return
       try {
-        settle(() => resolve(localHarnessUrl(match[1])))
+        settle(() => {
+          resolve(localHarnessUrl(match[1]))
+        })
       } catch (error) {
-        settle(() => reject(error))
+        settle(() => {
+          reject(error instanceof Error ? error : new Error(String(error)))
+        })
       }
     }
-    child.stdout?.on('data', inspect)
-    child.stderr?.on('data', inspect)
-    child.once('error', error => settle(() => reject(error)))
+    child.stdout.on('data', inspect)
+    child.stderr.on('data', inspect)
+    child.once('error', (error) => {
+      settle(() => {
+        reject(error)
+      })
+    })
     child.once('exit', (code, signal) => {
-      if (!settled) settle(() => reject(new Error(`Harness exited before it was ready (code ${String(code)}, signal ${String(signal)}).`)))
+      if (!settled) {
+        settle(() => {
+          reject(new Error(`Harness exited before it was ready (code ${String(code)}, signal ${String(signal)}).`))
+        })
+      }
       else if (!quitting && !expectedRuntimeExit) {
         window?.destroy()
         dialog.showErrorBox('DSH Desktop stopped', 'The local DeepSeek Harness runtime exited. Reopen DSH Desktop to start a new session.')
@@ -113,28 +127,37 @@ async function openHarnessWindow(): Promise<void> {
   })
   window.once('closed', () => {
     window = undefined
-    stopRuntime()
+    void stopRuntime()
   })
   await window.loadURL(runtimeUrl.toString())
 }
 
 /** Wait for a child exit, escalating after a bounded graceful-shutdown window. */
 async function stopRuntime(): Promise<void> {
-  if (shutdown !== undefined) return await shutdown
+  if (shutdown !== undefined) {
+    await shutdown
+    return
+  }
   const child = runtime
   if (child === undefined) return
   expectedRuntimeExit = true
   const exited = child.exitCode !== null || child.signalCode !== null
     ? Promise.resolve()
-    : new Promise<void>(resolve => child.once('exit', () => resolve()))
+    : new Promise<void>((resolve) => {
+      child.once('exit', () => {
+        resolve()
+      })
+    })
   shutdown = (async () => {
     child.kill('SIGTERM')
     const graceful = await exitsGracefully(exited)
     if (!graceful && child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
     await exited
     if (runtime === child) runtime = undefined
-  })().finally(() => { shutdown = undefined })
-  return await shutdown
+  })().finally(() => {
+    shutdown = undefined
+  })
+  await shutdown
 }
 
 app.on('before-quit', () => {
@@ -143,9 +166,13 @@ app.on('before-quit', () => {
 app.on('before-quit', (event) => {
   if (runtime === undefined) return
   event.preventDefault()
-  void stopRuntime().then(() => app.quit())
+  void stopRuntime().then(() => {
+    app.quit()
+  })
 })
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit()
+})
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) void openHarnessWindow().catch(showStartupFailure)
 })
