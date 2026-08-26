@@ -19,6 +19,7 @@ const config: ExpoConfig = {
     supportsTablet: true,
     infoPlist: {
       ITSAppUsesNonExemptEncryption: true,
+      NSCameraUsageDescription: 'DSH Mobile uses the camera only to scan a short-lived DSH Host pairing QR code.',
     },
   },
   android: {

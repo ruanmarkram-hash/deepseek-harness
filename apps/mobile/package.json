@@ -5,18 +5,24 @@
   "private": true,
   "main": "expo/AppEntry",
   "scripts": {
-    "check": "pnpm --filter @deepseek-ai/dsh-pairing-protocol exec tsc -b && tsc --noEmit",
-    "preexport": "pnpm --filter @deepseek-ai/dsh-pairing-protocol exec tsc -b",
+    "check": "pnpm --filter @deepseek-ai/dsh-remote-wire exec tsc -b && pnpm --filter @deepseek-ai/dsh-remote-relay-protocol exec tsc -b && tsc --noEmit",
+    "eas-build-post-install": "pnpm --filter @deepseek-ai/dsh-remote-wire exec tsc -b && pnpm --filter @deepseek-ai/dsh-remote-relay-protocol exec tsc -b && pnpm --filter @deepseek-ai/dsh-remote-wire run bundle && pnpm --filter @deepseek-ai/dsh-remote-relay-protocol run bundle",
+    "preexport": "pnpm --filter @deepseek-ai/dsh-remote-wire exec tsc -b && pnpm --filter @deepseek-ai/dsh-remote-relay-protocol exec tsc -b",
     "start": "expo start",
-    "ios": "expo start --ios",
-    "android": "expo start --android",
+    "ios": "expo run:ios",
+    "android": "expo run:android",
     "export": "expo export"
   },
   "license": "MIT",
   "dependencies": {
-    "@deepseek-ai/dsh-pairing-protocol": "workspace:^",
+    "@noble/ciphers": "2.2.0",
+    "@noble/hashes": "2.2.0",
+    "@deepseek-ai/dsh-remote-relay-protocol": "workspace:^",
+    "@deepseek-ai/dsh-remote-wire": "workspace:^",
     "expo": "~57.0.12",
+    "expo-camera": "~57.0.4",
     "expo-crypto": "~57.0.1",
+    "expo-modules-core": "~57.0.11",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -24,6 +30,7 @@
     "react-native-web": "^0.21.2"
   },
   "devDependencies": {
+    "@noble/curves": "2.2.0",
     "@types/node": "^22.0.0",
     "@types/react": "~19.2.2",
     "typescript": "~6.0.3"
