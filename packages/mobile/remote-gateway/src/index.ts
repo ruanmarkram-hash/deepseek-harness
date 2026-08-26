@@ -81,6 +81,7 @@ declare module '@deepseek-ai/cordis' {
     /**
      * A trusted remote operation reached a Host gateway decision point.
      * The entry contains authenticated provenance and never copies a payload.
+     * @mode emit
      * @param entry - Completed or rejected gateway audit record.
      */
     'remote-gateway/audit'(entry: RemoteGatewayAuditEntry): void
@@ -256,7 +257,11 @@ export class RemoteGateway {
     return active
   }
 
-  /** @param provider - Relay provider that yields only authenticated, decrypted connections. @param signal - Owner cancellation signal. */
+  /**
+   * Consumes authenticated connections from a relay provider until cancellation.
+   * @param provider - Relay provider that yields only authenticated, decrypted connections.
+   * @param signal - Owner cancellation signal.
+   */
   async serve(provider: TrustedRemoteConnectionProvider, signal: AbortSignal): Promise<void> {
     for await (const connection of provider.accept(signal)) {
       if (signal.aborted || this.disposed) {
@@ -276,13 +281,19 @@ export class RemoteGateway {
     this.freshness.clear()
   }
 
-  /** @param connection - Active controller whose endpoint needs removal. */
+  /**
+   * Removes an active controller only when it still owns the device slot.
+   * @param connection - Active controller whose endpoint needs removal.
+   */
   detach(connection: RemoteGatewayConnection): void {
     const state = this.states.get(connection.deviceId)
     if (state?.active === connection) delete state.active
   }
 
-  /** End an active connection after its local device authorization is revoked. */
+  /**
+   * End an active connection after its local device authorization is revoked.
+   * @param deviceId - Revoked device whose process-lifetime state must close.
+   */
   revoke(deviceId: RemoteDeviceId): void {
     const state = this.states.get(deviceId)
     this.states.delete(deviceId)
@@ -293,6 +304,7 @@ export class RemoteGateway {
   }
 
   /**
+   * Emits a non-throwing gateway audit record without payload data.
    * @param connection - Provenance source.
    * @param operation - Decided operation.
    * @param outcome - Gateway outcome.
@@ -314,7 +326,15 @@ export class RemoteGateway {
     }
   }
 
-  /** Invoke the same checked route table that backs the Host HTTP API. */
+  /**
+   * Invoke the same checked route table that backs the Host HTTP API.
+   * @param peer - Authenticated remote identity that must remain trusted.
+   * @param method - Public Host RPC method to invoke.
+   * @param requestId - Remote-wire request correlation id.
+   * @param payload - RPC request payload.
+   * @param signal - Cancellation signal for the Host RPC.
+   * @returns the wire-safe Host result or a non-sensitive failure result.
+   */
   async invoke(
     peer: TrustedRemotePeerIdentity,
     method: keyof RpcMethodMap,
@@ -331,7 +351,12 @@ export class RemoteGateway {
     }
   }
 
-  /** Obtain the baseline needed when retained events cannot safely replay. */
+  /**
+   * Obtain the baseline needed when retained events cannot safely replay.
+   * @param peer - Authenticated remote identity that must remain trusted.
+   * @param signal - Cancellation signal shared by the baseline requests.
+   * @returns the current Host, session, and workspace baseline results.
+   */
   async snapshot(peer: TrustedRemotePeerIdentity, signal: AbortSignal): Promise<RemoteGatewaySnapshot> {
     const [host, sessions, workspaces] = await Promise.all([
       this.invoke(peer, 'host.describe', this.deps.newId(), {}, signal),
@@ -341,29 +366,46 @@ export class RemoteGateway {
     return { host, sessions, workspaces }
   }
 
-  /** @returns a fresh stable remote-wire id. */
+  /**
+   * Creates a fresh stable remote-wire id.
+   * @returns a fresh stable remote-wire id.
+   */
   newId(): RemoteWireId {
     return this.deps.newId()
   }
 
-  /** @returns Host authority used only to open its public event streams and respond to pending interactions. */
+  /**
+   * Exposes the composed public Host API authority.
+   * @returns Host authority used only to open its public event streams and respond to pending interactions.
+   */
   get api(): ApiProxy {
     return this.deps.api
   }
 
-  /** @returns whether the authenticated device remains present in the Host-local trusted directory. */
+  /**
+   * Checks whether an authenticated device remains trusted by this Host.
+   * @param peer - Authenticated remote identity to compare with the local directory.
+   * @returns whether the device remains present with the same enrollment identity.
+   */
   isTrusted(peer: TrustedRemotePeerIdentity): boolean {
     const device = this.deps.devices.get(peer.deviceId)
     return device !== undefined && this.matchesEnrollment(device, peer)
   }
 
-  /** Record authenticated device presence through the Host-owned directory. */
+  /**
+   * Record authenticated device presence through the Host-owned directory.
+   * @param peer - Authenticated remote identity whose presence is recorded.
+   * @returns the durable directory write result.
+   */
   markSeen(peer: TrustedRemotePeerIdentity): Promise<unknown> {
     if (!this.isTrusted(peer)) return Promise.reject(new Error('remote device is no longer trusted'))
     return this.deps.devices.markSeen(peer.deviceId, this.deps.now())
   }
 
-  /** @returns live bounds for this Host gateway. */
+  /**
+   * Reports the configured live-memory bounds for this gateway.
+   * @returns live bounds for this Host gateway.
+   */
   get limits(): RemoteGatewayOptions {
     return this.options
   }
@@ -424,7 +466,10 @@ export class RemoteGatewayConnection {
     return this.connection.peer.deviceId
   }
 
-  /** @returns a copy-safe public connection progress view. */
+  /**
+   * Returns a copy-safe view of this connection's synchronization progress.
+   * @returns a copy-safe public connection progress view.
+   */
   status(): RemoteGatewayConnectionStatus {
     return {
       deviceId: this.connection.peer.deviceId,
@@ -442,7 +487,10 @@ export class RemoteGatewayConnection {
     void this.pump(this.gateway.api.events.host({ rpcId: rpcId(this.gateway.newId()), payload: {} }, this.abort.signal))
   }
 
-  /** @param reason - Explicit local end reason. */
+  /**
+   * Closes the provider connection and invalidates pending sends.
+   * @param reason - Explicit local end reason.
+   */
   async close(reason: RemoteGatewayCloseReason): Promise<void> {
     if (this.closed) return
     this.closed = true
@@ -458,7 +506,10 @@ export class RemoteGatewayConnection {
     }
   }
 
-  /** Process one provider-delivered envelope. Exposed for focused lifecycle tests. */
+  /**
+   * Process one provider-delivered envelope. Exposed for focused lifecycle tests.
+   * @param envelope - Decrypted remote-wire envelope from the attached provider.
+   */
   async receive(envelope: RemoteWireEnvelope): Promise<void> {
     if (!this.isLive()) return
     let message: RemoteWireEnvelope

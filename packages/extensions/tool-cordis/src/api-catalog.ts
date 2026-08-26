@@ -1062,6 +1062,195 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'remoteDevices',
+    summary: 'Durable trusted-device directory.',
+    description: 'Durable trusted-device directory. All mutation methods are Host-local policy seams: a future local pairing UI invokes `enroll`, authenticated transport invokes `markSeen`, and a Host device manager invokes `revoke`. None accepts a relay token or makes remote enrollment possible by itself.',
+    methods: [
+      {
+        signature: 'list(): readonly RemoteDeviceRecord[]',
+        description: 'List enrolled devices in stable enrollment order.',
+        parameters: [],
+        returns: 'copies of every current trusted-device record.',
+      },
+      {
+        signature: 'get(id: RemoteDeviceId): RemoteDeviceRecord | undefined',
+        description: 'Look up one trusted device by opaque id.',
+        parameters: [{ name: 'id', description: 'Opaque remote device id.' }],
+        returns: 'a public metadata copy, or `undefined` when revoked or unknown.',
+      },
+      {
+        signature: 'async enroll(input: RemoteDeviceEnrollment): Promise<RemoteDeviceRecord>',
+        description: 'Enroll a new remote device after local Host confirmation. Ids and either public key are globally unique within this Host profile, preventing one remote identity from being silently assigned to two device labels.',
+        parameters: [{ name: 'input', description: 'Locally-confirmed public device enrollment material.' }],
+        returns: 'the durably enrolled public record.',
+      },
+      {
+        signature: 'async seed(input: RemoteDeviceEnrollment, incarnation: string): Promise<RemoteDeviceRecord>',
+        description: 'Records the exact public device enrollment already confirmed by the signed Host. This is the one imported ownership path: callers supply no secret and a retry must match every durable public field.',
+        parameters: [{ name: 'input', description: 'Locally-confirmed public device enrollment material.' }, { name: 'incarnation', description: 'Host-confirmed opaque device enrollment incarnation.' }],
+        returns: 'the durable public record using that exact incarnation.',
+      },
+      {
+        signature: 'async markSeen(id: RemoteDeviceId, seenAt: string): Promise<RemoteDeviceRecord>',
+        description: 'Mark an already authenticated trusted device present. The time is supplied by the connection runtime so reconnect and test clocks stay explicit.',
+        parameters: [{ name: 'id', description: 'Authenticated remote device id.' }, { name: 'seenAt', description: 'Canonical current instant from the Host connection runtime.' }],
+        returns: 'the updated public metadata.',
+      },
+      {
+        signature: 'async revoke(id: RemoteDeviceId): Promise<boolean>',
+        description: 'Revoke a trusted device immediately. Deletion is intentional: subsequent mutual-authentication handshakes have no authorization record to match.',
+        parameters: [{ name: 'id', description: 'Device id to revoke.' }],
+        returns: 'whether an enrolled device was removed.',
+      },
+    ],
+  },
+  {
+    key: 'remoteEnrollment',
+    summary: 'Creates ephemeral relay credentials and persists only a locally-confirmed remote public identity.',
+    description: 'Creates ephemeral relay credentials and persists only a locally-confirmed remote public identity. Routes live only in controller memory until one confirmation consumes them; the device directory never receives tokens.',
+    methods: [
+      {
+        signature: 'issueRoute(): Promise<RemoteEnrollmentRoute>',
+        description: 'Issues one in-memory route carrying separate Host and client relay credentials.',
+        parameters: [],
+        returns: 'the newly issued one-time route and copy-safe client invitation.',
+      },
+      {
+        signature: 'async confirm(input: RemoteEnrollmentConfirmation): Promise<RemoteDeviceRecord>',
+        description: 'Consumes an exact pending invitation before durably enrolling its public device identity.',
+        parameters: [{ name: 'input', description: 'Local confirmation containing the issued invitation and remote public identity.' }],
+        returns: 'the durably enrolled public device record.',
+      },
+    ],
+  },
+  {
+    key: 'remoteGateway',
+    summary: 'Host gateway for remote-wire v3.',
+    description: 'Host gateway for remote-wire v3. It owns dispatch, event ordering, retry retention, and response routing. Relay identity proof, encryption, route allocation, and byte transport remain with a connection provider.',
+    methods: [
+      {
+        signature: 'async attach(connection: TrustedRemoteConnection): Promise<RemoteGatewayConnection | undefined>',
+        description: 'Attach one already-authenticated remote connection. The gateway checks the device directory again, so a revoked device cannot keep or regain access through a stale relay authorization.',
+        parameters: [{ name: 'connection', description: 'Provider-authenticated and decrypted connection.' }],
+        returns: 'the active connection controller, or `undefined` after refusal.',
+      },
+      {
+        signature: 'async serve(provider: TrustedRemoteConnectionProvider, signal: AbortSignal): Promise<void>',
+        description: 'Consumes authenticated connections from a relay provider until cancellation.',
+        parameters: [{ name: 'provider', description: 'Relay provider that yields only authenticated, decrypted connections.' }, { name: 'signal', description: 'Owner cancellation signal.' }],
+      },
+      {
+        signature: 'async dispose(): Promise<void>',
+        description: 'Stop every current connection and drop all in-memory replay and retry state.',
+        parameters: [],
+      },
+      {
+        signature: 'detach(connection: RemoteGatewayConnection): void',
+        description: 'Removes an active controller only when it still owns the device slot.',
+        parameters: [{ name: 'connection', description: 'Active controller whose endpoint needs removal.' }],
+      },
+      {
+        signature: 'revoke(deviceId: RemoteDeviceId): void',
+        description: 'End an active connection after its local device authorization is revoked.',
+        parameters: [{ name: 'deviceId', description: 'Revoked device whose process-lifetime state must close.' }],
+      },
+      {
+        signature: 'audit(connection: TrustedRemoteConnection, operation: RemoteGatewayAuditEntry[\'operation\'], outcome: RemoteGatewayAuditEntry[\'outcome\'], reason: string, requestId?: RemoteWireId): void',
+        description: 'Emits a non-throwing gateway audit record without payload data.',
+        parameters: [{ name: 'connection', description: 'Provenance source.' }, { name: 'operation', description: 'Decided operation.' }, { name: 'outcome', description: 'Gateway outcome.' }, { name: 'reason', description: 'Stable reason.' }, { name: 'requestId', description: 'Optional correlation id.' }],
+      },
+      {
+        signature: 'async invoke( peer: TrustedRemotePeerIdentity, method: keyof RpcMethodMap, requestId: RemoteWireId, payload: unknown, signal: AbortSignal, ): Promise<RemoteWireResult>',
+        description: 'Invoke the same checked route table that backs the Host HTTP API.',
+        parameters: [{ name: 'peer', description: 'Authenticated remote identity that must remain trusted.' }, { name: 'method', description: 'Public Host RPC method to invoke.' }, { name: 'requestId', description: 'Remote-wire request correlation id.' }, { name: 'payload', description: 'RPC request payload.' }, { name: 'signal', description: 'Cancellation signal for the Host RPC.' }],
+        returns: 'the wire-safe Host result or a non-sensitive failure result.',
+      },
+      {
+        signature: 'async snapshot(peer: TrustedRemotePeerIdentity, signal: AbortSignal): Promise<RemoteGatewaySnapshot>',
+        description: 'Obtain the baseline needed when retained events cannot safely replay.',
+        parameters: [{ name: 'peer', description: 'Authenticated remote identity that must remain trusted.' }, { name: 'signal', description: 'Cancellation signal shared by the baseline requests.' }],
+        returns: 'the current Host, session, and workspace baseline results.',
+      },
+      {
+        signature: 'newId(): RemoteWireId',
+        description: 'Creates a fresh stable remote-wire id.',
+        parameters: [],
+        returns: 'a fresh stable remote-wire id.',
+      },
+      {
+        signature: 'isTrusted(peer: TrustedRemotePeerIdentity): boolean',
+        description: 'Checks whether an authenticated device remains trusted by this Host.',
+        parameters: [{ name: 'peer', description: 'Authenticated remote identity to compare with the local directory.' }],
+        returns: 'whether the device remains present with the same enrollment identity.',
+      },
+      {
+        signature: 'markSeen(peer: TrustedRemotePeerIdentity): Promise<unknown>',
+        description: 'Record authenticated device presence through the Host-owned directory.',
+        parameters: [{ name: 'peer', description: 'Authenticated remote identity whose presence is recorded.' }],
+        returns: 'the durable directory write result.',
+      },
+    ],
+  },
+  {
+    key: 'remoteHostIdentity',
+    summary: 'Host facade over a signed native protected-key handle.',
+    description: 'Host facade over a signed native protected-key handle.',
+    methods: [
+      {
+        signature: 'publicIdentity(): RemoteHostPublicIdentity',
+        description: 'Copies the public metadata exposed by the protected identity handle.',
+        parameters: [],
+        returns: 'a caller-owned public identity copy.',
+      },
+      {
+        signature: 'sign(payload: Uint8Array): Uint8Array',
+        description: 'Signs exact handshake transcript bytes through the protected handle.',
+        parameters: [{ name: 'payload', description: 'Exact handshake transcript bytes.' }],
+        returns: 'detached signature bytes.',
+      },
+      {
+        signature: 'deriveSharedSecret(remoteAgreementPublicKey: string): Uint8Array',
+        description: 'Derives shared-secret input through the protected agreement key.',
+        parameters: [{ name: 'remoteAgreementPublicKey', description: 'Base64url remote public key.' }],
+        returns: 'KDF input bytes.',
+      },
+    ],
+  },
+  {
+    key: 'remoteHostV3',
+    summary: 'Host-local V3 coordinator.',
+    description: 'Host-local V3 coordinator. It creates no HTTP listener, performs no cryptography, and owns no route credential.',
+    methods: [
+      {
+        signature: 'listRoutes(): readonly RemoteHostV3Route[]',
+        description: 'Lists the allocator\'s durable public routes without credentials or ciphertext.',
+        parameters: [],
+        returns: 'durable public routes without route tokens, private keys, or ciphertext.',
+      },
+      {
+        signature: 'start(): void',
+        description: 'Begin the generic gateway\'s receive loop over the signed Host app\'s inherited private pipe.',
+        parameters: [],
+      },
+      {
+        signature: 'startWithNative(native: RemoteHostV3NativeProvider): void',
+        description: 'Begins serving over a natively activated handoff that arrived after mount, exactly once. The hosted FD199 startup plugin calls this only after its authority handshake and journal consume succeeded.',
+        parameters: [{ name: 'native', description: 'Activated signed Host-app handoff for this child process.' }],
+      },
+      {
+        signature: 'createInheritedNativeProvider( descriptor: number, hostAppPath: string, inheritedPipe?: RemoteHostV3RuntimePipe, requireEnrollmentSeed: boolean = false, ): RemoteHostV3NativeProvider',
+        description: 'Builds the inherited-pipe native provider over this deployment\'s durable route allocator and device directory. Descriptor 198 stays unread until a caller actually serves the returned pipe.',
+        parameters: [{ name: 'descriptor', description: 'Inherited relay descriptor; only the fixed value is accepted.' }, { name: 'hostAppPath', description: 'Absolute path announced by the proven FD199 authority.' }, { name: 'inheritedPipe', description: 'Test-only prebuilt pipe; production always adopts descriptor 198.' }, { name: 'requireEnrollmentSeed', description: 'Whether runtime readiness requires the native Host enrollment seed first.' }],
+        returns: 'the native provider for {@link startWithNative}.',
+      },
+      {
+        signature: 'dispose(): void',
+        description: 'Stop links, provider delivery, and future route activity.',
+        parameters: [],
+      },
+    ],
+  },
+  {
     key: 'sandbox',
     summary: 'Abstract process-sandbox service.',
     description: 'Abstract process-sandbox service. confine must return enforcing argv or fail closed at wrap or runner-execution time; silent unconfined passthrough is forbidden. Functional probes arbitrate multi-runner chains and may be skipped for a sole candidate, whose own refusal remains the fail-closed end.',
@@ -2509,6 +2698,22 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'options', description: 'the full request. A LOOP-built request carries the process-local {@link markAgentLoopRequest} identity and arrives deep-frozen (mutation throws): its content is a pure function of the session log (the reconstructability Agent Note), so listeners read it, never rewrite it. Hand-built calls do not carry that marker; their messages already obey the immutable creation contract.' }],
   },
   {
+    name: 'remote-devices/changed',
+    mode: 'emit',
+    signature: '\'remote-devices/changed\'(change: RemoteDeviceChange): void',
+    summary: 'A trusted device was durably enrolled, seen, or revoked.',
+    description: 'A trusted device was durably enrolled, seen, or revoked. The event contains public metadata only and fires after the durable mutation.',
+    parameters: [{ name: 'change', description: 'Post-durability device-directory change.' }],
+  },
+  {
+    name: 'remote-gateway/audit',
+    mode: 'emit',
+    signature: '\'remote-gateway/audit\'(entry: RemoteGatewayAuditEntry): void',
+    summary: 'A trusted remote operation reached a Host gateway decision point.',
+    description: 'A trusted remote operation reached a Host gateway decision point. The entry contains authenticated provenance and never copies a payload.',
+    parameters: [{ name: 'entry', description: 'Completed or rejected gateway audit record.' }],
+  },
+  {
     name: 'session-telemetry/record',
     mode: 'waterfall',
     signature: '\'session-telemetry/record\'(record: SessionTelemetryRecord, next: () => SessionTelemetryRecord): SessionTelemetryRecord',
@@ -2749,6 +2954,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AgentPreset {\n    readonly id: string;\n    readonly trust: PresetTrust;\n    readonly path: string;\n    readonly name?: string;\n    readonly description?: string;\n    readonly order?: number;\n    readonly broken?: string;\n}',
   },
   {
+    name: 'AgentPresetEntry',
+    declaration: 'export interface AgentPresetEntry {\n    readonly id: string;\n    readonly trust: \'system\' | \'user\';\n    readonly isDefault: boolean;\n    readonly name?: string;\n    readonly description?: string;\n    readonly broken?: string;\n}',
+  },
+  {
+    name: 'AgentPresetsApi',
+    declaration: 'export interface AgentPresetsApi {\n    list(request: RpcRequest<{}>): Promise<RpcResponse<{\n        presets: readonly AgentPresetEntry[];\n        authorable: boolean;\n        hasDocument: boolean;\n    }>>;\n    select(request: RpcRequest<{\n        sessionId: SessionId;\n        agentPreset: string;\n    }>): Promise<RpcResponse<{\n        agentPreset: string;\n    }>>;\n    read(request: RpcRequest<{\n        agentPreset: string;\n    }>): Promise<RpcResponse<{\n        agentPreset: string;\n        trust: \'system\' | \'user\';\n        content: string;\n        name?: string;\n        description?: string;\n    }>>;\n    copy(request: RpcRequest<{\n        from: string;\n        agentPreset: string;\n        name?: string;\n    }>): Promise<RpcResponse<{\n        agentPreset: string;\n    }>>;\n    openDocument(request: RpcRequest<{\n        agentPreset: string;\n    }>, signal: AbortSignal): Promise<RpcResponse<{\n        opened: true;\n    } | {\n        opened: false;\n        path: string;\n    }>>;\n    remove(request: RpcRequest<{\n        agentPreset: string;\n    }>): Promise<RpcResponse<{}>>;\n}',
+  },
+  {
     name: 'AgentSetup',
     declaration: 'export type AgentSetup = (agentCtx: Context) => AgentSetupCommit | Promise<AgentSetupCommit | void> | void;',
   },
@@ -2759,6 +2972,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AgentStatus',
     declaration: 'export type AgentStatus = \'idle\' | \'running\';',
+  },
+  {
+    name: 'ApiProxy',
+    declaration: 'export interface ApiProxy {\n    sessions: SessionsApi;\n    subagents: SubagentsApi;\n    host: HostApi;\n    workspace: WorkspaceApi;\n    skills: SkillsApi;\n    agentPresets: AgentPresetsApi;\n    events: EventsApi;\n    goals: GoalsApi;\n    settings: SettingsApi;\n    credentials: CredentialsApi;\n    llm: LlmApi;\n    downloads: DownloadsApi;\n    respond(message: ClientResponse): Promise<RpcReceipt>;\n}',
   },
   {
     name: 'ApprovalOutcome',
@@ -2933,6 +3150,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type CompactionTrigger = \'pressure\' | \'context-overflow\';',
   },
   {
+    name: 'ConfigurableProviderView',
+    declaration: 'export interface ConfigurableProviderView {\n    provider: string;\n    displayName: string;\n    settingsNs: string;\n    settingsPath: string[];\n    active: boolean;\n    declared?: boolean;\n}',
+  },
+  {
     name: 'ConfinedArgv',
     declaration: 'export interface ConfinedArgv {\n    argv: string[];\n    enforcement: SandboxEnforcement;\n    denialSignatures: readonly string[];\n    runnerFailureRules: readonly RunnerFailureRule[];\n}',
   },
@@ -3037,6 +3258,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type CredentialRef = Branded<\'CredentialRef\'>;',
   },
   {
+    name: 'CredentialsApi',
+    declaration: 'export interface CredentialsApi {\n    describe(request: RpcRequest<{\n        refs: string[];\n    }>): Promise<RpcResponse<{\n        credentials: Record<string, CredentialView>;\n    }>>;\n    set(request: RpcRequest<{\n        ref: string;\n        value: string;\n    }>): Promise<RpcResponse<{}>>;\n    unset(request: RpcRequest<{\n        ref: string;\n    }>): Promise<RpcResponse<{}>>;\n}',
+  },
+  {
+    name: 'CredentialView',
+    declaration: 'export interface CredentialView {\n    configured: boolean;\n    source?: string;\n    writable: boolean;\n}',
+  },
+  {
     name: 'DiffCallView',
     declaration: 'export interface DiffCallView {\n    card: \'diff\';\n    title: string;\n    diffs: FileDiff[];\n    locations?: FileLocation[];\n}',
   },
@@ -3063,6 +3292,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'DirectoryRegistrationHandle',
     declaration: 'export interface DirectoryRegistrationHandle {\n    (): void;\n    replace(entries: readonly LlmConfigurableProvider[]): void;\n}',
+  },
+  {
+    name: 'DiscoveredModelView',
+    declaration: 'export interface DiscoveredModelView {\n    id: string;\n    name?: string;\n    contextWindow?: number;\n    maxTokens?: number;\n}',
   },
   {
     name: 'Domain',
@@ -3147,6 +3380,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'EpochHeader',
     declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    system?: string;\n    tools?: ToolSchema[];\n}',
+  },
+  {
+    name: 'EventsApi',
+    declaration: 'export interface EventsApi {\n    mux(request: RpcRequest<{\n        since?: Record<SessionId, number>;\n    }>, signal: AbortSignal): AsyncIterable<RpcRequest<MuxFrame>>;\n    host(request: RpcRequest<{}>, signal: AbortSignal): AsyncIterable<RpcRequest<HostFrame>>;\n}',
   },
   {
     name: 'FileDiff',
@@ -3245,12 +3482,28 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type GoalPhase = \'active\' | \'paused\' | \'blocked\' | \'complete\';',
   },
   {
+    name: 'GoalsApi',
+    declaration: 'export interface GoalsApi {\n    create(request: RpcRequest<{\n        sessionId: SessionId;\n        objective: string;\n        maxGoalRounds?: number;\n    }>): Promise<RpcResponse<{\n        ref: GoalRef;\n    }>>;\n    edit(request: RpcRequest<{\n        sessionId: SessionId;\n        ref: GoalRef;\n        objective?: string;\n        maxGoalRounds?: number;\n    }>): Promise<RpcResponse<{\n        ref: GoalRef;\n    }>>;\n    pause(request: RpcRequest<{\n        sessionId: SessionId;\n        ref: GoalRef;\n    }>): Promise<RpcResponse<{\n        ref: GoalRef;\n    }>>;\n    resume(request: RpcRequest<{\n        sessionId: SessionId;\n        ref: GoalRef;\n    }>): Promise<RpcResponse<{\n        ref: GoalRef;\n    }>>;\n    complete(request: RpcRequest<{\n        sessionId: SessionId;\n        ref: GoalRef;\n    }>): Promise<RpcResponse<{\n        ref: GoalRef;\n    }>>;\n    clear(request: RpcRequest<{\n        sessionId: SessionId;\n        ref: GoalRef;\n    }>): Promise<RpcResponse<{\n        cleared: true;\n    }>>;\n}',
+  },
+  {
     name: 'GoalSnapshot',
     declaration: 'export interface GoalSnapshot extends GoalRef {\n    readonly objective: string;\n    readonly phase: GoalPhase;\n    readonly blockedReason?: GoalBlockReason;\n    readonly maxGoalRounds: number;\n}',
   },
   {
     name: 'GoalView',
     declaration: 'export interface GoalView extends GoalSnapshot {\n    readonly roundsStarted: number;\n    readonly createdAt: number;\n    readonly updatedAt: number;\n    readonly activation: GoalActivation;\n}',
+  },
+  {
+    name: 'HistoryEntry',
+    declaration: 'export interface HistoryEntry {\n    event: SessionEvent;\n    view?: ToolEventView;\n}',
+  },
+  {
+    name: 'HostApi',
+    declaration: 'export interface HostApi {\n    describe(request: RpcRequest<{}>): Promise<RpcResponse<{\n        version: string;\n        cwd: string;\n        provider?: string;\n        model?: string;\n        attachedSessions: number;\n        home: string;\n        canOpenPath: boolean;\n    }>>;\n    pickDirectory(request: RpcRequest<{}>, signal: AbortSignal): Promise<RpcResponse<{\n        path: string | null;\n    }>>;\n    listDirectory(request: RpcRequest<{\n        path?: string;\n    }>, signal: AbortSignal): Promise<RpcResponse<DirectoryListing>>;\n    createDirectory(request: RpcRequest<{\n        path: string;\n        name: string;\n    }>): Promise<RpcResponse<{\n        path: string;\n    }>>;\n    openPath(request: RpcRequest<{\n        path: string;\n    }>, signal: AbortSignal): Promise<RpcResponse<{\n        opened: true;\n    }>>;\n}',
+  },
+  {
+    name: 'HostFrame',
+    declaration: 'export type HostFrame = {\n    type: \'host/session-added\';\n    sessionId: SessionId;\n    blank: boolean;\n    parentSessionId?: SessionId;\n    origin?: \'subagent\';\n    cwd?: string;\n    agentPreset?: string;\n} | {\n    type: \'host/session-removed\';\n    sessionId: SessionId;\n} | {\n    type: \'host/session-status\';\n    sessionId: SessionId;\n    running: boolean;\n} | {\n    type: \'host/agent-error\';\n    sessionId: SessionId;\n    message: string;\n} | {\n    type: \'host/workspace-changed\';\n    workspace: WorkspaceView;\n} | {\n    type: \'host/workspace-removed\';\n    workspaceId: WorkspaceView[\'workspaceId\'];\n} | {\n    type: \'host/workspace-order-changed\';\n    workspaceIds: WorkspaceView[\'workspaceId\'][];\n} | {\n    type: \'host/archived-sessions-changed\';\n    archivedSessionIds: SessionId[];\n} | {\n    type: \'host/remote-event\';\n    event: string;\n    args: JsonValue[];\n} | {\n    type: \'stream/error\';\n    error: RpcError;\n};',
   },
   {
     name: 'ImageAttachmentLimits',
@@ -3349,6 +3602,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type JobStatus = \'running\' | \'stopping\' | \'completed\' | \'killed\' | \'failed\';',
   },
   {
+    name: 'JobView',
+    declaration: 'export interface JobView {\n    id: JobId;\n    kind: string;\n    label: string;\n    status: \'running\' | \'stopping\' | \'completed\' | \'killed\' | \'failed\';\n    detail?: string;\n    startedAt: number;\n    finishedAt?: number;\n}',
+  },
+  {
     name: 'JsonSchemaNode',
     declaration: 'export interface JsonSchemaNode {\n    type?: JsonSchemaType;\n    oneOf?: JsonSchemaNode[];\n    properties?: Record<string, JsonSchemaNode>;\n    required?: string[];\n    additionalProperties?: boolean;\n    items?: JsonSchemaNode;\n    enum?: JsonSchemaScalar[];\n    const?: JsonSchemaScalar;\n    description?: string;\n    title?: string;\n    default?: JsonValue;\n    examples?: JsonValue;\n}',
   },
@@ -3387,6 +3644,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'LlmAdapter',
     declaration: 'export abstract class LlmAdapter {\n    providerInfo(provider: string): LlmProviderInfo;\n    providerRetryPolicy(_provider: string): ResolvedRetryPolicy | undefined;\n    listModels(_provider: string): Promise<readonly LlmModelInfo[]>;\n    resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    abstract stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
+  },
+  {
+    name: 'LlmApi',
+    declaration: 'export interface LlmApi {\n    providers(request: RpcRequest<{}>): Promise<RpcResponse<{\n        providers: ConfigurableProviderView[];\n    }>>;\n    models(request: RpcRequest<{}>): Promise<RpcResponse<{\n        groups: ModelProviderGroup[];\n        failures: ModelCatalogFailure[];\n    }>>;\n    discoverModels(request: RpcRequest<{\n        settingsNs: string;\n        provider?: string;\n        baseURL?: string;\n        api?: string;\n        apiKey?: string;\n    }>, signal?: AbortSignal): Promise<RpcResponse<{\n        models: DiscoveredModelView[];\n    }>>;\n}',
   },
   {
     name: 'LlmCallConfig',
@@ -3577,6 +3838,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface MessageSourceMap {\n    user: {\n        kind: \'user\';\n    };\n    plugin: {\n        kind: \'plugin\';\n        plugin: string;\n    } & ContextFormed;\n    model: ModelMessageSource;\n    tool: ToolMessageSource;\n}',
   },
   {
+    name: 'ModelCatalogFailure',
+    declaration: 'export interface ModelCatalogFailure {\n    id: string;\n    name: string;\n    message: string;\n}',
+  },
+  {
+    name: 'ModelCatalogModel',
+    declaration: 'export interface ModelCatalogModel {\n    id: string;\n    name: string;\n    description?: string;\n    reasoning?: ModelReasoning;\n}',
+  },
+  {
     name: 'ModelMessageSource',
     declaration: 'export interface ModelMessageSource extends AssistantProvenance {\n    kind: \'model\';\n}',
   },
@@ -3587,6 +3856,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ModelModalityMap',
     declaration: 'export interface ModelModalityMap {\n    text: \'text\';\n    image: \'image\';\n}',
+  },
+  {
+    name: 'ModelProviderGroup',
+    declaration: 'export interface ModelProviderGroup {\n    id: string;\n    name: string;\n    models: ModelCatalogModel[];\n}',
+  },
+  {
+    name: 'ModelReasoning',
+    declaration: 'export interface ModelReasoning {\n    efforts: ModelReasoningEffort[];\n    defaultEffort?: string;\n}',
+  },
+  {
+    name: 'ModelReasoningEffort',
+    declaration: 'export interface ModelReasoningEffort {\n    id: string;\n    name: string;\n    description?: string;\n}',
+  },
+  {
+    name: 'MuxFrame',
+    declaration: 'export type MuxFrame = {\n    type: \'session/event\';\n    sessionId: SessionId;\n    event: SessionEvent;\n    view?: ToolEventView;\n} | {\n    type: \'session/subscribed\';\n    sessionId: SessionId;\n    lastSeq: number;\n} | {\n    type: \'approval/requested\';\n    sessionId: SessionId;\n    approvalId: ApprovalRequestId;\n    toolName: string;\n    callId?: CallId;\n    reason?: string;\n} | {\n    type: \'approval/resolved\';\n    sessionId: SessionId;\n    approvalId: ApprovalRequestId;\n    outcome: ApprovalOutcome;\n} | {\n    type: \'question/requested\';\n    sessionId: SessionId;\n    questions: AskUserQuestionItem[];\n} | {\n    type: \'question/resolved\';\n    sessionId: SessionId;\n    questionRpcId: RpcId;\n    outcome: \'answered\' | \'cancelled\';\n} | {\n    type: \'session/queue\';\n    sessionId: SessionId;\n    items: QueuedInboxItem[];\n} | {\n    type: \'session/jobs\';\n    sessionId: SessionId;\n    jobs: JobView[];\n} | {\n    type: \'session/projection\';\n    sessionId: SessionId;\n    key: string;\n    value: unknown;\n    seq: number;\n} | {\n    type: \'stream/error\';\n    error: RpcError;\n};',
   },
   {
     name: 'ObjectJsonSchema',
@@ -3681,6 +3966,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PruneResult {\n    readonly pruned: readonly PrunedEntry[];\n    readonly charsRemoved: number;\n}',
   },
   {
+    name: 'QueuedInboxItem',
+    declaration: 'export interface QueuedInboxItem {\n    id: MessageId;\n    placement: \'queued\' | \'steering\' | \'context\';\n    message: Message;\n}',
+  },
+  {
     name: 'ReadFileLine',
     declaration: 'export interface ReadFileLine {\n    number: number;\n    text: string;\n}',
   },
@@ -3699,6 +3988,150 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RedactedSecret',
     declaration: 'export interface RedactedSecret {\n    path: string[];\n    set: boolean;\n}',
+  },
+  {
+    name: 'RemoteDeviceChange',
+    declaration: 'export type RemoteDeviceChange = {\n    readonly type: \'enrolled\';\n    readonly device: RemoteDeviceRecord;\n} | {\n    readonly type: \'seen\';\n    readonly device: RemoteDeviceRecord;\n} | {\n    readonly type: \'revoked\';\n    readonly deviceId: RemoteDeviceId;\n};',
+  },
+  {
+    name: 'RemoteDeviceControl',
+    declaration: 'export type RemoteDeviceControl = typeof REMOTE_DEVICE_CONTROLS[number];',
+  },
+  {
+    name: 'RemoteDeviceEnrollment',
+    declaration: 'export interface RemoteDeviceEnrollment {\n    readonly id: string;\n    readonly label: string;\n    readonly signingPublicKey: string;\n    readonly agreementPublicKey: string;\n}',
+  },
+  {
+    name: 'RemoteDeviceId',
+    declaration: 'export type RemoteDeviceId = Branded<\'RemoteDeviceId\'>;',
+  },
+  {
+    name: 'RemoteDeviceIncarnation',
+    declaration: 'export type RemoteDeviceIncarnation = Branded<\'RemoteDeviceIncarnation\'>;',
+  },
+  {
+    name: 'RemoteDeviceRecord',
+    declaration: 'export interface RemoteDeviceRecord {\n    readonly id: RemoteDeviceId;\n    readonly incarnation: RemoteDeviceIncarnation;\n    readonly label: string;\n    readonly signingPublicKey: string;\n    readonly agreementPublicKey: string;\n    readonly enrolledAt: string;\n    readonly lastSeenAt?: string;\n}',
+  },
+  {
+    name: 'RemoteEnrollmentConfirmation',
+    declaration: 'export interface RemoteEnrollmentConfirmation {\n    readonly route: RemoteEnrollmentInvitation;\n    readonly device: RemoteDeviceEnrollment;\n}',
+  },
+  {
+    name: 'RemoteEnrollmentInvitation',
+    declaration: 'export interface RemoteEnrollmentInvitation {\n    readonly routeId: RemoteRouteId;\n    readonly clientAuthToken: string;\n    readonly expiresAt: string;\n    readonly host: RemoteHostPublicIdentity;\n}',
+  },
+  {
+    name: 'RemoteEnrollmentRoute',
+    declaration: 'export interface RemoteEnrollmentRoute {\n    readonly hostAuthToken: string;\n    readonly invitation: RemoteEnrollmentInvitation;\n}',
+  },
+  {
+    name: 'RemoteGateway',
+    declaration: 'export class RemoteGateway {\n    constructor(private readonly deps: RemoteGatewayDependencies, private readonly options: RemoteGatewayOptions);\n    async attach(connection: TrustedRemoteConnection): Promise<RemoteGatewayConnection | undefined>;\n    async serve(provider: TrustedRemoteConnectionProvider, signal: AbortSignal): Promise<void>;\n    async dispose(): Promise<void>;\n    detach(connection: RemoteGatewayConnection): void;\n    revoke(deviceId: RemoteDeviceId): void;\n    audit(connection: TrustedRemoteConnection, operation: RemoteGatewayAuditEntry[\'operation\'], outcome: RemoteGatewayAuditEntry[\'outcome\'], reason: string, requestId?: RemoteWireId): void;\n    async invoke(peer: TrustedRemotePeerIdentity, method: keyof RpcMethodMap, requestId: RemoteWireId, payload: unknown, signal: AbortSignal): Promise<RemoteWireResult>;\n    async snapshot(peer: TrustedRemotePeerIdentity, signal: AbortSignal): Promise<RemoteGatewaySnapshot>;\n    newId(): RemoteWireId;\n    get api(): ApiProxy;\n    isTrusted(peer: TrustedRemotePeerIdentity): boolean;\n    markSeen(peer: TrustedRemotePeerIdentity): Promise<unknown>;\n    get limits(): RemoteGatewayOptions;\n}',
+  },
+  {
+    name: 'RemoteGatewayAuditEntry',
+    declaration: 'export interface RemoteGatewayAuditEntry {\n    readonly deviceId: RemoteDeviceId;\n    readonly route: TrustedRemoteRoute;\n    readonly operation: RemoteGatewayAuditOperation;\n    readonly requestId?: RemoteWireId;\n    readonly outcome: \'accepted\' | \'rejected\' | \'completed\';\n    readonly reason: string;\n}',
+  },
+  {
+    name: 'RemoteGatewayAuditOperation',
+    declaration: 'export type RemoteGatewayAuditOperation = \'connection\' | \'request\' | \'approval\' | \'client-response\' | \'device-control\' | \'stream-ack\' | \'event-delivery\';',
+  },
+  {
+    name: 'RemoteGatewayCloseReason',
+    declaration: 'export type RemoteGatewayCloseReason = \'gateway-disposed\' | \'protocol-rejected\' | \'unauthorized-device\' | \'superseded\' | \'transport-failed\';',
+  },
+  {
+    name: 'RemoteGatewayConnection',
+    declaration: 'export class RemoteGatewayConnection {\n    constructor(private readonly gateway: RemoteGateway, private readonly connection: TrustedRemoteConnection, private readonly state: DeviceState);\n    get deviceId(): RemoteDeviceId;\n    status(): RemoteGatewayConnectionStatus;\n    start(): void;\n    async close(reason: RemoteGatewayCloseReason): Promise<void>;\n    async receive(envelope: RemoteWireEnvelope): Promise<void>;\n}',
+  },
+  {
+    name: 'RemoteGatewayConnectionStatus',
+    declaration: 'export interface RemoteGatewayConnectionStatus {\n    readonly deviceId: RemoteDeviceId;\n    readonly route: TrustedRemoteRoute;\n    readonly latestCursor: number;\n    readonly acknowledgedCursor: number;\n    readonly synchronized: boolean;\n}',
+  },
+  {
+    name: 'RemoteGatewayOptions',
+    declaration: 'export interface RemoteGatewayOptions {\n    readonly maxIdempotencyEntriesPerDevice: number;\n    readonly maxEventEntriesPerDevice: number;\n}',
+  },
+  {
+    name: 'RemoteHostDeviceId',
+    declaration: 'export type RemoteHostDeviceId = Branded<\'RemoteHostDeviceId\'>;',
+  },
+  {
+    name: 'RemoteHostPublicIdentity',
+    declaration: 'export interface RemoteHostPublicIdentity {\n    readonly hostDeviceId: RemoteHostDeviceId;\n    readonly signingPublicKey: string;\n    readonly agreementPublicKey: string;\n}',
+  },
+  {
+    name: 'RemoteHostV3NativeProvider',
+    declaration: 'export interface RemoteHostV3NativeProvider {\n    readonly hostAppPath: string;\n    readonly runtimePipe: RemoteHostV3RuntimePipe;\n}',
+  },
+  {
+    name: 'RemoteHostV3Route',
+    declaration: 'export interface RemoteHostV3Route {\n    readonly routeId: string;\n    readonly deviceId: RemoteDeviceId;\n    readonly deviceEnrollmentId: RemoteDeviceIncarnation;\n    readonly hostDeviceId: string;\n    readonly hostEnrollmentId: string;\n    readonly generation: number;\n    readonly lastConnectionEpoch: number;\n    readonly pendingConnectionEpoch?: number;\n    readonly createdAt: string;\n}',
+  },
+  {
+    name: 'RemoteHostV3RuntimePipe',
+    declaration: 'export interface RemoteHostV3RuntimePipe extends TrustedRemoteConnectionProvider {\n    readonly kind: \'inherited-private-pipe\';\n}',
+  },
+  {
+    name: 'RemoteRouteId',
+    declaration: 'export type RemoteRouteId = Branded<\'RemoteRouteId\'>;',
+  },
+  {
+    name: 'RemoteWireApproval',
+    declaration: 'export interface RemoteWireApproval {\n    readonly version: 3;\n    readonly type: \'approval\';\n    readonly connectionEpoch: number;\n    readonly requestId: RemoteWireId;\n    readonly idempotencyKey: RemoteWireId;\n    readonly sessionId: RemoteWireId;\n    readonly approvalId: RemoteWireId;\n    readonly outcome: \'allowed-once\' | \'rejected\';\n}',
+  },
+  {
+    name: 'RemoteWireClientResponse',
+    declaration: 'export interface RemoteWireClientResponse {\n    readonly version: 3;\n    readonly type: \'client-response\';\n    readonly connectionEpoch: number;\n    readonly requestId: RemoteWireId;\n    readonly idempotencyKey: RemoteWireId;\n    readonly result: RemoteWireResult;\n}',
+  },
+  {
+    name: 'RemoteWireDeviceControlEnvelope',
+    declaration: 'export interface RemoteWireDeviceControlEnvelope {\n    readonly version: 3;\n    readonly type: \'device-control\';\n    readonly connectionEpoch: number;\n    readonly requestId: RemoteWireId;\n    readonly idempotencyKey: RemoteWireId;\n    readonly deviceId: RemoteWireId;\n    readonly action: RemoteDeviceControl;\n    readonly payload: RemoteWireJson;\n}',
+  },
+  {
+    name: 'RemoteWireEnvelope',
+    declaration: 'export type RemoteWireEnvelope = RemoteWireRequest | RemoteWireResponse | RemoteWireEventEnvelope | RemoteWireStreamAck | RemoteWireApproval | RemoteWireClientResponse | RemoteWireDeviceControlEnvelope;',
+  },
+  {
+    name: 'RemoteWireEvent',
+    declaration: 'export type RemoteWireEvent = typeof REMOTE_WIRE_EVENTS[number];',
+  },
+  {
+    name: 'RemoteWireEventEnvelope',
+    declaration: 'export interface RemoteWireEventEnvelope {\n    readonly version: 3;\n    readonly type: \'event\';\n    readonly connectionEpoch: number;\n    readonly cursor: number;\n    readonly eventId: RemoteWireId;\n    readonly requestId: RemoteWireId;\n    readonly event: RemoteWireEvent;\n    readonly payload: RemoteWireJson;\n}',
+  },
+  {
+    name: 'RemoteWireFailure',
+    declaration: 'export interface RemoteWireFailure {\n    readonly code: string;\n    readonly message: string;\n    readonly details: RemoteWireJson;\n}',
+  },
+  {
+    name: 'RemoteWireId',
+    declaration: 'export type RemoteWireId = string & {\n    readonly __remoteWireId: unique symbol;\n};',
+  },
+  {
+    name: 'RemoteWireJson',
+    declaration: 'export type RemoteWireJson = null | boolean | number | string | readonly RemoteWireJson[] | {\n    readonly [key: string]: RemoteWireJson;\n};',
+  },
+  {
+    name: 'RemoteWireMethod',
+    declaration: 'export type RemoteWireMethod = typeof REMOTE_WIRE_METHODS[number];',
+  },
+  {
+    name: 'RemoteWireRequest',
+    declaration: 'export interface RemoteWireRequest {\n    readonly version: 3;\n    readonly type: \'request\';\n    readonly connectionEpoch: number;\n    readonly requestId: RemoteWireId;\n    readonly idempotencyKey: RemoteWireId;\n    readonly method: RemoteWireMethod;\n    readonly payload: RemoteWireJson;\n}',
+  },
+  {
+    name: 'RemoteWireResponse',
+    declaration: 'export interface RemoteWireResponse {\n    readonly version: 3;\n    readonly type: \'response\';\n    readonly connectionEpoch: number;\n    readonly requestId: RemoteWireId;\n    readonly result: RemoteWireResult;\n}',
+  },
+  {
+    name: 'RemoteWireResult',
+    declaration: 'export type RemoteWireResult = {\n    readonly ok: true;\n    readonly value: RemoteWireJson;\n} | {\n    readonly ok: false;\n    readonly error: RemoteWireFailure;\n};',
+  },
+  {
+    name: 'RemoteWireStreamAck',
+    declaration: 'export interface RemoteWireStreamAck {\n    readonly version: 3;\n    readonly type: \'stream-ack\';\n    readonly connectionEpoch: number;\n    readonly cursor: number;\n}',
   },
   {
     name: 'ReplayEnvelope',
@@ -3769,8 +4202,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type RpcId = Branded<\'rpc-id\'>;',
   },
   {
+    name: 'RpcMethodMap',
+    declaration: 'export interface RpcMethodMap {\n    \'session.list\': SessionsApi[\'list\'];\n    \'session.search\': SessionsApi[\'search\'];\n    \'session.create\': SessionsApi[\'create\'];\n    \'session.history\': SessionsApi[\'history\'];\n    \'session.models\': SessionsApi[\'models\'];\n    \'session.selectModel\': SessionsApi[\'selectModel\'];\n    \'session.rename\': SessionsApi[\'rename\'];\n    \'session.fork\': SessionsApi[\'fork\'];\n    \'session.prompt\': SessionsApi[\'prompt\'];\n    \'session.attachment\': SessionsApi[\'attachment\'];\n    \'session.updateQueue\': SessionsApi[\'updateQueue\'];\n    \'session.cancel\': SessionsApi[\'cancel\'];\n    \'subagent.list\': SubagentsApi[\'list\'];\n    \'subagent.history\': SubagentsApi[\'history\'];\n    \'subagent.prompt\': SubagentsApi[\'prompt\'];\n    \'subagent.interrupt\': SubagentsApi[\'interrupt\'];\n    \'host.describe\': HostApi[\'describe\'];\n    \'host.pickDirectory\': HostApi[\'pickDirectory\'];\n    \'host.listDirectory\': HostApi[\'listDirectory\'];\n    \'host.createDirectory\': HostApi[\'createDirectory\'];\n    \'host.openPath\': HostApi[\'openPath\'];\n    \'workspace.list\': WorkspaceApi[\'list\'];\n    \'workspace.create\': WorkspaceApi[\'create\'];\n    \'workspace.rename\': WorkspaceApi[\'rename\'];\n    \'workspace.delete\': WorkspaceApi[\'delete\'];\n    \'workspace.insertBefore\': WorkspaceApi[\'insertBefore\'];\n    \'workspace.insertSessionBefore\': WorkspaceApi[\'insertSessionBefore\'];\n    \'workspace.archiveSession\': WorkspaceApi[\'archiveSession\'];\n    \'skill.list\': SkillsApi[\'list\'];\n    \'agentPreset.list\': AgentPresetsApi[\'list\'] /* …truncated — full shape in source */',
+  },
+  {
     name: 'RpcReceipt',
     declaration: 'export type RpcReceipt = {\n    accepted: true;\n} | {\n    accepted: false;\n    reason: \'not-pending\' | \'bad-response\';\n};',
+  },
+  {
+    name: 'RpcRequest',
+    declaration: 'export interface RpcRequest<P> {\n    rpcId: RpcId;\n    payload: P;\n}',
+  },
+  {
+    name: 'RpcResponse',
+    declaration: 'export interface RpcResponse<T> {\n    rpcId: RpcId;\n    result: RpcResult<T>;\n}',
   },
   {
     name: 'RpcResult',
@@ -3957,6 +4402,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SessionLogSnapshot {\n    session: SessionHeader;\n    events: SessionEvent[];\n}',
   },
   {
+    name: 'SessionModels',
+    declaration: 'export interface SessionModels {\n    current: ModelSelection;\n    routable: boolean;\n    groups: ModelProviderGroup[];\n    failures: ModelCatalogFailure[];\n}',
+  },
+  {
     name: 'SessionPersistenceRevision',
     declaration: 'export type SessionPersistenceRevision = Branded<\'SessionPersistenceRevision\'>;',
   },
@@ -3975,6 +4424,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionProjectionMap',
     declaration: 'export interface SessionProjectionMap {\n}',
+  },
+  {
+    name: 'SessionProjectionsBlock',
+    declaration: 'export interface SessionProjectionsBlock {\n    asOfSeq: number;\n    values: Partial<SessionProjectionMap>;\n}',
   },
   {
     name: 'SessionRawArtifact',
@@ -4005,6 +4458,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SessionResultRange {\n    from?: number;\n    to?: number;\n}',
   },
   {
+    name: 'SessionsApi',
+    declaration: 'export interface SessionsApi {\n    list(request: RpcRequest<{\n        cursor?: string;\n    }>): Promise<RpcResponse<{\n        items: SessionSummary[];\n    }>>;\n    search(request: RpcRequest<{\n        query: string;\n    }>, signal: AbortSignal): Promise<RpcResponse<{\n        items: SessionSearchItem[];\n        hasMore: boolean;\n    }>>;\n    create(request: RpcRequest<{\n        workspaceId?: WorkspaceId;\n        cwd?: string;\n        sessionId?: SessionId;\n        agentPreset?: string;\n    }>): Promise<RpcResponse<{\n        sessionId: SessionId;\n        agentPreset?: string;\n    }>>;\n    history(request: RpcRequest<{\n        sessionId: SessionId;\n        beforeSeq?: number;\n        maxMessages?: number;\n    }>): Promise<RpcResponse<{\n        events: HistoryEntry[];\n        hasMore: boolean;\n        projections?: SessionProjectionsBlock;\n    }>>;\n    models(request: RpcRequest<{\n        sessionId: SessionId;\n    }>): Promise<RpcResponse<SessionModels>>;\n    selectModel(request: RpcRequest<{\n        sessionId: SessionId;\n        provider: string;\n        model: string;\n        reasoningEffort?: string;\n    }>): Promise<RpcResponse<{\n        selected: ModelSelection;\n    }>>;\n    rename(request: RpcRequest<{\n        sessionId: SessionId;\n        title: string;\n    }>): Promise<RpcResponse<{\n        title: string;\n        seq: number;\n    }>>;\n    fork(request: RpcRequest<{\n        sessionId: SessionId;\n        atSeq?: number;\n    }>): Promise<RpcResponse<{\n        sessionId: Sess /* …truncated — full shape in source */',
+  },
+  {
     name: 'SessionSearchCursor',
     declaration: 'export type SessionSearchCursor = Branded<\'SessionSearchCursor\'>;',
   },
@@ -4015,6 +4472,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionSearchHit',
     declaration: 'export interface SessionSearchHit extends SessionRecord {\n    bestMatch: SessionEventSearchHit;\n}',
+  },
+  {
+    name: 'SessionSearchItem',
+    declaration: 'export interface SessionSearchItem {\n    sessionId: SessionId;\n    snippet: string;\n}',
   },
   {
     name: 'SessionSearchPage',
@@ -4093,6 +4554,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SessionTitleUserMessage {\n    readonly seq: number;\n    readonly text: string;\n}',
   },
   {
+    name: 'SettingsApi',
+    declaration: 'export interface SettingsApi {\n    describe(request: RpcRequest<{}>): Promise<RpcResponse<{\n        writable: boolean;\n        hasDocument: boolean;\n        namespaces: SettingsNamespaceView[];\n    }>>;\n    openDocument(request: RpcRequest<{}>, signal: AbortSignal): Promise<RpcResponse<{\n        opened: true;\n    }>>;\n    update(request: RpcRequest<{\n        ns: string;\n        patch: object;\n        expectedRevision?: number;\n    }>): Promise<RpcResponse<SettingsNamespaceView>>;\n    replace(request: RpcRequest<{\n        ns: string;\n        section: object;\n        expectedRevision?: number;\n    }>): Promise<RpcResponse<SettingsNamespaceView>>;\n    mutate(request: RpcRequest<{\n        ns: string;\n        ops: SettingsPathOpView[];\n        expectedRevision?: number;\n    }>): Promise<RpcResponse<SettingsNamespaceView>>;\n}',
+  },
+  {
     name: 'SettingsApplies',
     declaration: 'export type SettingsApplies = \'live\' | \'restart\';',
   },
@@ -4109,12 +4574,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SettingsNamespace = Branded<\'SettingsNamespace\'>;',
   },
   {
+    name: 'SettingsNamespaceView',
+    declaration: 'export interface SettingsNamespaceView {\n    ns: string;\n    schema: unknown;\n    value: unknown;\n    base?: unknown;\n    user?: unknown;\n    applies: \'live\' | \'restart\';\n    secrets: SettingsSecretView[];\n    revision: number;\n}',
+  },
+  {
     name: 'SettingsPathOp',
     declaration: 'export type SettingsPathOp = {\n    op: \'set\';\n    path: readonly string[];\n    value: unknown;\n} | {\n    op: \'unset\';\n    path: readonly string[];\n};',
   },
   {
+    name: 'SettingsPathOpView',
+    declaration: 'export type SettingsPathOpView = {\n    op: \'set\';\n    path: string[];\n    value: unknown;\n} | {\n    op: \'unset\';\n    path: string[];\n};',
+  },
+  {
     name: 'SettingsRegisterOptions',
     declaration: 'export interface SettingsRegisterOptions<T> {\n    base?: Partial<T>;\n    applies?: SettingsApplies;\n    validate?: (value: T) => void;\n}',
+  },
+  {
+    name: 'SettingsSecretView',
+    declaration: 'export interface SettingsSecretView {\n    path: string[];\n    set: boolean;\n}',
   },
   {
     name: 'SettingsUpdateSource',
@@ -4161,6 +4638,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SkillDefinition extends SkillSummary {\n    readonly content: string;\n    readonly path?: string;\n    readonly metadata?: Readonly<Record<string, unknown>>;\n}',
   },
   {
+    name: 'SkillEntry',
+    declaration: 'export interface SkillEntry {\n    readonly name: string;\n    readonly description: string;\n    readonly whenToUse?: string;\n    readonly modelInvocable: boolean;\n}',
+  },
+  {
     name: 'SkillInvocationPolicy',
     declaration: 'export interface SkillInvocationPolicy {\n    readonly modelInvocable: boolean;\n    readonly userInvocable: boolean;\n}',
   },
@@ -4187,6 +4668,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SkillResourceBase',
     declaration: 'export type SkillResourceBase = {\n    readonly kind: \'directory\';\n    readonly path: string;\n} | {\n    readonly kind: \'url\';\n    readonly url: string;\n} | {\n    readonly kind: \'opaque\';\n    readonly description: string;\n};',
+  },
+  {
+    name: 'SkillsApi',
+    declaration: 'export interface SkillsApi {\n    list(request: RpcRequest<{\n        sessionId: SessionId;\n    }>): Promise<RpcResponse<{\n        skills: readonly SkillEntry[];\n    }>>;\n}',
   },
   {
     name: 'SkillSource',
@@ -4241,8 +4726,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type StreamChunk = {\n    type: \'block-start\';\n    index: number;\n    blockType: ContentBlockType;\n} | {\n    type: \'text-delta\';\n    index: number;\n    text: string;\n} | {\n    type: \'reasoning-delta\';\n    index: number;\n    text: string;\n} | {\n    type: \'tool-call-delta\';\n    index: number;\n    id: CallId;\n    name?: string;\n    argumentsDelta: string;\n} | {\n    type: \'block-end\';\n    index: number;\n    block: ContentBlock;\n} | {\n    type: \'usage\';\n    usage: TokenUsage;\n} | {\n    type: \'finish\';\n    reason: FinishReason;\n    replayState?: ReplayEnvelope;\n};',
   },
   {
+    name: 'SubagentAddress',
+    declaration: 'export type SubagentAddress = {\n    parentSessionId: SessionId;\n    childSessionId: SessionId;\n} & ({\n    mode: \'one-shot\';\n} | {\n    mode: \'continuable\';\n});',
+  },
+  {
     name: 'SubagentCapabilities',
     declaration: 'export interface SubagentCapabilities {\n    readonly outputSchema: boolean;\n    readonly depthLimit: boolean;\n    readonly toolFilter: boolean;\n    readonly persona: boolean;\n}',
+  },
+  {
+    name: 'SubagentCatalog',
+    declaration: 'export interface SubagentCatalog {\n    entries: SubagentListEntry[];\n    parentAvailable: boolean;\n}',
   },
   {
     name: 'SubagentDescendantListEntry',
@@ -4259,6 +4752,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SubagentInterruptAuthority',
     declaration: 'export type SubagentInterruptAuthority = {\n    readonly kind: \'user\';\n    readonly parentSessionId: SessionId;\n} | {\n    readonly kind: \'ancestor\';\n    readonly agent: Agent;\n};',
+  },
+  {
+    name: 'SubagentInterruptReceipt',
+    declaration: 'export interface SubagentInterruptReceipt {\n    accepted: true;\n}',
+  },
+  {
+    name: 'SubagentPromptReceipt',
+    declaration: 'export interface SubagentPromptReceipt {\n    messageId: MessageId;\n}',
   },
   {
     name: 'SubagentProvider',
@@ -4295,6 +4796,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SubagentRuntime',
     declaration: 'export class SubagentRuntime extends Service {\n    constructor(ctx: Context);\n    async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>;\n    async followup(parent: Agent, childId: SessionId, content: ContentBlock[], options: SubagentFollowupOptions): Promise<MessageId>;\n    interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void;\n    async reportFrom(child: Agent, content: ContentBlock[], options: SubagentReportOptions): Promise<MessageId>;\n    registerContinuableSetup(contribution: ContinuableSetupContribution): () => void;\n    async drainContinuableDescendants(parents: readonly Agent[]): Promise<void>;\n    async drainContinuableChildren(parent: Agent, childIds: readonly SessionId[]): Promise<void>;\n    listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<SubagentListEntry[]>;\n    listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<SubagentDescendantListEntry[]>;\n    registerProvider(provider: SubagentProvider): () => void;\n    getProvider(name: string): SubagentProvider | undefined;\n    list(): string[];\n    async start(name: string, request: SubagentStartRequest): Promise<SubagentRun>;\n}',
+  },
+  {
+    name: 'SubagentsApi',
+    declaration: 'export interface SubagentsApi {\n    list(request: RpcRequest<{\n        parentSessionId: SessionId;\n    }>, signal?: AbortSignal): Promise<RpcResponse<SubagentCatalog>>;\n    history(request: RpcRequest<SubagentAddress & {\n        beforeSeq?: number;\n        maxMessages?: number;\n    }>, signal?: AbortSignal): Promise<RpcResponse<{\n        events: HistoryEntry[];\n        hasMore: boolean;\n        projections?: SessionProjectionsBlock;\n    }>>;\n    prompt(request: RpcRequest<Extract<SubagentAddress, {\n        mode: \'continuable\';\n    }> & {\n        content: ContentBlock[];\n        clientTimeZone?: string;\n    }>, signal: AbortSignal): Promise<RpcResponse<SubagentPromptReceipt>>;\n    interrupt(request: RpcRequest<Extract<SubagentAddress, {\n        mode: \'continuable\';\n    }>>): Promise<RpcResponse<SubagentInterruptReceipt>>;\n}',
   },
   {
     name: 'SubagentStartRequest',
@@ -4545,6 +5050,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ToolErrorInfo {\n    name: string;\n    code: string;\n}',
   },
   {
+    name: 'ToolEventView',
+    declaration: 'export type ToolEventView = {\n    for: \'call\';\n    view: ToolCallView;\n} | {\n    for: \'result\';\n    view: ToolResultView;\n};',
+  },
+  {
     name: 'ToolExecution',
     declaration: 'export interface ToolExecution extends ToolExecutionInput {\n    readonly rootCallId: CallId;\n    readonly token: ToolExecutionToken;\n}',
   },
@@ -4631,6 +5140,30 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ToolSchema',
     declaration: 'export interface ToolSchema {\n    name: string;\n    description: string;\n    parameters: Record<string, unknown>;\n}',
+  },
+  {
+    name: 'TrustedRemoteConnection',
+    declaration: 'export interface TrustedRemoteConnection {\n    readonly peer: TrustedRemotePeerIdentity;\n    readonly route: TrustedRemoteRoute;\n    receive(signal: AbortSignal): AsyncIterable<RemoteWireEnvelope>;\n    send(envelope: RemoteWireEnvelope, fence: TrustedRemoteSendFence): Promise<TrustedRemoteSendResult>;\n    close(reason: RemoteGatewayCloseReason): Promise<void>;\n}',
+  },
+  {
+    name: 'TrustedRemoteConnectionProvider',
+    declaration: 'export interface TrustedRemoteConnectionProvider {\n    accept(signal: AbortSignal): AsyncIterable<TrustedRemoteConnection>;\n}',
+  },
+  {
+    name: 'TrustedRemotePeerIdentity',
+    declaration: 'export interface TrustedRemotePeerIdentity {\n    readonly deviceId: RemoteDeviceId;\n    readonly enrollmentId: RemoteDeviceIncarnation;\n    readonly signingPublicKey: string;\n    readonly agreementPublicKey: string;\n}',
+  },
+  {
+    name: 'TrustedRemoteRoute',
+    declaration: 'export interface TrustedRemoteRoute {\n    readonly routeId: string;\n    readonly generation: number;\n    readonly connectionEpoch: number;\n}',
+  },
+  {
+    name: 'TrustedRemoteSendFence',
+    declaration: 'export interface TrustedRemoteSendFence {\n    active: boolean;\n    generation: number;\n    abortSignal: AbortSignal;\n}',
+  },
+  {
+    name: 'TrustedRemoteSendResult',
+    declaration: 'export type TrustedRemoteSendResult = {\n    readonly status: \'committed-before-fence\';\n} | {\n    readonly status: \'not-committed\';\n};',
   },
   {
     name: 'TurnEndCancelCause',
@@ -4831,6 +5364,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkflowStopReason',
     declaration: 'export type WorkflowStopReason = \'completed\' | \'cancelled\' | \'error\';',
+  },
+  {
+    name: 'WorkspaceApi',
+    declaration: 'export interface WorkspaceApi {\n    list(request: RpcRequest<{}>): Promise<RpcResponse<{\n        items: WorkspaceView[];\n        archivedSessionIds: SessionId[];\n    }>>;\n    create(request: RpcRequest<{\n        path: string;\n    }>): Promise<RpcResponse<{\n        workspace: WorkspaceView;\n        created: boolean;\n    }>>;\n    rename(request: RpcRequest<{\n        workspaceId: WorkspaceId;\n        title: string;\n    }>): Promise<RpcResponse<{\n        workspace: WorkspaceView;\n    }>>;\n    delete(request: RpcRequest<{\n        workspaceId: WorkspaceId;\n    }>): Promise<RpcResponse<{\n        deleted: true;\n    }>>;\n    insertBefore(request: RpcRequest<{\n        workspaceId: WorkspaceId;\n        beforeWorkspaceId?: WorkspaceId;\n    }>): Promise<RpcResponse<{\n        workspaceIds: WorkspaceId[];\n    }>>;\n    insertSessionBefore(request: RpcRequest<{\n        workspaceId: WorkspaceId;\n        sessionId: SessionId;\n        beforeSessionId?: SessionId;\n    }>): Promise<RpcResponse<{\n        workspace: WorkspaceView;\n    }>>;\n    archiveSession(request: RpcRequest<{\n        sessionId: SessionId;\n    }>): Promise<RpcResponse<{\n        archivedSessionIds: SessionId[];\n    }>>;\n}',
+  },
+  {
+    name: 'WorkspaceView',
+    declaration: 'export interface WorkspaceView {\n    workspaceId: WorkspaceId;\n    path: string;\n    title: string;\n    sessionIds: SessionId[];\n    createdAt: string;\n    updatedAt: string;\n}',
   },
 ]
 

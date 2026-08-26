@@ -2,18 +2,20 @@
 
 English | [中文](README.zh.md)
 
-`@deepseek-ai/dsh-mobile` is the foreground-only native Expo companion for one desktop-selected DSH session. It presents a session-first workspace and an immersive text conversation while DSH desktop retains execution, approvals, local permissions, files, credentials, workspace changes, attachments, settings, and session creation.
-
-The version-two mobile transport uses the deployed version-two relay. A phone still does not show a connection as live until the desktop has cryptographically accepted its pairing request.
+`@deepseek-ai/dsh-mobile` is the foreground-only native Expo owner client for one signed DSH Host. It shows the Host's live sessions and text conversation while execution, approvals, permissions, files, credentials, workspace changes, attachments, and settings stay on the Host.
 
 ## Pairing and connection
 
-The user pastes a short-lived version-two QR bootstrap created by DSH desktop. The app parses it in memory, immediately clears the raw text field, and accepts only the compiled DSH Cloudflare relay origin. It uses Expo Crypto's native CSPRNG to create an in-memory X25519 mobile key, connects through the exact `dsh-pairing-v2` WebSocket protocol with the mobile relay bearer in the role-bound subprotocol, never in a URL, sends `mobile-init`, and waits for a cryptographically verified `desktop-accept` before deriving the directional session cipher.
+The production flow creates a protected Ed25519 signing identity and an independent X25519 agreement identity in the iOS Keychain. The native module exposes public keys and a user-presence-gated agreement operation, never private-key bytes. Expo Go does not contain this module; pairing and connection require a custom native or TestFlight build.
 
-The app ends its connection on expiry, rejection, malformed traffic, socket failure, user disconnection, or any background transition. Ending a pairing closes the socket and erases the QR bootstrap, relay bearer, ephemeral key, and session cipher from memory. The phone does not reconnect or restore a prior pairing.
+For internet pairing, the phone scans or enters the short-lived `dsh3` code shown by the signed Host, sends only its public enrollment offer to the fixed relay origin, displays the complete fingerprint for Host-side comparison, and waits for local Host approval. The returned invitation is encrypted to that phone identity and contains the device route credential, Host pin, enrollment incarnations, and exact next connection epoch, but no Host credential or private key. A local file or clipboard transfer of the same public offer and phone-safe invitation remains available.
+
+The app stores one verified invitation, event cursor, and next epoch in its native Keychain record. It opens no socket during import. An explicit connect action performs the authenticated V3 relay handshake and reports live state only after the Host commit is verified. Backgrounding or disconnect closes the physical transport and clears the in-memory presence session; a later explicit retry uses only the Host-issued exact next epoch.
 
 ## Mobile scope
 
-After desktop acceptance, the app decrypts only safe session snapshots, text deltas, turn state, and safe errors. It can encrypt only desktop-approved text submission requests for the desktop-selected session. This foreground release cannot cancel a turn because it has no trustworthy desktop run identity; cancellation returns only with a run-identity design. The UI never shows preview, cached, or disconnected content as live data.
+After Host acceptance, the app receives a Host snapshot and ordered events, lists and creates sessions, selects a Host session, and sends text prompts through the fixed remote-wire API. It acknowledges an event cursor only after the native store durably applies it. A fresh app projection resets its cursor to request replay instead of presenting absent local content as current.
 
-Camera pairing and durable key or session storage are intentionally absent. The app uses the official DeepSeek mark from [`website/public/favicon.svg`](../../website/public/favicon.svg) for its app and in-product icon surfaces while retaining the separate DSH product name.
+Camera scanning is limited to the short-lived Host pairing code. The app never persists rendered conversation content and does not provide macOS computer-use capture or control. **Forget invitation** disconnects and removes the phone's local route state; it does not revoke the Host route. Revocation remains an explicit action on the signed Host and requires fresh pairing before that phone can connect again.
+
+The app uses the official DeepSeek mark from [`website/public/favicon.svg`](../../website/public/favicon.svg) for its app and in-product icon surfaces while retaining the separate DSH product name. The production release and different-network device matrix are in the [remote-pairing release cookbook](../../docs/cookbook/releasing-dsh-remote-pairing.md).

@@ -25,7 +25,11 @@ export class RemoteHostV3Error extends Error {
   }
 }
 
-/** @param value - Unknown thrown value. @returns whether it is a Host V3 composition error. */
+/**
+ * Checks whether a thrown value is a Host V3 composition error.
+ * @param value - Unknown thrown value.
+ * @returns whether it is a Host V3 composition error.
+ */
 export function isRemoteHostV3Error(value: unknown): value is RemoteHostV3Error {
   return value instanceof RemoteHostV3Error
 }

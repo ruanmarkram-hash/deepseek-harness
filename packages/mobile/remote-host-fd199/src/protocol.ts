@@ -220,7 +220,11 @@ export function strictJsonParse(text: string): unknown {
   return value
 }
 
-/** @param message - Validated client message. @returns exact UTF-8 body bytes for one frame. */
+/**
+ * Encodes one validated client message as a bounded frame body.
+ * @param message - Validated client message.
+ * @returns exact UTF-8 body bytes for one frame.
+ */
 export function encodeClientFrame(message: ClientMessage): Uint8Array {
   const schema = CLIENT_SCHEMAS[message.kind]
   const parsed = schema.safeParse(message)
@@ -228,7 +232,11 @@ export function encodeClientFrame(message: ClientMessage): Uint8Array {
   return encodeBody(parsed.data)
 }
 
-/** @param message - Validated authority message. @returns exact UTF-8 body bytes for one frame. */
+/**
+ * Encodes one validated authority message as a bounded frame body.
+ * @param message - Validated authority message.
+ * @returns exact UTF-8 body bytes for one frame.
+ */
 export function encodeAuthorityFrame(message: AuthorityMessage): Uint8Array {
   const schema = AUTHORITY_SCHEMAS[message.kind]
   const parsed = schema.safeParse(message)

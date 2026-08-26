@@ -144,11 +144,17 @@ interface ConnectionLifetime {
 /** A one-way, bounded async queue. Every close is terminal and can carry one non-sensitive error. */
 class AsyncQueue<T> {
   private readonly values: Array<{ readonly value: T; readonly bytes: number }> = []
-  private readonly waiters: Array<{ readonly resolve: (value: IteratorResult<T>) => void; readonly reject: (error: RemoteHostV3Error) => void }> = []
+  private readonly waiters: Array<{
+    readonly resolve: (value: IteratorResult<T>) => void
+    readonly reject: (error: RemoteHostV3Error) => void
+  }> = []
   private ended: RemoteHostV3Error | undefined
   private pendingBytes = 0
 
-  /** @param maxItems - Maximum values retained while no consumer is waiting. @param maxBytes - Maximum retained bytes while no consumer is waiting. */
+  /**
+   * @param maxItems - Maximum values retained while no consumer is waiting.
+   * @param maxBytes - Maximum retained bytes while no consumer is waiting.
+   */
   constructor(private readonly maxItems: number, private readonly maxBytes: number) {}
 
   /** @returns whether this value was accepted without exceeding either bounded queue budget. */
@@ -364,11 +370,24 @@ function consumeOne(buffer: Bytes, offset: number): { readonly record?: RemoteHo
   }
 }
 
-/** @param kind - Fixed record kind. @param value - JSON metadata. @param payload - Opaque bounded payload. @returns Swift-compatible encoded record. */
-function encode(kind: RemoteHostV3WireKind, value: Record<string, unknown> | undefined = undefined, payload: Bytes = new Uint8Array()): Bytes {
+/**
+ * @param kind - Fixed record kind.
+ * @param value - JSON metadata.
+ * @param payload - Opaque bounded payload.
+ * @returns Swift-compatible encoded record.
+ */
+function encode(
+  kind: RemoteHostV3WireKind,
+  value: Record<string, unknown> | undefined = undefined,
+  payload: Bytes = new Uint8Array(),
+): Bytes {
   const metadataBytes = value === undefined ? new Uint8Array() : TEXT.encode(JSON.stringify(value))
   const kindByte = BYTE_BY_KIND.get(kind)
-  if (kindByte === undefined || metadataBytes.byteLength > REMOTE_HOST_V3_WIRE_MAX_METADATA_BYTES || payload.byteLength > REMOTE_HOST_V3_WIRE_MAX_RECORD_BYTES - 3 - metadataBytes.byteLength) {
+  if (
+    kindByte === undefined
+    || metadataBytes.byteLength > REMOTE_HOST_V3_WIRE_MAX_METADATA_BYTES
+    || payload.byteLength > REMOTE_HOST_V3_WIRE_MAX_RECORD_BYTES - 3 - metadataBytes.byteLength
+  ) {
     throw malformed('Remote Wire outbound record is invalid')
   }
   const result = new Uint8Array(7 + metadataBytes.byteLength + payload.byteLength)
@@ -382,7 +401,10 @@ function encode(kind: RemoteHostV3WireKind, value: Record<string, unknown> | und
 
 /** A private pipe connection. It offers only the gateway provider contract, never a raw channel or Host operation surface. */
 class InheritedWireConnection implements TrustedRemoteConnection {
-  private readonly received = new AsyncQueue<RemoteWireEnvelope>(REMOTE_HOST_V3_WIRE_MAX_CONNECTION_QUEUE_ITEMS, REMOTE_HOST_V3_WIRE_MAX_CONNECTION_QUEUE_BYTES)
+  private readonly received = new AsyncQueue<RemoteWireEnvelope>(
+    REMOTE_HOST_V3_WIRE_MAX_CONNECTION_QUEUE_ITEMS,
+    REMOTE_HOST_V3_WIRE_MAX_CONNECTION_QUEUE_BYTES,
+  )
   private state: 'open' | 'overflowed' | 'closed' = 'open'
   readonly lifetime: ConnectionLifetime = { active: true, pendingSends: 0 }
 
@@ -485,7 +507,10 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
   private currentOutbound: PendingWrite | undefined
   private seeded = false
 
-  /** @param channel - Already-inherited connected descriptor, supplied only by the verified runtime bootstrap. @param allocator - Durable public route and epoch owner. */
+  /**
+   * @param channel - Already-inherited connected descriptor, supplied only by the verified runtime bootstrap.
+   * @param allocator - Durable public route and epoch owner.
+   */
   constructor(
     private readonly channel: Duplex,
     private readonly allocator: RemoteHostV3RouteAllocator,
@@ -508,8 +533,22 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
     }
   }
 
-  /** @internal Emits a bounded `connection.send` after the gateway's local fence is still active. */
-  async writeConnectionSend(connectionId: string, payload: Bytes, fence: TrustedRemoteSendFence, reservation: OutboundReservation, lifetime: ConnectionLifetime): Promise<void> {
+  /**
+   * Queues one bounded send while its fence and connection lifetime remain active.
+   * @internal
+   * @param connectionId - Private-wire connection identifier.
+   * @param payload - Serialized remote-wire envelope bytes.
+   * @param fence - Gateway-owned local send fence.
+   * @param reservation - Reserved outbound capacity consumed by this write.
+   * @param lifetime - Current connection lifetime used to prevent ID reuse.
+   */
+  async writeConnectionSend(
+    connectionId: string,
+    payload: Bytes,
+    fence: TrustedRemoteSendFence,
+    reservation: OutboundReservation,
+    lifetime: ConnectionLifetime,
+  ): Promise<void> {
     if (!fence.active || fence.abortSignal.aborted) throw new RemoteHostV3Error('REMOTE_HOST_V3_WIRE_CLOSED', 'Connection send fence is inactive')
     lifetime.pendingSends += 1
     try {
@@ -521,12 +560,21 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
     }
   }
 
-  /** @internal Emits a bounded `connection.close`; no arbitrary close payload is supported. */
+  /**
+   * Emits a bounded close record with no arbitrary payload.
+   * @internal
+   * @param connectionId - Private-wire connection identifier.
+   * @param reason - Stable gateway close reason.
+   */
   async writeConnectionClose(connectionId: string, reason: RemoteGatewayCloseReason): Promise<void> {
     await this.write('connection.close', { connectionId, reason })
   }
 
-  /** @internal Reserve one worst-case encoded record before user-controlled envelope serialization. */
+  /**
+   * Reserves one worst-case record before user-controlled envelope serialization.
+   * @internal
+   * @returns the active reservation that a send must consume or release.
+   */
   reserveConnectionSend(): OutboundReservation {
     if (this.closed) throw this.terminal ?? new RemoteHostV3Error('REMOTE_HOST_V3_WIRE_CLOSED', 'Private Remote Wire is closed')
     const bytes = REMOTE_HOST_V3_WIRE_MAX_OUTBOUND_BYTES - this.outboundBytes - this.reservedOutboundBytes
@@ -541,7 +589,11 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
     return reservation
   }
 
-  /** @internal Release a reservation when serialization or enqueueing does not consume it. */
+  /**
+   * Releases a reservation that serialization or enqueueing did not consume.
+   * @internal
+   * @param reservation - Active outbound capacity reservation.
+   */
   releaseOutboundReservation(reservation: OutboundReservation): void {
     if (!reservation.active) return
     reservation.active = false
@@ -678,8 +730,13 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
     }
     const existing = this.allocator.get(route.deviceId)
     if (existing !== undefined) {
-      if (existing.routeId !== route.routeId || existing.deviceEnrollmentId !== route.deviceEnrollmentId
-        || existing.hostDeviceId !== route.hostDeviceId || existing.hostEnrollmentId !== route.hostEnrollmentId || existing.generation !== route.generation) {
+      if (
+        existing.routeId !== route.routeId
+        || existing.deviceEnrollmentId !== route.deviceEnrollmentId
+        || existing.hostDeviceId !== route.hostDeviceId
+        || existing.hostEnrollmentId !== route.hostEnrollmentId
+        || existing.generation !== route.generation
+      ) {
         throw outOfOrder('Remote Wire route upsert conflicts with durable route')
       }
       return
@@ -702,7 +759,12 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
     if (devices === undefined) throw new RemoteHostV3Error('REMOTE_HOST_V3_HELPER_UNAVAILABLE', 'Private Remote Wire has no trusted device directory')
     const existing = devices.get(input.deviceId)
     const device = existing === undefined
-      ? await devices.enroll({ id: input.deviceId, label: input.label, signingPublicKey: input.signingPublicKey, agreementPublicKey: input.agreementPublicKey })
+      ? await devices.enroll({
+        id: input.deviceId,
+        label: input.label,
+        signingPublicKey: input.signingPublicKey,
+        agreementPublicKey: input.agreementPublicKey,
+      })
       : this.exactEnrolledDevice(existing, input)
     const hostEnrollmentId = await this.allocator.hostEnrollmentId()
     const receipt: RemoteHostV3EnrollmentReceipt = {
@@ -733,7 +795,12 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
     }
     const devices = this.devices
     if (devices === undefined) throw new RemoteHostV3Error('REMOTE_HOST_V3_HELPER_UNAVAILABLE', 'Private Remote Wire has no trusted device directory')
-    await devices.seed({ id: seed.deviceId, label: seed.label, signingPublicKey: seed.signingPublicKey, agreementPublicKey: seed.agreementPublicKey }, seed.deviceEnrollmentId)
+    await devices.seed({
+      id: seed.deviceId,
+      label: seed.label,
+      signingPublicKey: seed.signingPublicKey,
+      agreementPublicKey: seed.agreementPublicKey,
+    }, seed.deviceEnrollmentId)
     await this.allocator.seedHostEnrollmentId(seed.hostEnrollmentId)
     this.seeded = true
   }
@@ -747,7 +814,11 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
 
   /** Reject a retry that changes any part of an already enrolled public tuple. */
   private exactEnrolledDevice(existing: RemoteDeviceRecord, input: DeviceEnrollment): RemoteDeviceRecord {
-    if (existing.label !== input.label || existing.signingPublicKey !== input.signingPublicKey || existing.agreementPublicKey !== input.agreementPublicKey) {
+    if (
+      existing.label !== input.label
+      || existing.signingPublicKey !== input.signingPublicKey
+      || existing.agreementPublicKey !== input.agreementPublicKey
+    ) {
       throw outOfOrder('Remote Wire device enrollment conflicts with a durable device')
     }
     return existing
@@ -776,13 +847,19 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
   private async epochCommit(record: RemoteHostV3WireRecord): Promise<void> {
     this.emptyPayload(record)
     const value = exactObject(metadata(record.metadata), ['deviceId', 'connectionEpoch'])
-    const route = await this.allocator.commitConnection(identifier(value.deviceId) as RemoteDeviceId, positiveSequence(value.connectionEpoch))
+    const route = await this.allocator.commitConnection(
+      identifier(value.deviceId) as RemoteDeviceId,
+      positiveSequence(value.connectionEpoch),
+    )
     await this.write('epoch.committed', this.epochMetadata(route, route.lastConnectionEpoch))
   }
 
   private async connectionOpen(record: RemoteHostV3WireRecord): Promise<void> {
     this.emptyPayload(record)
-    const value = exactObject(metadata(record.metadata), ['connectionId', 'deviceId', 'enrollmentId', 'signingPublicKey', 'agreementPublicKey', 'routeId', 'generation', 'connectionEpoch'])
+    const value = exactObject(metadata(record.metadata), [
+      'connectionId', 'deviceId', 'enrollmentId', 'signingPublicKey',
+      'agreementPublicKey', 'routeId', 'generation', 'connectionEpoch',
+    ])
     const opened: ConnectionOpen = {
       connectionId: identifier(value.connectionId),
       peer: {
@@ -797,11 +874,21 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
         connectionEpoch: positiveSequence(value.connectionEpoch),
       },
     }
-    if (this.connections.has(opened.connectionId) || this.closingTombstones.has(opened.connectionId)) throw outOfOrder('Remote Wire connection id is already open')
-    if (this.connections.size >= REMOTE_HOST_V3_WIRE_MAX_CONNECTIONS) throw new RemoteHostV3Error('REMOTE_HOST_V3_WIRE_OVERFLOW', 'Private Remote Wire has too many open connections')
+    if (this.connections.has(opened.connectionId) || this.closingTombstones.has(opened.connectionId)) {
+      throw outOfOrder('Remote Wire connection id is already open')
+    }
+    if (this.connections.size >= REMOTE_HOST_V3_WIRE_MAX_CONNECTIONS) {
+      throw new RemoteHostV3Error('REMOTE_HOST_V3_WIRE_OVERFLOW', 'Private Remote Wire has too many open connections')
+    }
     const durable = this.allocator.get(opened.peer.deviceId)
-    if (durable === undefined || durable.routeId !== opened.route.routeId || durable.deviceEnrollmentId !== opened.peer.enrollmentId
-      || durable.generation !== opened.route.generation || durable.pendingConnectionEpoch !== undefined || durable.lastConnectionEpoch !== opened.route.connectionEpoch) {
+    if (
+      durable === undefined
+      || durable.routeId !== opened.route.routeId
+      || durable.deviceEnrollmentId !== opened.peer.enrollmentId
+      || durable.generation !== opened.route.generation
+      || durable.pendingConnectionEpoch !== undefined
+      || durable.lastConnectionEpoch !== opened.route.connectionEpoch
+    ) {
       throw outOfOrder('Remote Wire connection open does not match a committed durable epoch')
     }
     const connection = new InheritedWireConnection(opened.connectionId, opened.peer, opened.route, this)
@@ -837,7 +924,13 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
     this.retirePeerClosed(id, connection.lifetime)
   }
 
-  /** @internal Retain only a bounded acknowledgement marker after local connection termination. */
+  /**
+   * Retains a bounded acknowledgement marker after local connection termination.
+   * @internal
+   * @param id - Terminated private-wire connection identifier.
+   * @param state - Local terminal state retained for acknowledgement.
+   * @param lifetime - Terminated lifetime whose queued sends must settle before reuse.
+   */
   retireConnection(id: string, state: 'closed' | 'overflowed', lifetime: ConnectionLifetime): void {
     this.connections.delete(id)
     if (this.closed) return
@@ -850,7 +943,11 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
     this.closingTombstones.set(id, { state, lifetime, peerClosed: false, localCloseCommitted: false })
   }
 
-  /** @internal Mark a locally initiated close write as committed without permitting premature ID reuse. */
+  /**
+   * Marks a local close write committed without permitting premature ID reuse.
+   * @internal
+   * @param id - Closing private-wire connection identifier.
+   */
   markLocalCloseCommitted(id: string): void {
     const tombstone = this.closingTombstones.get(id)
     if (tombstone === undefined) return
@@ -885,7 +982,13 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
 
   private reapTombstone(id: string, lifetime: ConnectionLifetime): void {
     const tombstone = this.closingTombstones.get(id)
-    if (tombstone !== undefined && tombstone.lifetime === lifetime && tombstone.peerClosed && tombstone.localCloseCommitted && lifetime.pendingSends === 0) {
+    if (
+      tombstone !== undefined
+      && tombstone.lifetime === lifetime
+      && tombstone.peerClosed
+      && tombstone.localCloseCommitted
+      && lifetime.pendingSends === 0
+    ) {
       this.closingTombstones.delete(id)
     }
   }
@@ -904,7 +1007,13 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
     return { deviceId: route.deviceId, routeId: route.routeId, generation: route.generation, connectionEpoch }
   }
 
-  private async write(kind: RemoteHostV3WireKind, value?: Record<string, unknown>, payload?: Bytes, reservation?: OutboundReservation, canCommit?: () => boolean): Promise<void> {
+  private async write(
+    kind: RemoteHostV3WireKind,
+    value?: Record<string, unknown>,
+    payload?: Bytes,
+    reservation?: OutboundReservation,
+    canCommit?: () => boolean,
+  ): Promise<void> {
     if (this.closed) throw this.terminal ?? new RemoteHostV3Error('REMOTE_HOST_V3_WIRE_CLOSED', 'Private Remote Wire is closed')
     const encoded = encode(kind, value, payload)
     const reservedItems = this.outboundReservations.size - (reservation?.active ? 1 : 0)
@@ -1004,7 +1113,13 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
   }
 }
 
-/** Create the only production pipe source: the fixed descriptor inherited from the signed Host.app bootstrap. */
+/**
+ * Create the only production pipe source: the fixed descriptor inherited from the signed Host.app bootstrap.
+ * @param allocator - Durable public route and connection-epoch allocator.
+ * @param devices - Durable trusted-device directory used to validate native connection facts.
+ * @param requireEnrollmentSeed - Whether readiness requires the native Host enrollment seed first.
+ * @returns the authenticated connection pipe backed by the inherited descriptor.
+ */
 export function createRemoteHostV3InheritedWireProvider(
   allocator: RemoteHostV3RouteAllocator,
   devices: RemoteDeviceDirectory,

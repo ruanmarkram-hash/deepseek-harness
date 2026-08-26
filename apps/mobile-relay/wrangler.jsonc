@@ -4,6 +4,12 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-08-20",
   "workers_dev": true,
+  "routes": [
+    {
+      "pattern": "dshrelay.rulabs.dev",
+      "custom_domain": true
+    }
+  ],
   "alias": {
     "@deepseek-ai/dsh-pairing-protocol": "../../packages/mobile/pairing-protocol/src/index.ts",
     "@deepseek-ai/dsh-remote-relay-protocol": "../../packages/mobile/remote-relay-protocol/src/index.ts",

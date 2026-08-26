@@ -15,7 +15,11 @@ export class RemoteRelayProtocolError extends Error {
   }
 }
 
-/** @param value - unknown thrown value. @returns whether the value is a remote relay protocol failure. */
+/**
+ * Checks whether a thrown value is a remote relay protocol failure.
+ * @param value - unknown thrown value.
+ * @returns whether the value is a remote relay protocol failure.
+ */
 export function isRemoteRelayProtocolError(value: unknown): value is RemoteRelayProtocolError {
   return value instanceof RemoteRelayProtocolError
 }

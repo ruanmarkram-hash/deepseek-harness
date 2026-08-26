@@ -25,9 +25,11 @@ Malformed UTF-8/JSON, unknown or wrong-direction kinds, metadata or payload over
 ## Configuration
 
 ```ts
-interface Config {
-  enabled: boolean
-  hostAppPath: string
+import type * as RemoteHostV3 from '@deepseek-ai/dsh-remote-host-v3'
+
+const config: RemoteHostV3.Config = {
+  enabled: false,
+  hostAppPath: '/Applications/DSH Host.app/Contents/MacOS/DSH Host',
 }
 ```
 
@@ -51,7 +53,7 @@ The package neither creates nor rewrites model-visible request content, so it do
 
 ## Known Limitations and Deferred Work
 
-- A signed persistent DSH Host.app must package and verify its runtime child, implement the native relay owner, and pass the typed private pipe before this package can be enabled.
-- The signed Host.app must implement the fixed Remote Wire counterpart above before it can enable the bundled adapter; this TypeScript package neither adds nor changes native code.
-- The local Devices screen, invitation QR transfer, relay deployment, route repair or rotation UI, and first pairing remain separate privileged operations.
+- The signed persistent DSH Host packages and verifies its hosted runtime child, implements the fixed Remote Wire counterpart, and passes the typed private pipe. This package still fails closed in an ordinary source-launched `dsh web` process.
+- Route credentials, pairing approval, relay activation, rotation, repair, and revocation remain native Host operations. This package receives only authenticated connection facts and public route state.
+- The Host menu and mobile app provide first pairing, QR/code transfer, explicit activation, reconnect, revocation, and local forget flows. Production acceptance still requires the notarized Host and processed TestFlight build on different networks.
 - Computer-use capture and native control remain outside this transport and require their own macOS permission owner.

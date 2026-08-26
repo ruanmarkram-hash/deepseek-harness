@@ -22,13 +22,17 @@ const MAX_WEBSOCKET_MESSAGE_BYTES = 8 * 1024 * 1024
 const API_METHOD_PATH = /^\/api\/(?:session|subagent|host|workspace|skill|agentPreset|goal|settings|credentials|llm)\.[A-Za-z]+$/
 const EVENTS_PATHS = new Set(['/api/events.mux', '/api/events.host'])
 
-/** Builds the sole API carrier allowed for the sealed remote runtime: the existing local DSH Web Host. */
+/**
+ * Builds the sole API carrier allowed for the sealed remote runtime: the existing local DSH Web Host.
+ * @returns an API proxy restricted to the fixed loopback Host endpoints.
+ */
 export function createLoopbackApiProxy(): ApiProxy {
   const client = new LoopbackApiClient()
   const unary = <K extends keyof RpcMethodMap>(method: K) => (
     request: RpcRequest<RequestPayload<K>>,
     signal?: AbortSignal,
-  ): Promise<RpcResponse<ResponseValue<K>>> => client.call(method, request.payload, signal).then(response => ({ rpcId: request.rpcId, result: response.result }))
+  ): Promise<RpcResponse<ResponseValue<K>>> => client.call(method, request.payload, signal)
+    .then(response => ({ rpcId: request.rpcId, result: response.result }))
 
   return {
     sessions: {
@@ -156,7 +160,7 @@ class LoopbackApiClient extends AbstractApiClient {
           if (item === undefined) return
           yield item
         }
-        await new Promise<void>(resolve => { wake = resolve })
+        await new Promise<void>((resolve) => { wake = resolve })
       }
     } finally {
       signal.removeEventListener('abort', abort)
@@ -177,7 +181,7 @@ function messageBytes(data: WebSocket.RawData): number {
 
 async function closeSocket(socket: WebSocket): Promise<void> {
   if (socket.readyState === WebSocket.CLOSED) return
-  await new Promise<void>(resolve => {
+  await new Promise<void>((resolve) => {
     let settled = false
     let deadline: ReturnType<typeof setTimeout> | undefined
     const forceTerminate = (): void => {

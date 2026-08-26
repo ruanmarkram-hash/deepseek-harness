@@ -1557,6 +1557,45 @@ export type Config = LocalConfig
 
 来源：[`packages/shell/pwsh-sandbox/src/index.ts:40`](../packages/shell/pwsh-sandbox/src/index.ts)
 
+<a id="deepseek-aidsh-remote-gateway"></a>
+
+## `@deepseek-ai/dsh-remote-gateway`
+
+需要：`apiProxy` · `remoteDevices`
+
+```ts config-catalog
+/** Gateway memory limits. They are deployment settings, not wire constants. */
+export interface Config extends RemoteGatewayOptions {}
+
+/** Deployment-selected memory bounds for one live Host gateway. */
+export interface RemoteGatewayOptions {
+  /** Maximum retained completed idempotency entries for one trusted device. */
+  readonly maxIdempotencyEntriesPerDevice: number
+  /** Maximum ordered Host-event entries retained for one trusted device. */
+  readonly maxEventEntriesPerDevice: number
+}
+```
+
+来源：[`packages/mobile/remote-gateway/src/index.ts:67`](../packages/mobile/remote-gateway/src/index.ts)
+
+<a id="deepseek-aidsh-remote-host-v3"></a>
+
+## `@deepseek-ai/dsh-remote-host-v3`
+
+需要：`storageDomain` · `remoteDevices` · `remoteGateway`
+
+```ts config-catalog
+/** Deployment-selected Host V3 composition values. */
+export interface Config {
+  /** Starts the inherited-pipe gateway handoff only for a signed Host-app-owned runtime child. */
+  enabled: boolean
+  /** Absolute executable path the signed Host app must attest before its inherited pipe is accepted. */
+  hostAppPath: string
+}
+```
+
+来源：[`packages/mobile/remote-host-v3/src/index.ts:81`](../packages/mobile/remote-host-v3/src/index.ts)
+
 <a id="deepseek-aidsh-repeat-tool-reminder"></a>
 
 ## `@deepseek-ai/dsh-repeat-tool-reminder`
@@ -3242,6 +3281,9 @@ export interface Config {
 - `@deepseek-ai/dsh-host-plugin-inventory` — 需要 `loader`（[`packages/host/plugin-inventory/src/index.ts`](../packages/host/plugin-inventory/src/index.ts)）
 - `@deepseek-ai/dsh-llm`（[`packages/llm/llm/src/index.ts`](../packages/llm/llm/src/index.ts)）
 - `@deepseek-ai/dsh-lsp`（[`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts)）
+- `@deepseek-ai/dsh-remote-devices` — 需要 `storageDomain`（[`packages/mobile/remote-devices/src/index.ts`](../packages/mobile/remote-devices/src/index.ts)）
+- `@deepseek-ai/dsh-remote-host-fd199` — 需要 `remoteHostV3`（[`packages/mobile/remote-host-fd199/src/index.ts`](../packages/mobile/remote-host-fd199/src/index.ts)）
+- `@deepseek-ai/dsh-remote-host-identity` — 需要 `remoteDevices`（[`packages/mobile/remote-host-identity/src/index.ts`](../packages/mobile/remote-host-identity/src/index.ts)）
 - `@deepseek-ai/dsh-schedule` — 需要 `agents` · `sessions` · `tools` · `sessionPersistence`（[`packages/schedule/schedule/src/index.ts`](../packages/schedule/schedule/src/index.ts)）
 - `@deepseek-ai/dsh-session`（[`packages/core/session/src/index.ts`](../packages/core/session/src/index.ts)）
 - `@deepseek-ai/dsh-session-checkpoint-policy` — 需要 `llm` · `sessionPersistence` · `sessions` · `tools`（[`packages/session/session-checkpoint-policy/src/index.ts`](../packages/session/session-checkpoint-policy/src/index.ts)）
@@ -3305,6 +3347,8 @@ export interface Config {
 - `@deepseek-ai/dsh-native-command`（[`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts)）
 - `@deepseek-ai/dsh-output-retention`（[`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts)）
 - `@deepseek-ai/dsh-pairing-protocol`（[`packages/mobile/pairing-protocol/src/index.ts`](../packages/mobile/pairing-protocol/src/index.ts)）
+- `@deepseek-ai/dsh-remote-relay-protocol`（[`packages/mobile/remote-relay-protocol/src/index.ts`](../packages/mobile/remote-relay-protocol/src/index.ts)）
+- `@deepseek-ai/dsh-remote-wire`（[`packages/mobile/remote-wire/src/index.ts`](../packages/mobile/remote-wire/src/index.ts)）
 - `@deepseek-ai/dsh-sandbox-windows-acl`（[`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts)）
 - `@deepseek-ai/dsh-scope`（[`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts)）
 - `@deepseek-ai/dsh-sdk-client`（[`packages/sdk/client/src/index.ts`](../packages/sdk/client/src/index.ts)）

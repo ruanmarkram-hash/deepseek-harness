@@ -16,6 +16,6 @@ The relay validates field bounds and forwards controls and opaque frames unchang
 
 The only mobile capabilities are `session:read`, `session:subscribe`, `turn:send`, and `turn:cancel`. This package has no computer-use, filesystem, credentials, workspace, administration, session creation, attachment, or arbitrary-session capability.
 
-## Limitations
+## Known Limitations and Deferred Work
 
-The package has no WebSocket client, secure-storage provider, user-approval UI, live desktop or mobile app wiring, or DSH session gateway. It does not select a session, send a turn to DSH, receive a live DSH stream, reconnect in the background, or expose a general DSH API. Desktop and mobile integrations must supply platform CSPRNG adapters, retain active secrets only in memory, verify proofs before application traffic, and map the fixed allowlist to safe operations for one desktop-selected session. The relay never becomes a general DSH API proxy.
+- The package has no WebSocket client, secure-storage provider, user-approval UI, live desktop or mobile app wiring, or DSH session gateway. It does not select a session, send a turn to DSH, receive a live DSH stream, reconnect in the background, or expose a general DSH API. Desktop and mobile integrations must supply platform CSPRNG adapters, retain active secrets only in memory, verify proofs before application traffic, and map the fixed allowlist to safe operations for one desktop-selected session. The relay never becomes a general DSH API proxy.

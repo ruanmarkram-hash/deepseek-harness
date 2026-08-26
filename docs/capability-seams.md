@@ -61,6 +61,16 @@ flowchart LR
   pkg_storage_domain["storage-domain"]
   svc_storageDomain["ctx.storageDomain<br/>Domain data facility"]
   pkg_workspace["workspace"]
+  pkg_remote_devices["remote-devices"]
+  svc_remoteDevices["ctx.remoteDevices<br/>Trusted remote-device directory"]
+  pkg_remote_gateway["remote-gateway"]
+  pkg_remote_host_identity["remote-host-identity"]
+  pkg_remote_host_v3["remote-host-v3"]
+  svc_remoteEnrollment["ctx.remoteEnrollment<br/>Local remote-enrollment controller"]
+  svc_remoteGateway["ctx.remoteGateway<br/>Authenticated remote Host gateway"]
+  svc_remoteHostIdentity["ctx.remoteHostIdentity<br/>Secure-store-backed Host identity"]
+  svc_remoteHostV3["ctx.remoteHostV3<br/>Remote V3 route controller"]
+  pkg_remote_host_fd199["remote-host-fd199"]
   svc_messageFeedback["ctx.messageFeedback<br/>Lifecycle-bound message feedback"]
   svc_workspaceRegistry["ctx.workspaceRegistry<br/>Workspace entity registry"]
   svc_sessionQuery["ctx.sessionQuery<br/>Session reads, traces, filters, and search"]
@@ -247,6 +257,11 @@ flowchart LR
   pkg_permission_presets --> svc_permissionPresets
   pkg_plan_mode --> svc_planMode
   pkg_pwsh_local --> svc_shell
+  pkg_remote_devices --> svc_remoteDevices
+  pkg_remote_gateway --> svc_remoteGateway
+  pkg_remote_host_identity --> svc_remoteEnrollment
+  pkg_remote_host_identity --> svc_remoteHostIdentity
+  pkg_remote_host_v3 --> svc_remoteHostV3
   pkg_sandbox --> svc_sandbox
   pkg_sandbox_local --> svc_sandbox
   pkg_sandbox_policy --> svc_sandboxPolicy
@@ -338,6 +353,11 @@ flowchart LR
   svc_llm --> pkg_agent_loop
   svc_llm --> pkg_compaction_basic
   svc_lsp --> pkg_tool_lsp
+  svc_remoteDevices --> pkg_remote_gateway
+  svc_remoteDevices --> pkg_remote_host_identity
+  svc_remoteDevices --> pkg_remote_host_v3
+  svc_remoteGateway --> pkg_remote_host_v3
+  svc_remoteHostV3 --> pkg_remote_host_fd199
   svc_sandbox --> pkg_bash_sandbox
   svc_sandbox --> pkg_terminal_bash
   svc_sandboxPolicy --> pkg_bash_sandbox
@@ -435,6 +455,11 @@ flowchart LR
 | `ctx.sessionTelemetry` | `seam` | [`session-telemetry`](../packages/session/session-telemetry) | [`session-telemetry-otel`](../packages/session/session-telemetry-otel) | - | - | The seam captures, redacts, and hands session records to one backend; nothing else consumes the service — its output leaves the process. |
 | `ctx.storage` | `seam` | [`storage`](../packages/storage/storage) | [`storage-json`](../packages/storage/storage-json), [`storage-sqlite`](../packages/storage/storage-sqlite) | [`storage-domain`](../packages/storage/storage-domain) | - | Backends register side by side under names; data forms (domain first) mount on the hub and translate typed operations into opaque KV-unit primitives. |
 | `ctx.storageDomain` | `core` | [`storage-domain`](../packages/storage/storage-domain) | - | [`workspace`](../packages/workspace/workspace), [`message-feedback`](../packages/feedback/message-feedback) | - | Waits for every configured backend, then publishes the domain form as one lifecycle-bound service for typed durable state. |
+| `ctx.remoteDevices` | `core` | [`remote-devices`](../packages/mobile/remote-devices) | - | [`remote-gateway`](../packages/mobile/remote-gateway), [`remote-host-identity`](../packages/mobile/remote-host-identity), [`remote-host-v3`](../packages/mobile/remote-host-v3) | - | Owns durable public enrollment metadata and post-durability device changes; private keys and relay credentials stay outside the directory. |
+| `ctx.remoteEnrollment` | `core` | [`remote-host-identity`](../packages/mobile/remote-host-identity) | - | - | - | Issues and confirms local-only enrollment routes against the Host identity without mounting a network enrollment endpoint. |
+| `ctx.remoteGateway` | `core` | [`remote-gateway`](../packages/mobile/remote-gateway) | - | [`remote-host-v3`](../packages/mobile/remote-host-v3) | - | Attaches an already authenticated and decrypted connection to the Host API; it mounts no listener and emits payload-free audit records. |
+| `ctx.remoteHostIdentity` | `core` | [`remote-host-identity`](../packages/mobile/remote-host-identity) | - | - | - | Publishes the Host public identity while the injected native secure-store provider retains private key operations. |
+| `ctx.remoteHostV3` | `core` | [`remote-host-v3`](../packages/mobile/remote-host-v3) | - | [`remote-host-fd199`](../packages/mobile/remote-host-fd199) | - | Owns durable public route coordinates and composes an attested inherited runtime pipe with the authenticated gateway. |
 | `ctx.messageFeedback` | `core` | [`message-feedback`](../packages/feedback/message-feedback) | - | - | - | Owns local per-assistant-message feedback, lifecycle and target validation, per-item compare-and-set, and the Host unary Remote contract without entering Session history or telemetry. |
 | `ctx.workspaceRegistry` | `core` | [`workspace`](../packages/workspace/workspace) | - | `apiproxy` | - | Owns WorkspaceId-branded records over the domain facility; stable sessionIds accounts drive Host RPC and GUI projections. |
 | `ctx.sessionQuery` | `seam` | [`session-query`](../packages/session-query/session-query) | [`session-query-sqlite`](../packages/session-query/session-query-sqlite) | [`session-reference`](../packages/context/session-reference), [`tool-session-query`](../packages/session-query/tool-session-query) | - | The interface supplies exact reads, filters, and traces; its concrete backend adds full-text reconciliation, ranking, snippets, and cursor generations, while the model consumer owns workspace authority and cursor-free rendering. |

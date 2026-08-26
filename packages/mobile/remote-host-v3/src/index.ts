@@ -144,7 +144,10 @@ export class RemoteHostV3RouteAllocator {
     private readonly newId: () => string = () => randomUUID(),
   ) {}
 
-  /** @returns stable Host identity incarnation, creating it inside the durable Host profile exactly once. */
+  /**
+   * Reads or creates the durable Host identity incarnation.
+   * @returns stable Host identity incarnation, creating it inside the durable Host profile exactly once.
+   */
   async hostEnrollmentId(): Promise<string> {
     return this.writes.run(async () => {
       const existing = this.host.get('identity')
@@ -177,20 +180,31 @@ export class RemoteHostV3RouteAllocator {
     })
   }
 
-  /** @returns stable public route copies in device-id order. */
+  /**
+   * Lists stable public route copies in device-id order.
+   * @returns stable public route copies in device-id order.
+   */
   list(): readonly RemoteHostV3Route[] {
     return [...this.routes.entries()]
       .map(([, route]) => copyRoute(route))
       .sort((left, right) => String(left.deviceId).localeCompare(String(right.deviceId)))
   }
 
-  /** @param deviceId - Trusted device. @returns its public route, if one exists. */
+  /**
+   * Looks up the current public route for a trusted device.
+   * @param deviceId - Trusted device.
+   * @returns its public route, if one exists.
+   */
   get(deviceId: RemoteDeviceId): RemoteHostV3Route | undefined {
     const route = this.routes.get(deviceId)
     return route === undefined ? undefined : copyRoute(route)
   }
 
-  /** @param input - Public facts for a newly provisioned native relay route. @returns the durable route. */
+  /**
+   * Creates a durable public route for a newly provisioned native relay route.
+   * @param input - Public facts for the new route.
+   * @returns the durable route.
+   */
   async create(input: Omit<RemoteHostV3Route, 'generation' | 'lastConnectionEpoch' | 'pendingConnectionEpoch' | 'createdAt'> & { readonly generation: number }): Promise<RemoteHostV3Route> {
     const hostEnrollmentId = await this.hostEnrollmentId()
     if (input.hostEnrollmentId !== hostEnrollmentId) {
@@ -207,7 +221,11 @@ export class RemoteHostV3RouteAllocator {
     })
   }
 
-  /** @param deviceId - Route owner. @returns a durable exact next epoch; retries keep the existing pending epoch. */
+  /**
+   * Begins or resumes allocation of the route's exact next connection epoch.
+   * @param deviceId - Route owner.
+   * @returns a durable exact next epoch; retries keep the existing pending epoch.
+   */
   async beginConnection(deviceId: RemoteDeviceId): Promise<RemoteHostV3Route> {
     return this.writes.run(async () => {
       const current = this.routes.get(deviceId)
@@ -220,7 +238,12 @@ export class RemoteHostV3RouteAllocator {
     })
   }
 
-  /** @param deviceId - Route owner. @param epoch - Mutually-completed exact epoch. @returns committed public route. */
+  /**
+   * Commits the exact connection epoch completed by both peers.
+   * @param deviceId - Route owner.
+   * @param epoch - Mutually-completed exact epoch.
+   * @returns committed public route.
+   */
   async commitConnection(deviceId: RemoteDeviceId, epoch: number): Promise<RemoteHostV3Route> {
     return this.writes.run(async () => {
       const current = this.routes.get(deviceId)
@@ -235,7 +258,11 @@ export class RemoteHostV3RouteAllocator {
     })
   }
 
-  /** @param deviceId - Route owner. @returns the removed public route. */
+  /**
+   * Removes a device's durable public route.
+   * @param deviceId - Route owner.
+   * @returns the removed public route, or `undefined` when no route existed.
+   */
   async remove(deviceId: RemoteDeviceId): Promise<RemoteHostV3Route | undefined> {
     return this.writes.run(async () => {
       const current = this.routes.get(deviceId)
@@ -267,7 +294,10 @@ export class RemoteHostV3Controller implements RemoteHostV3ControllerApi {
     private readonly config: Config,
   ) {}
 
-  /** @inheritdoc */
+  /**
+   * Lists the allocator's durable public routes without credentials or ciphertext.
+   * @returns durable public routes without route tokens, private keys, or ciphertext.
+   */
   listRoutes(): readonly RemoteHostV3Route[] { return this.allocator.list() }
 
   /** Begin the generic gateway's receive loop over the signed Host app's inherited private pipe. */
@@ -306,13 +336,14 @@ export class RemoteHostV3Controller implements RemoteHostV3ControllerApi {
    * @param descriptor - Inherited relay descriptor; only the fixed value is accepted.
    * @param hostAppPath - Absolute path announced by the proven FD199 authority.
    * @param inheritedPipe - Test-only prebuilt pipe; production always adopts descriptor 198.
+   * @param requireEnrollmentSeed - Whether runtime readiness requires the native Host enrollment seed first.
    * @returns the native provider for {@link startWithNative}.
    */
   createInheritedNativeProvider(
     descriptor: number,
     hostAppPath: string,
-    inheritedPipe?: RemoteHostV3RuntimePipe  ,
-    requireEnrollmentSeed = false,
+    inheritedPipe?: RemoteHostV3RuntimePipe,
+    requireEnrollmentSeed: boolean = false,
   ): RemoteHostV3NativeProvider {
     if (!this.config.enabled) throw new RemoteHostV3Error('REMOTE_HOST_V3_DISABLED', 'Remote Host V3 is disabled')
     if (descriptor !== REMOTE_HOST_V3_PRIVATE_FD || !absolutePath(hostAppPath)) {
@@ -384,7 +415,13 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   }
 }
 
-/** Testable defer decision: hosted launch + enabled + no provider + empty marker path. */
+/**
+ * Decides whether a hosted launch must wait for its later FD199 activation.
+ * @param config - Enabled state and signed Host-app path marker.
+ * @param native - Native provider available during initial composition.
+ * @param hostedLaunch - Whether argv proves the fixed hosted-runtime invocation.
+ * @returns whether startup must defer to the FD199 handoff.
+ */
 export function shouldDeferStart(
   config: { enabled: boolean; hostAppPath: string },
   native: RemoteHostV3NativeProvider | undefined,

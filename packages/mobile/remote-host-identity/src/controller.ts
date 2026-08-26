@@ -27,7 +27,10 @@ export class RemoteEnrollmentController implements RemoteEnrollmentControllerApi
     private readonly now: () => Date = () => new Date(),
   ) {}
 
-  /** @inheritdoc */
+  /**
+   * Issues one in-memory route carrying separate Host and client relay credentials.
+   * @returns the newly issued one-time route and copy-safe client invitation.
+   */
   issueRoute(): Promise<RemoteEnrollmentRoute> {
     this.dropExpiredRoutes()
     if (this.pendingRoutes.size >= MAX_PENDING_ROUTES) {
@@ -46,7 +49,11 @@ export class RemoteEnrollmentController implements RemoteEnrollmentControllerApi
     return Promise.resolve({ hostAuthToken: route.hostAuthToken, invitation: copyInvitation(invitation) })
   }
 
-  /** @inheritdoc */
+  /**
+   * Consumes an exact pending invitation before durably enrolling its public device identity.
+   * @param input - Local confirmation containing the issued invitation and remote public identity.
+   * @returns the durably enrolled public device record.
+   */
   async confirm(input: RemoteEnrollmentConfirmation): Promise<RemoteDeviceRecord> {
     this.dropExpiredRoutes()
     const issued = this.pendingRoutes.get(input.route.routeId)

@@ -25,9 +25,11 @@ runtime 先发送空的 `runtime.ready`。FD199 托管 child 随后必须先接�
 ## 配置
 
 ```ts
-interface Config {
-  enabled: boolean
-  hostAppPath: string
+import type * as RemoteHostV3 from '@deepseek-ai/dsh-remote-host-v3'
+
+const config: RemoteHostV3.Config = {
+  enabled: false,
+  hostAppPath: '/Applications/DSH Host.app/Contents/MacOS/DSH Host',
 }
 ```
 
@@ -51,7 +53,7 @@ interface Config {
 
 ## 已知限制与延期工作
 
-- 需要一个已签名持久 DSH Host.app 打包并验证其 runtime child、实现 native relay owner，并传递 typed private pipe，之后才可启用此包。
-- 已签名 Host.app 必须先实现上述固定 Remote Wire counterpart 才能启用 bundled adapter；此 TypeScript 包不会添加或修改 native code。
-- 本地 Devices 屏幕、invitation QR 传递、中继部署、route 修复或轮换 UI 与首次配对仍是独立的特权操作。
+- 已签名持久 DSH Host 会打包并验证其托管 runtime child、实现固定 Remote Wire counterpart，并传入 typed private pipe。普通源码启动的 `dsh web` 进程仍会让此包失败关闭。
+- 路由凭据、配对批准、relay 激活、轮换、修复和撤销仍是原生 Host 操作。此包只接收经过认证的 connection fact 和公开路由状态。
+- Host 菜单和移动应用提供首次配对、QR 或代码传输、显式激活、重连、撤销和本地忘记流程。生产验收仍要求已公证 Host 与已处理 TestFlight 构建在不同网络上通过。
 - 计算机使用采集与原生控制不属于此 transport，需要单独的 macOS 权限所有者。

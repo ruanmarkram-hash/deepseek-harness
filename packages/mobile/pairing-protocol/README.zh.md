@@ -16,6 +16,6 @@
 
 唯一的移动端能力是 `session:read`、`session:subscribe`、`turn:send` 和 `turn:cancel`。该包没有计算机使用、文件系统、凭据、workspace、管理、创建会话、附件或任意会话访问能力。
 
-## 限制
+## 已知限制与延期工作
 
-该包没有 WebSocket client、安全存储 provider、用户批准 UI、已接入的桌面端或移动端应用，或 DSH session gateway。它不会选择会话、把轮次发送给 DSH、接收实时 DSH stream、在后台重连，或暴露通用 DSH API。桌面端和移动端集成必须提供平台 CSPRNG adapter，只在内存保留活跃 secret，在 application traffic 之前验证 proof，并把固定允许列表映射到一个由桌面端选择的会话的安全操作。中继永远不会成为通用 DSH API proxy。
+- 该包没有 WebSocket client、安全存储 provider、用户批准 UI、已接入的桌面端或移动端应用，或 DSH session gateway。它不会选择会话、把轮次发送给 DSH、接收实时 DSH stream、在后台重连，或暴露通用 DSH API。桌面端和移动端集成必须提供平台 CSPRNG adapter，只在内存保留活跃 secret，在 application traffic 之前验证 proof，并把固定允许列表映射到一个由桌面端选择的会话的安全操作。中继永远不会成为通用 DSH API proxy。

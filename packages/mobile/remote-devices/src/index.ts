@@ -88,6 +88,7 @@ declare module '@deepseek-ai/cordis' {
     /**
      * A trusted device was durably enrolled, seen, or revoked. The event
      * contains public metadata only and fires after the durable mutation.
+     * @mode emit
      * @param change - Post-durability device-directory change.
      */
     'remote-devices/changed'(change: RemoteDeviceChange): void

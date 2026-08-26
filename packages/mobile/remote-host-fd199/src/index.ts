@@ -49,7 +49,7 @@ export type {
 export const name = 'remote-host-fd199'
 
 /** The enabled V3 route composition must exist before the handoff can attach its relay. */
-export const inject = ['remoteHostV3'] as const
+export const inject = ['remoteHostV3']
 
 declare module '@deepseek-ai/cordis' {
   interface Context {

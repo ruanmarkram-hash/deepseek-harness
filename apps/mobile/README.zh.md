@@ -2,18 +2,20 @@
 
 [English](README.md) | 中文
 
-`@deepseek-ai/dsh-mobile` 是一个仅在前台运行的原生 Expo 伴侣应用，用于一个由桌面端选定的 DSH 会话。它提供以会话为中心的工作区和沉浸式文本对话，而 DSH 桌面端保留执行、批准、本地权限、文件、凭据、workspace 变更、附件、设置和会话创建权限。
-
-版本二移动端 transport 使用已部署的版本二 relay。手机仍然只有在桌面端以密码学方式接受其配对请求后，才会将连接描述为实时状态。
+`@deepseek-ai/dsh-mobile` 是一个仅在前台运行的原生 Expo owner 客户端，用于连接一个已签名 DSH Host。它显示 Host 的实时会话和文本对话，而执行、审批、权限、文件、凭据、workspace 变更、附件和设置仍留在 Host。
 
 ## 配对与连接
 
-用户粘贴由 DSH 桌面端创建的短时版本二 QR bootstrap。应用在内存中解析它，立即清空原始文本字段，并且只接受编译进应用的 DSH Cloudflare relay origin。它使用 Expo Crypto 的原生 CSPRNG 创建内存中的 X25519 移动端密钥，使用精确的 `dsh-pairing-v2` WebSocket protocol 连接，并将移动端 relay bearer 放在角色绑定的 subprotocol 中，绝不放入 URL，发送 `mobile-init`，并在派生定向 session cipher 前等待经过密码学验证的 `desktop-accept`。
+生产流程在 iOS 钥匙串中创建受保护的 Ed25519 签名身份和独立 X25519 协商身份。原生模块只暴露公钥和受用户在场约束的协商操作，绝不暴露私钥字节。Expo Go 不包含该模块；配对和连接需要自定义原生构建或 TestFlight 构建。
 
-应用会在过期、拒绝、畸形 traffic、socket 失败、用户断开连接或任意后台切换时结束连接。结束配对会关闭 socket，并从内存中擦除 QR bootstrap、relay bearer、临时密钥和 session cipher。手机不会重连或恢复之前的配对。
+进行互联网配对时，手机扫描或输入已签名 Host 显示的短期 `dsh3` 代码，只向固定 relay origin 发送公开注册 offer，显示完整指纹供 Host 端比对，并等待 Host 本地批准。返回的邀请会加密给该手机身份，包含设备路由凭据、Host pin、注册 incarnation 和确切下一连接 epoch，但不包含 Host 凭据或私钥。仍可通过本地文件或剪贴板传输同一个公开 offer 和手机安全邀请。
+
+应用在原生钥匙串记录中存储一个已验证邀请、事件 cursor 和下一 epoch。导入时不会打开 socket。显式连接操作执行经过认证的 V3 relay 握手，只有验证 Host commit 后才报告实时状态。进入后台或断开连接会关闭物理 transport 并清除内存中的在场会话；之后的显式重试只使用 Host 签发的确切下一 epoch。
 
 ## 移动端范围
 
-在桌面端接受后，应用只解密安全的 session snapshot、text delta、turn state 和安全 error。它只能为桌面端选定的会话加密经桌面端批准的文本提交请求。此仅前台版本没有可信的桌面端 run identity，不能取消 turn；取消功能只会在具备 run-identity 设计后恢复。UI 绝不把预览、缓存或断开连接的内容描述为实时数据。
+Host 接受连接后，应用接收 Host snapshot 和有序事件，列出并创建会话，选择 Host 会话，并通过固定 remote-wire API 发送文本提示。只有原生存储持久应用事件 cursor 后，应用才确认该 cursor。新的应用投影视图会重置 cursor 以请求重放，而不会把缺失的本地内容显示为当前内容。
 
-相机配对和持久化密钥或会话存储被有意排除。应用将 [`website/public/favicon.svg`](../../website/public/favicon.svg) 中的官方 DeepSeek mark 用于应用和产品内图标，同时保留独立的 DSH 产品名称。
+相机扫描仅用于短期 Host 配对代码。应用从不持久化已渲染对话内容，也不提供 macOS computer-use 捕获或控制。**Forget invitation** 会断开连接并删除手机本地路由状态，但不会撤销 Host 路由。撤销仍是已签名 Host 上的显式操作，该手机必须重新配对才能再次连接。
+
+应用在自身图标和产品内图标表面使用来自 [`website/public/favicon.svg`](../../website/public/favicon.svg) 的 DeepSeek 官方标记，同时保留独立的 DSH 产品名称。生产发布和不同网络设备矩阵见[远程配对发布指南](../../docs/cookbook/releasing-dsh-remote-pairing.md)。

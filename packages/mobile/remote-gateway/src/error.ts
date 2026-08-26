@@ -9,7 +9,8 @@ export class RemoteGatewayError extends Error {
   }
 }
 
-/** @param value - Unknown caught value.
+/** Checks whether a caught value is a gateway lifecycle error.
+ * @param value - Unknown caught value.
  * @returns whether the value is a gateway lifecycle error.
  */
 export function isRemoteGatewayError(value: unknown): value is RemoteGatewayError {

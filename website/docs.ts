@@ -306,6 +306,7 @@ const subsystemGroups = [
     ['web-server.md', 'HTTP 服务器', 'HTTP server'],
     ['typert.md', 'Typert', 'Typert'],
     ['client-modules.md', '客户端模块', 'Client modules'],
+    ['mobile.md', '移动端远程接入', 'Mobile remote access'],
     ['storage.md', '存储', 'Storage'],
     ['workspace.md', '工作区', 'Workspaces'],
     ['settings.md', '用户设置', 'User settings'],

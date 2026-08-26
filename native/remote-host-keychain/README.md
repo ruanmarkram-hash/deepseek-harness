@@ -2,29 +2,24 @@
 
 English | [中文](README.zh.md)
 
-`dsh-remote-host-keychain` is a macOS XPC helper for the DSH Host's protected remote identity. It owns the long-lived Ed25519 signing key and independent X25519 agreement key. Its signed XPC client may open public identity or request one exact X25519 agreement with a 32-byte peer public key. JavaScript never receives a private-key value.
+`dsh-remote-host-keychain` is the sealed XPC helper inside the signed `DSHHost.app`. It owns the long-lived Ed25519 signing identity and independent X25519 agreement identity in the login Keychain. Private key bytes never enter JavaScript or cross the XPC interface.
 
-The helper validates its enclosing signed XPC bundle, strict code signature, and fixed identifier before it reads an authorization resource or touches Keychain. It stores one binary property-list identity per requested Host profile in the login Keychain with a `SecAccess` trusted-application ACL created from the helper's signed executable. The Keychain therefore recognizes the helper's designated code requirement, not the shared `/usr/bin/security` program. A malformed row, changed designated requirement, changed signed resource, invalid signature, or invalid CryptoKit key fails closed without rekeying.
+## Signed client authorization
 
-The service also reads a signed bundle resource containing its one authorized Host-client designated requirement, identifier, and build version. It derives the enclosing Host app and executable from its canonical `Contents/XPCServices/DSHRemoteHostKeychain.xpc` location, so moving the complete signed app does not invalidate authorization and no build-machine path is persisted. It then checks the live peer's exact derived process path, strict code requirement, identifier, and bundle version. macOS rejects every other XPC peer before the service sees a request. The Host client must set the service's designated requirement on its own `NSXPCConnection` before activation, so a separately registered service cannot impersonate the bundled helper. The executable has no standard-input protocol and does not perform signing or agreement when run directly, so it is not a same-user signing oracle.
+Before listening or touching Keychain, the helper validates its own strict code signature and fixed identifier. Its signed authorization resource contains the sole Host client's designated requirement, bundle identifier, and build version. The helper derives the enclosing Host app and `Contents/MacOS/dsh-remote-host-app` executable from its canonical `Contents/XPCServices/DSHRemoteHostKeychain.xpc` position, so relocating the complete signed app does not invalidate authorization and no build-machine path is persisted.
 
-The same sealed service is the per-route V3 epoch coordinator. A signed Host connection can acquire one route lease and enter a short Keychain read-modify-write interval. Both are held by the authenticated XPC connection, never by a filesystem pathname or an exported token. A lease is released on explicit close or XPC invalidation, so a crashed Host cannot strand epoch ownership. Revocation may enter the short interval while another Host owns a connection lease, allowing it to persist the revocation fence that makes that owner fail its next admission check.
+Each connection must match the exact derived live process path, strict live and static code requirement, Host identifier, and sealed build version. The Host also pins the helper's designated requirement on its `NSXPCConnection`, preventing a separately registered service from impersonating the embedded helper. A symlinked layout, malformed resource, changed bundle, invalid signature, or unauthorized peer fails closed.
 
-CryptoKit does not expose Ed25519 or X25519 private keys as non-exportable `SecKey` objects on macOS. The helper stores their raw representations only inside the Keychain row, loads them only in its short-lived signed process, and performs the requested cryptographic operation before exit. The source wipes mutable copies that it owns after use; CryptoKit's internal key representation is released on process exit.
+## Fixed operations
 
-## Assemble a signed XPC service
+The XPC interface exposes only public identity open, exact 32-byte X25519 agreement, constrained FD199 ownership-payload signing, and per-route epoch lease and transaction calls. The signing method accepts only the two canonical bounded FD199 ownership payload forms; it is not a general signing oracle. There is no JSON operation envelope, arbitrary profile selector, Keychain read operation, route-token operation, or generic signing or agreement API.
 
-```sh
-native/remote-host-keychain/scripts/assemble-xpc-service.sh \\
-  --signing-identity "Apple Development: Name (TEAMID)" \\
-  --authorized-client /absolute/path/to/signed-dsh-host-client \\
-  --output /absolute/path/to/DSHRemoteHostKeychain.xpc
-```
+Epoch ownership is held by the authenticated XPC connection rather than a pathname or exported token. Explicit close and XPC invalidation release leases after a crash. Revocation may acquire the short serialized Keychain transaction while another Host owns the connection lease, allowing the durable revocation fence to reject that owner's next admission check.
 
-The assembly script requires an explicit non-ad-hoc Apple Development signing identity. It resolves the selected certificate's Team ID, then verifies that the supplied Host client and every signed output have that Team ID, an Apple anchor, and the selected certificate constraint in their designated requirements. Only then does it read the client's exact designated requirement, seal it in the service bundle, sign the bundle with hardened runtime, and verify its signature. `assemble-host-owner.sh` is the only supported deployment path: it embeds the completed service in that exact Host bundle location.
+## Keychain behavior
 
-## XPC methods
+The helper creates its identity row with a `SecAccess` trusted-application ACL derived from its signed executable. A malformed row, changed designated requirement, changed public/private-key relationship, or invalid key fails closed without rekeying. Mutable copies owned by this source are wiped after use.
 
-The sealed Host can call `openHostPublicIdentity`, which creates or opens the fixed Host profile and returns its public identity. It can also call `deriveHostSharedSecret(withPeerPublicKey:)` with exactly one canonical raw 32-byte X25519 peer key. The helper derives the secret before replying with its exact 32 bytes; malformed keys, invalid points, and all-zero results return no secret. The only other calls are fixed epoch lease and transaction admission for a validated route identifier. There is no JSON operation envelope, request identifier, signing method, arbitrary profile selector, generic derive API, Keychain read API, or route-token API.
+The Host's relay credential store follows the same ACL-preservation rule. Initial creation supplies `kSecAttrAccess`; duplicate provisioning, route, cleanup, and epoch writes update only `kSecValueData`. Reads, duplicate updates, and deletes use an authentication context with interaction disabled, so an unexpected authorization requirement returns failure instead of opening SecurityAgent.
 
-This source tree does not compose the helper into the Web Host or install any standalone service. Current `dsh web` source execution is unsigned and cannot satisfy the service's client requirement. The signed Host sets the sealed service requirement on every XPC connection and uses the returned secret immediately for native KDF work.
+The [Host package README](../remote-host-app/README.md) describes pairing, activation, reconnect, restart, and revoke behavior. The [remote-pairing release cookbook](../../docs/cookbook/releasing-dsh-remote-pairing.md) and [hosted runtime packaging reference](../remote-host-app/docs/hosted-runtime-runbook.md) are authoritative for assembly and release operations.

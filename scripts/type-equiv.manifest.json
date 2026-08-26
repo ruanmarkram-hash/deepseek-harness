@@ -1964,6 +1964,16 @@
       "doc": "docs/subsystems/feedback.md",
       "symbol": "MessageFeedbackDeleteResult",
       "source": "packages/feedback/message-feedback/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/mobile.md",
+      "symbol": "RemoteDeviceChange",
+      "source": "packages/mobile/remote-devices/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/mobile.md",
+      "symbol": "RemoteGatewayAuditEntry",
+      "source": "packages/mobile/remote-gateway/src/types.ts"
     }
   ]
 }

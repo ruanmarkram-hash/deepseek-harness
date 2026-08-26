@@ -341,7 +341,14 @@ function fields(message: RemoteRelayMessage): readonly unknown[] {
 
 function associatedData(
   type: 'ready' | 'finish' | 'ack' | 'commit' | 'confirm' | 'receipt' | 'ciphertext',
-  message: RemoteRelayReady | RemoteRelayFinish | RemoteRelayAck | RemoteRelayCommit | RemoteRelayConfirm | RemoteRelayReceipt | RemoteRelayCiphertext,
+  message:
+    | RemoteRelayReady
+    | RemoteRelayFinish
+    | RemoteRelayAck
+    | RemoteRelayCommit
+    | RemoteRelayConfirm
+    | RemoteRelayReceipt
+    | RemoteRelayCiphertext,
 ): Uint8Array {
   const sequence = type === 'ciphertext' ? [(message as RemoteRelayCiphertext).sequence] : []
   return TEXT.encode(JSON.stringify([type, ...fields(message), ...sequence]))
@@ -447,7 +454,11 @@ function parseMessageObject(value: Record<string, unknown>): RemoteRelayMessage 
   return failure('REMOTE_RELAY_MALFORMED')
 }
 
-/** Parse one exact, bounded V3 relay WebSocket message without decrypting application data. */
+/**
+ * Parse one exact, bounded V3 relay WebSocket message without decrypting application data.
+ * @param serialized - Unknown WebSocket payload to validate as relay JSON.
+ * @returns the exact validated relay message.
+ */
 export function parseRemoteRelayMessage(serialized: unknown): RemoteRelayMessage {
   if (typeof serialized !== 'string' || serialized.length > MAX_MESSAGE_BYTES) return failure('REMOTE_RELAY_MALFORMED')
   if (TEXT.encode(serialized).byteLength > MAX_MESSAGE_BYTES) return failure('REMOTE_RELAY_CIPHERTEXT_INVALID')
@@ -460,7 +471,11 @@ export function parseRemoteRelayMessage(serialized: unknown): RemoteRelayMessage
   }
 }
 
-/** Serialize an exact V3 relay message after syntax validation. */
+/**
+ * Serialize an exact V3 relay message after syntax validation.
+ * @param value - Candidate relay message to validate and serialize.
+ * @returns the compact validated relay JSON text.
+ */
 export function serializeRemoteRelayMessage(value: unknown): string {
   const parsed = isRecord(value) ? parseMessageObject(value) : failure('REMOTE_RELAY_MALFORMED')
   const serialized = JSON.stringify(parsed)
@@ -593,6 +608,8 @@ function trustedConnection(
 /**
  * Complete the device-initiated side of the three-DH handshake. The caller has
  * already authenticated the WebSocket to the blind relay with its route token.
+ * @param input - Device identity, Host identity, route, socket, randomness, and cancellation inputs.
+ * @returns an authenticated encrypted relay connection to the Host.
  */
 export async function connectRemoteRelayDevice(
   input: Omit<ConnectionInput, 'peer'> & { readonly host: RemoteRelayPeerIdentity },
@@ -721,8 +738,12 @@ export async function connectRemoteRelayDevice(
 /**
  * Complete the Host side of a three-DH handshake and expose a connection only
  * after the device has proved possession of its enrolled static X25519 key.
+ * @param input - Host identity, enrolled peer, route, socket, randomness, epoch finalizer, and cancellation inputs.
+ * @returns an authenticated encrypted relay connection to the device.
  */
-export async function acceptRemoteRelayDevice(input: ConnectionInput & { readonly epochFinalizer: RemoteRelayEpochFinalizer }): Promise<TrustedRemoteRelayConnection> {
+export async function acceptRemoteRelayDevice(
+  input: ConnectionInput & { readonly epochFinalizer: RemoteRelayEpochFinalizer },
+): Promise<TrustedRemoteRelayConnection> {
   const local = preflight(input.socket, () => localIdentity(input.identity))
   const peer = preflight(input.socket, () => identity(input.peer))
   const coordinates = preflight(input.socket, () => route(input.route))

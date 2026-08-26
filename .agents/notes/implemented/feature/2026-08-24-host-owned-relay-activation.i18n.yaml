@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-24-host-owned-relay-activation.md
+2026-08-24-host-owned-relay-activation.md: 7d1e93072655a40e2786b668964f9cd0967f7cbf
+2026-08-24-host-owned-relay-activation.zh.md: 95a101a74461ec1207c570fd2727cc770ec80cf6

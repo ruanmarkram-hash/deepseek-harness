@@ -46,7 +46,11 @@ export class CurrentWebFd199Lifecycle implements Fd199DesktopWriteFence {
     }
   }
 
-  /** Starts the one-way quiesce, durable native same-store prepare, and release. */
+  /**
+   * Starts the one-way quiesce, durable native same-store prepare, and release.
+   * @param exportStoppedState - Exports the files after all desktop operations drain.
+   * @param native - Native same-store transition authority receiving the stopped state.
+   */
   releaseForNative(
     exportStoppedState: () => Promise<readonly Fd199ExportFile[]>,
     native: Fd199SameStoreTransition,

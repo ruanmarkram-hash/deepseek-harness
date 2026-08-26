@@ -17,6 +17,23 @@ The two current Host event streams are retained as one ordered device cursor str
 ## Connection provider requirement
 
 ```ts
+import type * as RemoteGateway from '@deepseek-ai/dsh-remote-gateway'
+import type * as RemoteWire from '@deepseek-ai/dsh-remote-wire'
+
+interface TrustedRemoteConnection {
+  readonly peer: RemoteGateway.TrustedRemotePeerIdentity
+  readonly route: RemoteGateway.TrustedRemoteRoute
+  receive(signal: AbortSignal): AsyncIterable<RemoteWire.RemoteWireEnvelope>
+  send(
+    envelope: RemoteWire.RemoteWireEnvelope,
+    fence: RemoteGateway.TrustedRemoteSendFence,
+  ): Promise<
+    | { readonly status: 'committed-before-fence' }
+    | { readonly status: 'not-committed' }
+  >
+  close(reason: RemoteGateway.RemoteGatewayCloseReason): Promise<void>
+}
+
 interface TrustedRemoteConnectionProvider {
   accept(signal: AbortSignal): AsyncIterable<TrustedRemoteConnection>
 }

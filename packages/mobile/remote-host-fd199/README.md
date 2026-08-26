@@ -16,7 +16,7 @@ The framed protocol on descriptor 199 is strict JSON with a u32 big-endian lengt
 
 ## Known Limitations and Deferred Work
 
-- The Swift-side FD199 authority lives in `native/remote-host-app/Sources/RemoteHostFd199`; production signing must bind to the protected Host identity Keychain handle before any real activation.
+- The Swift-side FD199 authority, signed hosted-child supervisor, and Keychain-backed proof identity live in the signed Host app. Ordinary source-launched `dsh web` has neither inherited descriptor and cannot enter this lifecycle.
 - Export bounds fail closed: a durable store exceeding 128 MiB total or 8 MiB per session artifact cannot enter this v1 transition.
 - Attachments are not exported by the v1 adapter; same-store adoption needs no transfer, but the attested manifest covers sessions only.
-- Descriptor validation checks only that 198/199 are inherited sockets; the unforgeable part of the trust root is the signed Host supervisor itself, whose production spawn path and Keychain-bound signing identity remain deferred work. A local process can self-apply the argv suffix against its own sockets today, which yields no privilege beyond what that local user already has.
+- Descriptor validation checks that 198/199 are inherited sockets; the unforgeable part of the production trust root is the strictly validated signed Host supervisor and its sealed child launch. A local process can apply the argv suffix to its own sockets, but gains no authority over a signed Host route or protected identity.

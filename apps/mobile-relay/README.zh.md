@@ -1,17 +1,25 @@
-# DSH mobile relay
+# DSH 移动端 relay
 
 [English](README.md) | 中文
 
-`@deepseek-ai/dsh-mobile-relay` 是用于一次短时、无账户 DSH 手机配对的 Cloudflare Workers 与 Durable Objects rendezvous。DSH 留在桌面端。中继没有通往 DSH web server、SDK、计算机使用权限、凭据、文件系统或通用 API 的 route。
+`@deepseek-ai/dsh-mobile-relay` 是用于 DSH 手机配对和加密远程 transport 的 Cloudflare Workers 与 Durable Objects 盲转发会合点。DSH 留在 Host 上。relay 无法访问 DSH Web server、SDK、computer-use 权限、凭据、文件系统或通用 API。
 
-## 运行契约
+## V3 路由约定
 
-桌面端以独立 bearer credential 创建 `POST /v1/pairings/:pairingId`，并发送精确的版本二 JSON：桌面 id、规范的 32 字节 `desktopEphemeralPublicKey`、移动端 relay credential 和过期时间。中继校验但不保留该公钥。它只存储加盐单向 token verifier、过期时间、桌面路由 id、移动端 id 与能力请求，以及 frame sequence counter。它从不存储原始 credential、加密 proof 或 application ciphertext。
+已签名 Host 使用仅 Host 持有的凭据创建、轮换和撤销一个私有路由。Durable Object 只存储 Host 和设备角色凭据的加盐单向 verifier，以及公开路由 metadata、generation、过期时间和有界握手状态。它绝不存储私钥、shared secret、明文应用消息或可用路由凭据。
 
-桌面端和移动端使用精确的 `dsh-pairing-v2` WebSocket subprotocol 和带角色的 token subprotocol 连接。桌面端先发送 `desktop-hello`。手机随后发送 `mobile-init`，其中有其公钥和不透明的加密 proof。中继在不改变对象的前提下校验大小、id、能力名称和规范 encoding，并将其转发给在线桌面端。桌面端必须验证 proof 并明确批准，然后发送不透明的 `desktop-accept` proof。中继将该 acceptance 原样转发给手机，再允许有界的不透明 frame。
+Host 和手机只能使用 `dsh-remote-v3` 以及角色绑定凭据 subprotocol 连接 `/v3/routes/:routeId/connect`。relay 在转发不透明握手或密文消息前验证确切路由、generation、epoch、角色、方向、消息 vocabulary、大小和 sequence。它不能完成密码学握手、解密 frame、声称 peer delivery 或授权 DSH 操作。轮换和撤销会立即关闭两端并使旧凭据失效。成功删除路由返回 `204`；路由 metadata 已不存在时的重试返回 `404` 缺失路由结果，供 Host 的持久撤销恢复使用。
 
-Durable Object 仍校验一个桌面端和一个移动端连接、peer direction、持久化连续 sequence、64 KiB frame ciphertext、96 KiB message 和每秒 30 条 message。它不解密、记录、持久化、重放、变换或排队 proof 或 frame。桌面端断开、桌面端 revoke 和过期会关闭所有 socket 并删除配对状态。手机必须在发送 application frame 之前本地验证桌面端 proof。
+## 互联网配对约定
+
+`/v3/pairings/:pairingId` 提供独立的短期 QR 或文本代码会合点。它接受一个公开手机注册 offer，只向持有代码的 Host 暴露该 offer，并且只返回由 Host 加密给该手机受保护身份的邀请。配对对象存储代码 verifier 以及有界公开值或加密传输值；它不是路由 relay，也绝不接收活动 Host 路由凭据。offer、批准、获取、确认、过期和重放都采用失败关闭。
+
+## V2 兼容性
+
+隔离的 `/v1` surface 保留版本二桌面配对约定。桌面端和移动端使用精确的 `dsh-pairing-v2` WebSocket subprotocol 及角色绑定凭据。relay 转发 `mobile-init`、`desktop-accept` 和有界不透明 frame，不会解密、记录、持久化、重放或变换 proof 或应用密文。桌面断开、撤销或过期会关闭 socket 并删除配对状态。
 
 ## 验证与部署
 
-运行 `pnpm --filter @deepseek-ai/dsh-mobile-relay run check` 和 `pnpm --filter @deepseek-ai/dsh-mobile-relay run test`。 `pnpm --filter @deepseek-ai/dsh-mobile-relay run deploy:dry-run` 只 bundle，不发出 API request。部署需要已认证的 Wrangler session 或窄权限 Cloudflare token。不要把 Cloudflare、relay、QR 或桌面 credential 放入 source、log 或 Wrangler variable。
+运行 `pnpm --filter @deepseek-ai/dsh-mobile-relay run check`、`pnpm --filter @deepseek-ai/dsh-mobile-relay run test` 和 `pnpm --filter @deepseek-ai/dsh-mobile-relay run deploy:dry-run`。部署需要已认证 Wrangler 会话或最小范围 Cloudflare token。已检入的生产自定义域路由不含秘密。绝不将 Cloudflare、relay、配对、Host 或设备凭据放入源码、日志、URL 或 Wrangler 变量。
+
+生产部署顺序和实体设备验收矩阵见[远程配对发布指南](../../docs/cookbook/releasing-dsh-remote-pairing.md)。

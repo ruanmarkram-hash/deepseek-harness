@@ -63,6 +63,16 @@ flowchart LR
   pkg_storage_domain["storage-domain"]
   svc_storageDomain["ctx.storageDomain<br/>Domain data facility"]
   pkg_workspace["workspace"]
+  pkg_remote_devices["remote-devices"]
+  svc_remoteDevices["ctx.remoteDevices<br/>Trusted remote-device directory"]
+  pkg_remote_gateway["remote-gateway"]
+  pkg_remote_host_identity["remote-host-identity"]
+  pkg_remote_host_v3["remote-host-v3"]
+  svc_remoteEnrollment["ctx.remoteEnrollment<br/>Local remote-enrollment controller"]
+  svc_remoteGateway["ctx.remoteGateway<br/>Authenticated remote Host gateway"]
+  svc_remoteHostIdentity["ctx.remoteHostIdentity<br/>Secure-store-backed Host identity"]
+  svc_remoteHostV3["ctx.remoteHostV3<br/>Remote V3 route controller"]
+  pkg_remote_host_fd199["remote-host-fd199"]
   svc_messageFeedback["ctx.messageFeedback<br/>Lifecycle-bound message feedback"]
   svc_workspaceRegistry["ctx.workspaceRegistry<br/>Workspace entity registry"]
   svc_sessionQuery["ctx.sessionQuery<br/>Session reads, traces, filters, and search"]
@@ -249,6 +259,11 @@ flowchart LR
   pkg_permission_presets --> svc_permissionPresets
   pkg_plan_mode --> svc_planMode
   pkg_pwsh_local --> svc_shell
+  pkg_remote_devices --> svc_remoteDevices
+  pkg_remote_gateway --> svc_remoteGateway
+  pkg_remote_host_identity --> svc_remoteEnrollment
+  pkg_remote_host_identity --> svc_remoteHostIdentity
+  pkg_remote_host_v3 --> svc_remoteHostV3
   pkg_sandbox --> svc_sandbox
   pkg_sandbox_local --> svc_sandbox
   pkg_sandbox_policy --> svc_sandboxPolicy
@@ -340,6 +355,11 @@ flowchart LR
   svc_llm --> pkg_agent_loop
   svc_llm --> pkg_compaction_basic
   svc_lsp --> pkg_tool_lsp
+  svc_remoteDevices --> pkg_remote_gateway
+  svc_remoteDevices --> pkg_remote_host_identity
+  svc_remoteDevices --> pkg_remote_host_v3
+  svc_remoteGateway --> pkg_remote_host_v3
+  svc_remoteHostV3 --> pkg_remote_host_fd199
   svc_sandbox --> pkg_bash_sandbox
   svc_sandbox --> pkg_terminal_bash
   svc_sandboxPolicy --> pkg_bash_sandbox
@@ -437,6 +457,11 @@ flowchart LR
 | `ctx.sessionTelemetry` | `seam` | [`session-telemetry`](../packages/session/session-telemetry) | [`session-telemetry-otel`](../packages/session/session-telemetry-otel) | - | - | 该 seam 捕获会话记录、进行脱敏并交给一个后端；没有其他组件消费该服务，其输出会离开当前进程。 |
 | `ctx.storage` | `seam` | [`storage`](../packages/storage/storage) | [`storage-json`](../packages/storage/storage-json), [`storage-sqlite`](../packages/storage/storage-sqlite) | [`storage-domain`](../packages/storage/storage-domain) | - | 各后端以不同名称并列注册；数据形态（领域优先）挂载到枢纽上，并将类型化操作转换为不透明的 KV 单元原语。 |
 | `ctx.storageDomain` | `core` | [`storage-domain`](../packages/storage/storage-domain) | - | [`workspace`](../packages/workspace/workspace), [`message-feedback`](../packages/feedback/message-feedback) | - | 等待所有已配置后端就绪，然后将领域形态发布为一个受生命周期约束的服务，用于类型化持久状态。 |
+| `ctx.remoteDevices` | `core` | [`remote-devices`](../packages/mobile/remote-devices) | - | [`remote-gateway`](../packages/mobile/remote-gateway), [`remote-host-identity`](../packages/mobile/remote-host-identity), [`remote-host-v3`](../packages/mobile/remote-host-v3) | - | 拥有持久化的公开注册元数据和持久化后的设备变更；私钥与中继凭据始终位于该目录之外。 |
+| `ctx.remoteEnrollment` | `core` | [`remote-host-identity`](../packages/mobile/remote-host-identity) | - | - | - | 针对 Host 身份签发并确认仅限本地的注册路由，且不挂载网络注册端点。 |
+| `ctx.remoteGateway` | `core` | [`remote-gateway`](../packages/mobile/remote-gateway) | - | [`remote-host-v3`](../packages/mobile/remote-host-v3) | - | 将已认证并解密的连接附加到 Host API；它不挂载监听器，并发出不含 payload 的审计记录。 |
+| `ctx.remoteHostIdentity` | `core` | [`remote-host-identity`](../packages/mobile/remote-host-identity) | - | - | - | 发布 Host 的公开身份，而注入的原生安全存储提供方保留私钥操作。 |
+| `ctx.remoteHostV3` | `core` | [`remote-host-v3`](../packages/mobile/remote-host-v3) | - | [`remote-host-fd199`](../packages/mobile/remote-host-fd199) | - | 拥有持久化的公开路由坐标，并将经过证明的继承运行时管道与已认证网关组合起来。 |
 | `ctx.messageFeedback` | `core` | [`message-feedback`](../packages/feedback/message-feedback) | - | - | - | 拥有本地逐 assistant 消息反馈、生命周期与目标校验、逐条目 compare-and-set 及 Host 一元 Remote 契约，且不进入 Session 历史或遥测。 |
 | `ctx.workspaceRegistry` | `core` | [`workspace`](../packages/workspace/workspace) | - | `apiproxy` | - | 通过领域设施拥有带 WorkspaceId 品牌类型的记录；稳定的 sessionIds 账户驱动 Host RPC 与 GUI 投影。 |
 | `ctx.sessionQuery` | `seam` | [`session-query`](../packages/session-query/session-query) | [`session-query-sqlite`](../packages/session-query/session-query-sqlite) | [`session-reference`](../packages/context/session-reference), [`tool-session-query`](../packages/session-query/tool-session-query) | - | 该接口提供精确读取、过滤和追踪；具体后端还提供全文协调、排序、摘要片段和游标世代，而模型消费方负责工作区权限与不含游标的渲染。 |
