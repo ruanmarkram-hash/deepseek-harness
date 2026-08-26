@@ -11,8 +11,8 @@ export const MAX_BOOTSTRAP_TTL_MS = 5 * 60 * 1_000
 /** Byte length of an X25519 public or private key. */
 export const PAIRING_X25519_KEY_BYTES = 32
 
-/** Byte length of an XChaCha20-Poly1305 nonce. */
-export const PAIRING_PROOF_NONCE_BYTES = 24
+/** Byte length of an RFC 8439 ChaCha20-Poly1305 nonce. */
+export const PAIRING_PROOF_NONCE_BYTES = 12
 
 /** Byte length of the Poly1305 authentication tag appended to ciphertext. */
 export const PAIRING_PROOF_TAG_BYTES = 16
@@ -53,7 +53,7 @@ export type PairingRelayToken = Branded<'PairingRelayToken'>
 /** Canonical base64url X25519 public key carried by the pairing protocol. */
 export type PairingEphemeralPublicKey = Branded<'PairingEphemeralPublicKey'>
 
-/** Canonical base64url nonce-prefixed XChaCha20-Poly1305 proof. */
+/** Canonical base64url nonce-prefixed ChaCha20-Poly1305 proof. */
 export type PairingEncryptedProof = Branded<'PairingEncryptedProof'>
 
 /** Phone operations that a desktop may approve during pairing. */

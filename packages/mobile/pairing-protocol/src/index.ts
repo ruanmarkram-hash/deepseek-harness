@@ -361,7 +361,7 @@ export function decodePairingEncryptedProof(value: string): Uint8Array {
 /**
  * Encode a bounded nonce-prefixed encrypted proof for a relay control.
  *
- * @param value - Nonce-prefixed XChaCha20-Poly1305 ciphertext bytes.
+ * @param value - Nonce-prefixed RFC 8439 ChaCha20-Poly1305 ciphertext bytes.
  * @returns Canonical base64url protocol encoding.
  */
 export function encodePairingEncryptedProof(value: Uint8Array): PairingEncryptedProof {

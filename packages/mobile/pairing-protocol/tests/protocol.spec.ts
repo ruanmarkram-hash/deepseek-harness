@@ -52,8 +52,8 @@ function bytes(start: number, length: number): Uint8Array {
 
 const DESKTOP_KEY_RANDOM = bytes(1, 32)
 const MOBILE_KEY_RANDOM = bytes(33, 32)
-const MOBILE_PROOF_NONCE = bytes(65, 24)
-const DESKTOP_PROOF_NONCE = bytes(89, 24)
+const MOBILE_PROOF_NONCE = bytes(65, 12)
+const DESKTOP_PROOF_NONCE = bytes(89, 12)
 const desktopPublicKey = createPairingEphemeralKeyPair(
   new VectorRandom(DESKTOP_KEY_RANDOM),
 ).publicKey
@@ -208,7 +208,7 @@ describe('X25519 and XChaCha20-Poly1305 proof vectors', () => {
 
     expect(mobileProof).toEqual({
       mobileEphemeralPublicKey: 'WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns',
-      encryptedProof: 'QUJDREVGR0hJSktMTU5PUFFSU1RVVldYx8GqvxXdVwUTuQZ11LxQmXEzHhjHk39k33bt8ps_w4Y1fHwTgRW769Hm',
+      encryptedProof: 'QUJDREVGR0hJSktMn6gVLiehtu0593zz5GUZMhFQgWl8rdR-rpdOWL3BBRuavpW10VWQ95we',
     })
     verifyMobilePairingProof({
       bootstrap: bootstrapValue,
@@ -222,7 +222,7 @@ describe('X25519 and XChaCha20-Poly1305 proof vectors', () => {
       desktopSecretKey: desktopKeyPair.secretKey,
       random: new VectorRandom(DESKTOP_PROOF_NONCE),
     })
-    expect(desktopProof).toBe('WVpbXF1eX2BhYmNkZWZnaGlqa2xtbm9wAXsiUnDXoQrEe5lpudUEvrWSUNuWe_bwibV8fj1RmJW8HY-SDAG5J6c8qNx-')
+    expect(desktopProof).toBe('WVpbXF1eX2BhYmNk22w6Ee065K82BTEeDPRFqyktEVyyMiHldPESjW7BifQu-e78gih6LXV1yRlE')
 
     const accept = parseDesktopPairingAccept({
       type: 'desktop-accept',
@@ -373,7 +373,7 @@ function sessionCiphers() {
       endpoint: 'desktop',
       localSecretKey: desktopKeyPair.secretKey,
       confirmation: confirmPairingKey(),
-      random: new VectorRandom(bytes(113, 24), bytes(137, 24)),
+      random: new VectorRandom(bytes(113, 12), bytes(137, 12)),
     }),
     mobile: createMobileSessionCipher({
       bootstrap: bootstrapValue,
@@ -381,7 +381,7 @@ function sessionCiphers() {
       endpoint: 'mobile',
       localSecretKey: mobileKeyPair.secretKey,
       confirmation: confirmPairingKey(),
-      random: new VectorRandom(bytes(161, 24), bytes(185, 24)),
+      random: new VectorRandom(bytes(161, 12), bytes(185, 12)),
     }),
   }
 }

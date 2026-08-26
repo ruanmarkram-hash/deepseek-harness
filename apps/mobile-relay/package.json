@@ -12,7 +12,8 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@deepseek-ai/dsh-pairing-protocol": "workspace:^"
+    "@deepseek-ai/dsh-pairing-protocol": "workspace:^",
+    "@deepseek-ai/dsh-remote-relay-protocol": "workspace:^"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.22.0",

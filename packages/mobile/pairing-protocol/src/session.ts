@@ -3,7 +3,7 @@
  * @module @deepseek-ai/dsh-pairing-protocol/session
  */
 
-import { xchacha20poly1305 } from '@noble/ciphers/chacha.js'
+import { chacha20poly1305 } from '@noble/ciphers/chacha.js'
 import { x25519 } from '@noble/curves/ed25519.js'
 import { hkdf } from '@noble/hashes/hkdf.js'
 import { sha256 } from '@noble/hashes/sha2.js'
@@ -142,7 +142,11 @@ function activeTurn(value: unknown): MobileSessionActiveTurn | null {
   return { id: opaqueId(value.id), state: turnState(value.state) }
 }
 
-/** Parse an exact desktop-to-mobile, text-only session message. */
+/**
+ * Parse an exact desktop-to-mobile, text-only session message.
+ * @param value Untrusted plaintext decoded after relay-envelope decryption.
+ * @returns The bounded session message or a protocol error.
+ */
 export function parseDesktopToMobileSessionMessage(value: unknown): DesktopToMobileSessionMessage {
   if (!isRecord(value) || typeof value.type !== 'string') {
     return failure('MOBILE_SESSION_MESSAGE_MALFORMED')
@@ -202,7 +206,11 @@ export function parseDesktopToMobileSessionMessage(value: unknown): DesktopToMob
   return failure('MOBILE_SESSION_MESSAGE_MALFORMED')
 }
 
-/** Parse an exact mobile-to-desktop, text-only session command. */
+/**
+ * Parse an exact mobile-to-desktop, text-only session command.
+ * @param value Untrusted plaintext decoded after relay-envelope decryption.
+ * @returns The bounded session command or a protocol error.
+ */
 export function parseMobileToDesktopSessionMessage(value: unknown): MobileToDesktopSessionMessage {
   if (!isRecord(value) || typeof value.type !== 'string') {
     return failure('MOBILE_SESSION_MESSAGE_MALFORMED')
@@ -340,8 +348,10 @@ function sameRouting(
 }
 
 /**
- * Derive direction-separated XChaCha20-Poly1305 keys after proof confirmation.
+ * Derive direction-separated RFC 8439 ChaCha20-Poly1305 keys after proof confirmation.
  * The returned object retains no private pairing key and cannot be persisted.
+ * @param input Confirmed pairing material and the local ephemeral private key.
+ * @returns A foreground-only cipher for the authenticated mobile-session vocabulary.
  */
 export function createMobileSessionCipher(
   input: CreateMobileSessionCipherInput,
@@ -410,7 +420,7 @@ export function createMobileSessionCipher(
       const nonce = randomNonce(input.random)
       const key = input.endpoint === 'desktop' ? desktopToMobileKey : mobileToDesktopKey
       try {
-        const encrypted = xchacha20poly1305(key, nonce, routingAad(frame)).encrypt(plaintext)
+        const encrypted = chacha20poly1305(key, nonce, routingAad(frame)).encrypt(plaintext)
         const result = new Uint8Array(nonce.byteLength + encrypted.byteLength)
         result.set(nonce)
         result.set(encrypted, nonce.byteLength)
@@ -452,7 +462,7 @@ export function createMobileSessionCipher(
         nonce = bytes.slice(0, PAIRING_PROOF_NONCE_BYTES)
         ciphertext = bytes.slice(PAIRING_PROOF_NONCE_BYTES)
         const key = input.endpoint === 'desktop' ? mobileToDesktopKey : desktopToMobileKey
-        plaintext = xchacha20poly1305(key, nonce, routingAad(frame)).decrypt(ciphertext)
+        plaintext = chacha20poly1305(key, nonce, routingAad(frame)).decrypt(ciphertext)
         let decoded: unknown
         try {
           decoded = JSON.parse(UTF8.decode(plaintext))

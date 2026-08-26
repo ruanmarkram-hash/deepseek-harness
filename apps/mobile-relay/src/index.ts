@@ -21,12 +21,22 @@ import {
   parseRelayMessage,
 } from './protocol.ts'
 import type { RelayControl } from './protocol.ts'
+import { routeV3 } from './v3.ts'
+import type { RemoteRoute } from './v3.ts'
+import { routeV3Pairing } from './v3-pairing.ts'
+import type { V3Pairing } from './v3-pairing.ts'
+
+export { RemoteRoute } from './v3.ts'
+export { V3Pairing } from './v3-pairing.ts'
 
 /** Worker bindings required by the public router and pairing coordinator. */
 export interface Env {
   PAIRINGS: DurableObjectNamespace<PairingRoom>
   PAIRING_ALLOCATOR: DurableObjectNamespace<PairingAllocator>
   PAIRING_CREATIONS_PER_IP: RateLimit
+  REMOTE_ROUTES: DurableObjectNamespace<RemoteRoute>
+  V3_PAIRINGS: DurableObjectNamespace<V3Pairing>
+  V3_PROVISIONING_TOKEN: string
 }
 
 const METADATA_KEY = 'pairing'
@@ -206,6 +216,8 @@ function sequenceKey(frame: RelayFrame): string {
 const worker: ExportedHandler<Env> = {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url)
+    if (url.pathname.startsWith('/v3/pairings/')) return routeV3Pairing(request, env)
+    if (url.pathname.startsWith('/v3/')) return routeV3(request, env)
     if (request.method === 'GET' && url.pathname === '/healthz' && url.search === '') {
       return json(200, { status: 'ok' })
     }

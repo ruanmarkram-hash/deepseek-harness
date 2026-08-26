@@ -5,7 +5,9 @@
   "compatibility_date": "2026-08-20",
   "workers_dev": true,
   "alias": {
-    "@deepseek-ai/dsh-pairing-protocol": "../../packages/mobile/pairing-protocol/src/index.ts"
+    "@deepseek-ai/dsh-pairing-protocol": "../../packages/mobile/pairing-protocol/src/index.ts",
+    "@deepseek-ai/dsh-remote-relay-protocol": "../../packages/mobile/remote-relay-protocol/src/index.ts",
+    "@deepseek-ai/dsh-remote-wire": "../../packages/mobile/remote-wire/src/index.ts"
   },
   "observability": {
     "enabled": true
@@ -19,6 +21,14 @@
       {
         "name": "PAIRING_ALLOCATOR",
         "class_name": "PairingAllocator"
+      },
+      {
+        "name": "REMOTE_ROUTES",
+        "class_name": "RemoteRoute"
+      },
+      {
+        "name": "V3_PAIRINGS",
+        "class_name": "V3Pairing"
       }
     ]
   },
@@ -36,6 +46,14 @@
     {
       "tag": "v1",
       "new_sqlite_classes": ["PairingRoom", "PairingAllocator"]
+    },
+    {
+      "tag": "v3-remote-routes",
+      "new_sqlite_classes": ["RemoteRoute"]
+    },
+    {
+      "tag": "v3-anywhere-pairing",
+      "new_sqlite_classes": ["V3Pairing"]
     }
   ]
 }

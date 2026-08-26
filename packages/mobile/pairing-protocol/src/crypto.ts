@@ -3,7 +3,7 @@
  * @module @deepseek-ai/dsh-pairing-protocol/crypto
  */
 
-import { xchacha20poly1305 } from '@noble/ciphers/chacha.js'
+import { chacha20poly1305 } from '@noble/ciphers/chacha.js'
 import { x25519 } from '@noble/curves/ed25519.js'
 import { hkdf } from '@noble/hashes/hkdf.js'
 import { sha256 } from '@noble/hashes/sha2.js'
@@ -187,7 +187,7 @@ function sealProof(
   const key = derivedProofKey(secretKey, peerPublicKey, transcriptBytes, label)
   const nonce = randomBytes(random, PAIRING_PROOF_NONCE_BYTES)
   try {
-    const ciphertext = xchacha20poly1305(key, nonce, transcriptBytes)
+    const ciphertext = chacha20poly1305(key, nonce, transcriptBytes)
       .encrypt(new TextEncoder().encode(label))
     const result = new Uint8Array(nonce.byteLength + ciphertext.byteLength)
     result.set(nonce)
@@ -213,7 +213,7 @@ function openProof(
   const ciphertext = proofBytes.slice(PAIRING_PROOF_NONCE_BYTES)
   const key = derivedProofKey(secretKey, peerPublicKey, transcriptBytes, label)
   try {
-    const plaintext = xchacha20poly1305(key, nonce, transcriptBytes).decrypt(ciphertext)
+    const plaintext = chacha20poly1305(key, nonce, transcriptBytes).decrypt(ciphertext)
     if (!constantTimeEqual(plaintext, new TextEncoder().encode(label))) {
       failure('PAIRING_PROOF_INVALID')
     }
