@@ -35,10 +35,13 @@ export interface CmdlineArgs {
 /** Request bounded process exit; the launcher wires it to its shutdown controller. */
 export interface AppExit {
   /**
-   * Request exit once the tree has been disposed.
+   * Request exit and resolve only once the application tree has been
+   * disposed.  Callers that only need a terminal request may intentionally
+   * ignore the promise; ownership-transfer code must await it before a new
+   * process opens the same durable store.
    * @param code - the process exit code.
    */
-  (code: number): void
+  (code: number): Promise<void>
 }
 
 declare module '@deepseek-ai/cordis' {

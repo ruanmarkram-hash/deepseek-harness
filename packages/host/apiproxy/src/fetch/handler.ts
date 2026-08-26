@@ -167,24 +167,37 @@ function fullResponse(narrow: RpcResponse<unknown>): Response {
 }
 
 /**
- * Parse the payload and invoke one unary route. Generic over the map key so
- * the row's schema/invoke pairing typechecks; the only cast collapses the
- * Wire<> widening back to the exact payload (undefined-valued properties and
- * absent ones are indistinguishable after JSON transport).
+ * Parse a payload and invoke one unary route without selecting a physical carrier.
+ * The generic key keeps each route's schema and invocation signature coupled.
+ * @param api - composed Host API implementation.
+ * @param method - fixed public API method selected by the trusted carrier.
+ * @param request - correlated request id and untrusted payload to validate.
+ * @param signal - caller-owned cancellation signal forwarded to methods that accept it.
+ * @returns the correlated narrow API result, including a business validation failure.
  */
 // K appears once in the signature but ties the UNARY_ROUTES[K] row lookup to its own
 // schema/invoke pairing; a union parameter degrades the row to an uninvokable intersection.
 // oxlint-disable-next-line typescript/no-unnecessary-type-parameters
+export async function invokeApiProxyMethod<K extends keyof RpcMethodMap>(
+  api: ApiProxy, method: K, request: { readonly rpcId: RpcId; readonly payload: unknown }, signal: AbortSignal,
+): Promise<RpcResponse<ResponseValue<K>>> {
+  const route = UNARY_ROUTES[method]
+  const payload = route.schema.safeParse(request.payload)
+  if (!payload.success) {
+    return {
+      rpcId: request.rpcId,
+      result: { ok: false, error: { code: 'bad-request', message: `invalid payload for ${method}`, details: { issues: payload.error.issues } } },
+    }
+  }
+  return route.invoke(api, { rpcId: request.rpcId, payload: payload.data }, signal)
+}
+
+/** Invoke one checked API method and translate an implementation crash into the fetch carrier's 500 response. */
 async function handleUnary<K extends keyof RpcMethodMap>(
   api: ApiProxy, method: K, message: ClientRequest, signal: AbortSignal,
 ): Promise<Response> {
-  const route = UNARY_ROUTES[method]
-  const payload = route.schema.safeParse(message.payload)
-  if (!payload.success) {
-    return errorResponse(message.rpcId, { code: 'bad-request', message: `invalid payload for ${method}`, details: { issues: payload.error.issues } })
-  }
   try {
-    return fullResponse(await route.invoke(api, { rpcId: message.rpcId, payload: payload.data }, signal))
+    return fullResponse(await invokeApiProxyMethod(api, method, message, signal))
   } catch (error: unknown) {
     // The impl never throws business errors; reaching here means the implementation itself crashed — 500, carrier layer.
     return new Response(`handler failure: ${String(error)}`, { status: 500 })

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { ApiProxy, HostFrame, MuxFrame } from '../src/api/index.ts'
 import type { ClientResponse, RpcMessage, RpcReceipt, RpcRequest } from '../src/api/rpc.ts'
 import { RpcId } from '../src/api/rpc.ts'
-import { toFetchHandler } from '../src/fetch/handler.ts'
+import { invokeApiProxyMethod, toFetchHandler } from '../src/fetch/handler.ts'
 import { AbstractApiClient, InProcessApiClient } from '../src/fetch/client.ts'
 
 /** Minimal in-memory ApiProxy: echoes rpcIds, scripts one frame per stream. */
@@ -643,6 +643,25 @@ describe('handler carrier-layer statuses', () => {
     const body = JSON.stringify({ type: 'client-request', rpcId: 'r-12', method: 'session.list', payload: {} })
     const response = await handler.fetch('http://x/api/session.list', { method: 'POST', headers: { 'content-type': 'application/json' }, body })
     expect(response.status).toBe(200)
+  })
+})
+
+describe('transport-neutral API dispatch', () => {
+  it('runs the same checked host method without constructing a browser request', async () => {
+    const response = await invokeApiProxyMethod(fakeApi(), 'session.list', {
+      rpcId: RpcId('remote-list'), payload: {},
+    }, new AbortController().signal)
+    expect(response).toEqual({ rpcId: 'remote-list', result: { ok: true, value: { items: [] } } })
+  })
+
+  it('returns a correlated business error when a remote payload fails the shared schema', async () => {
+    const response = await invokeApiProxyMethod(fakeApi(), 'session.cancel', {
+      rpcId: RpcId('remote-invalid'), payload: {},
+    }, new AbortController().signal)
+    expect(response.rpcId).toBe('remote-invalid')
+    expect(response.result.ok).toBe(false)
+    if (response.result.ok) throw new Error('Expected a validation failure')
+    expect(response.result.error.code).toBe('bad-request')
   })
 })
 

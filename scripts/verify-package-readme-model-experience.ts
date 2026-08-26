@@ -35,6 +35,12 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
   'packages/util/home-paths': 'The package only resolves harness-owned host paths; model-facing consumers own any rendered use.',
   'packages/util/launch-environment': 'The package only resolves host environment values; model-facing consumers own any rendered use.',
   'packages/mobile/pairing-protocol': 'The package validates encrypted mobile pairing transport metadata and registers no model-facing context.',
+  'packages/mobile/remote-wire': 'The package parses remote-client envelopes and registers no model-facing context.',
+  'packages/mobile/remote-relay-protocol': 'The package encrypts and authenticates transport frames outside model request assembly.',
+  'packages/mobile/remote-devices': 'The Host device directory stores public identity metadata and registers no model-facing context.',
+  'packages/mobile/remote-host-identity': 'The Host identity service keeps static remote keys and enrollment values outside model request assembly.',
+  'packages/mobile/remote-gateway': 'The Host remote gateway dispatches trusted client traffic and registers no model-facing context.',
+  'packages/mobile/remote-host-fd199': 'The hosted-runtime handoff transfers configured graph ownership and registers no prompt, schema, model request, or model-visible session event.',
 }
 
 /**

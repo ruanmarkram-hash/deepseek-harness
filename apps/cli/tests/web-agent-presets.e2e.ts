@@ -143,7 +143,7 @@ async function bootWeb(
   const rootConfig = join(profileDir, 'cordis.yml')
   await writeFile(rootConfig, '[]\n')
   return await boot('dsh-test', rootConfig, [...bundlePatches, ...overrides], (bootCtx) => {
-    provideCmdline(bootCtx, { args: [], exit: () => {} })
+    provideCmdline(bootCtx, { args: [], exit: () => Promise.resolve() })
   })
 }
 

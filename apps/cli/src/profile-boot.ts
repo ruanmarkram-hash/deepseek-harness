@@ -11,9 +11,11 @@
  * @module @deepseek-ai/dsh/profile-boot
  */
 
-import { writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { createHash } from 'node:crypto'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import * as yaml from 'js-yaml'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
@@ -26,6 +28,7 @@ import {
   loadOverlayPatches,
   loadProfile,
   PROFILE_PATCH_FILENAME,
+  resolveBundleDir,
   watchUserPatches,
   type Profile,
 } from '@deepseek-ai/dsh-app-boot'
@@ -33,10 +36,21 @@ import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 
 /** Shipped agent-preset root: beside this app's own config, in both source and built layouts. */
 const SHIPPED_PRESET_ROOT = fileURLToPath(new URL('../config/agent-presets/', import.meta.url))
+const HOSTED_ROOT_CONFIG = fileURLToPath(new URL('../config/hosted-root.yml', import.meta.url))
 
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
+import {
+  HOSTED_RUNTIME_ARGUMENTS,
+  isHostedRuntimeInvocation,
+  validateInheritedDescriptors,
+} from '@deepseek-ai/dsh-remote-host-fd199'
 import { createProcessShutdown, type ProcessShutdown } from './process-shutdown.ts'
+import {
+  publishWebRuntimeRegistry,
+  removeOwnedWebRuntimeRegistry,
+  type WebRuntimeRegistryRecord,
+} from './web-runtime-registry.ts'
 
 const NAME = 'dsh'
 
@@ -55,6 +69,68 @@ export const INSTALL_ANCHOR = fileURLToPath(new URL('../package.json', import.me
 
 /** The session-telemetry row id the DSH_TELEMETRY_DISABLED switch targets. */
 const TELEMETRY_ROW_ID = 'session-telemetry-otel'
+const HOSTED_PATCH_HASH_ENV = 'DSH_HOSTED_PATCH_SHA256'
+const HOSTED_PATCH_RELATIVE_ENV = 'DSH_HOSTED_PATCH_RELATIVE'
+const HOSTED_WEB_BUNDLES = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] as const
+
+/**
+ * Hosted mode accepts one native-attested compatibility overlay only. Its
+ * mutable source file is a data switch, not an executable extension point:
+ * expressions, inserted rows, plugin names, and arbitrary config values are
+ * rejected before Loader sees them.
+ */
+export function loadHostedPatchSnapshot(patchFiles: readonly string[], home = resolveDshHome()): PatchOptions[] {
+  const relative = process.env[HOSTED_PATCH_RELATIVE_ENV]
+  const expectedHash = process.env[HOSTED_PATCH_HASH_ENV]
+  if (relative === undefined || expectedHash === undefined
+    || !/^[a-f0-9]{64}$/.test(expectedHash)
+    || relative.startsWith('/') || relative.split('/').some(part => part === '' || part === '.' || part === '..')) {
+    throw new Error(`${NAME}: hosted runtime has no valid signed patch snapshot`)
+  }
+  const root = resolve(home)
+  const expectedPath = resolve(root, relative)
+  if (!expectedPath.startsWith(`${root}/`) || patchFiles.length !== 1 || resolve(patchFiles[0] ?? '') !== expectedPath) {
+    throw new Error(`${NAME}: hosted runtime rejects an untrusted patch path`)
+  }
+  let content: string
+  try { content = readFileSync(expectedPath, 'utf8') }
+  catch { throw new Error(`${NAME}: hosted runtime could not read its signed patch snapshot`) }
+  return parseHostedPatchSnapshotBytes(content, expectedHash)
+}
+
+/** Parses the one byte snapshot already hashed by {@link loadHostedPatchSnapshot}. */
+export function parseHostedPatchSnapshotBytes(content: string, expectedHash: string): PatchOptions[] {
+  const actualHash = createHash('sha256').update(content).digest('hex')
+  if (actualHash !== expectedHash) throw new Error(`${NAME}: hosted runtime patch snapshot changed`)
+  let parsed: unknown
+  try { parsed = yaml.load(content, { schema: yaml.JSON_SCHEMA }) }
+  catch { throw new Error(`${NAME}: hosted runtime patch snapshot is not safe YAML`) }
+  if (!Array.isArray(parsed)) throw new Error(`${NAME}: hosted runtime patch snapshot must be an array`)
+  const patches = parsed as PatchOptions[]
+  for (const patch of patches) {
+    const candidate = patch as Record<string, unknown>
+    if (Object.keys(candidate).length !== 2 || typeof candidate.id !== 'string' || candidate.disabled !== true) {
+      throw new Error(`${NAME}: hosted runtime patch permits only disabled built-in rows`)
+    }
+  }
+  return patches
+}
+
+/** The sealed files and resolver base a hosted child uses, never DSH_HOME. */
+export function hostedBootConfiguration(): { rootConfig: string; bareModuleBaseUrl: string } {
+  return { rootConfig: HOSTED_ROOT_CONFIG, bareModuleBaseUrl: pathToFileURL(INSTALL_ANCHOR).href }
+}
+
+/** Builds a hosted profile solely from package names resolved at the sealed CLI anchor. */
+function sealedHostedProfile(): Profile {
+  const profileDirectory = dirname(HOSTED_ROOT_CONFIG)
+  const layers = HOSTED_WEB_BUNDLES.map((packageName) => {
+    const packageDir = resolveBundleDir(NAME, packageName, INSTALL_ANCHOR, profileDirectory)
+    const patchPath = join(packageDir, 'cordis.patch.yml')
+    return { packageName, packageDir, patchPath, patches: loadOverlayPatches(NAME, patchPath) }
+  })
+  return { name: 'web', dir: profileDirectory, layers, patchPath: HOSTED_ROOT_CONFIG, patches: [] }
+}
 
 /** The empty root entry list every profile tree patches over. */
 const PROFILE_ROOT_CONFIG = `# dsh profile root — an empty entry list. The tree is composed as patches:
@@ -142,10 +218,11 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
 function composeProfile(
   name: string,
   patchFiles: readonly string[],
+  hostedRuntime = false,
 ): ComposedProfile {
-  const profile = prepareProfile(name)
-  const homePatches = loadOptionalPatches(NAME, homePatchPath()) ?? []
-  const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
+  const profile = hostedRuntime ? sealedHostedProfile() : prepareProfile(name)
+  const homePatches = hostedRuntime ? [] : loadOptionalPatches(NAME, homePatchPath()) ?? []
+  const overlays = hostedRuntime ? loadHostedPatchSnapshot(patchFiles) : patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
   const bundlePatches = profile.layers.flatMap(layer => layer.patches)
   const rows = new Map<string, EntryOptions>()
   for (const row of composeEntries([bundlePatches, profile.patches, homePatches, overlays])) {
@@ -170,6 +247,32 @@ function composeProfile(
   return { profile, bundlePatches, homePatches, overlays: composedOverlays, rows }
 }
 
+/**
+ * The signed-Host hosted-runtime overlay: enables the V3 route composition
+ * without a pinned Host-app path (the FD199 authority announces the attested
+ * path) and mounts the FD199 startup plugin that owns the handoff lifecycle.
+ * An ordinary invocation never receives these patches.
+ * @param rows - The pre-flag composed row index.
+ * @returns the launcher-owned hosted patches, or `undefined` off the Web profile.
+ */
+function hostedRuntimeOverlay(rows: ReadonlyMap<string, EntryOptions>): readonly PatchOptions[] | undefined {
+  const routeRow = rows.get('remote-host-v3')
+  const routeConfig = (routeRow?.config ?? {}) as Record<string, unknown>
+  return [{
+    // No `id` here: an id alongside `insert` names a target GROUP to insert
+    // into, and a nonexistent group silently drops the whole patch.
+    insert: [
+      { id: 'remote-host-fd199', name: '@deepseek-ai/dsh-remote-host-fd199' },
+      { id: 'remote-host-fd199-web-owner', name: '@deepseek-ai/dsh-remote-host-fd199/web-owner' },
+    ],
+  }, {
+    // Restates every key the row owns: a patch replaces the whole config.
+    id: 'remote-host-v3',
+    name: '@deepseek-ai/dsh-remote-host-v3',
+    config: { ...routeConfig, enabled: true, hostAppPath: '' },
+  }]
+}
+
 /** Options for {@link runProfile}. */
 export interface RunProfileOptions {
   /** This run's frozen environment snapshot, provided before any entry mounts. */
@@ -180,6 +283,76 @@ export interface RunProfileOptions {
   patchFiles: readonly string[]
   /** The invocation's inner arguments, handed to the tree through `ctx.cmdlineArgs`. */
   args: readonly string[]
+}
+
+/** The only Web-server facts the launcher needs after a Web profile binds. */
+interface BoundWebServer {
+  host: unknown
+  port: unknown
+}
+
+/** Return the canonical loopback URL only for a fully bound Web server. */
+function loopbackWebUrl(ctx: Context): string | undefined {
+  const server = ctx.get('webServer') as BoundWebServer | undefined
+  if (server?.host !== '127.0.0.1'
+    || typeof server.port !== 'number'
+    || !Number.isInteger(server.port)
+    || server.port < 1
+    || server.port > 65_535) return undefined
+  return `http://127.0.0.1:${String(server.port)}`
+}
+
+/** Registry operations owned by the Web profile's post-bind lifecycle. */
+export interface WebRuntimeRegistryLifecycle {
+  /** Atomically publish one bound loopback URL. */
+  publish(url: string): Promise<WebRuntimeRegistryRecord>
+  /** Remove the record only if it still belongs to its publisher. */
+  remove(owner: WebRuntimeRegistryRecord): Promise<boolean>
+}
+
+const webRuntimeRegistryLifecycle: WebRuntimeRegistryLifecycle = {
+  publish: async url => publishWebRuntimeRegistry({ url }),
+  remove: removeOwnedWebRuntimeRegistry,
+}
+
+/**
+ * Publish a bound Web runtime and attach its owner-checked removal to the
+ * root context. Disposal that wins while publication is pending removes the
+ * just-published record instead of leaving stale discovery behind.
+ * @param ctx - active profile root that owns runtime lifetime.
+ * @param url - canonical loopback URL of the bound Web server.
+ * @param registry - publisher and remover, replaceable by lifecycle tests.
+ */
+export async function publishBoundWebRuntimeRegistry(
+  ctx: Context,
+  url: string,
+  registry: WebRuntimeRegistryLifecycle = webRuntimeRegistryLifecycle,
+): Promise<boolean> {
+  let owner: WebRuntimeRegistryRecord | undefined
+  const removeOwner = async (): Promise<void> => {
+    if (owner === undefined) return
+    try {
+      await registry.remove(owner)
+    } catch (error) {
+      ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
+    }
+  }
+  try {
+    owner = await registry.publish(url)
+    if (ctx.fiber.state !== FiberState.ACTIVE) {
+      await removeOwner()
+      return false
+    }
+    ctx.effect(
+      () => async () => { await removeOwner() },
+      'dsh.webRuntimeRegistry',
+    )
+    return true
+  } catch (error) {
+    await removeOwner()
+    ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
+    return false
+  }
 }
 
 /**
@@ -205,7 +378,14 @@ function suppressShutdownError(ctx: Context, signal: AbortSignal, error: unknown
  * @returns the settled root context and the shutdown controller.
  */
 export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
-  const composed = composeProfile(options.profile, options.patchFiles)
+  // The hosted runtime contract is validated before any boot effect: both
+  // private descriptors must already be inherited sockets, or the launch
+  // fails loud with no mounted tree.
+  const hostedRuntime = options.profile === 'web' && isHostedRuntimeInvocation(options.args)
+  if (hostedRuntime) validateInheritedDescriptors()
+  const composed = composeProfile(options.profile, options.patchFiles, hostedRuntime)
+  const hostedOverlay = hostedRuntime ? hostedRuntimeOverlay(composed.rows) : undefined
+  const bootPatches = hostedOverlay === undefined ? allPatches(composed) : [...allPatches(composed), ...hostedOverlay]
   const app: { current?: Context } = {}
   const shutdown = createProcessShutdown(async () => { await app.current?.fiber.dispose() })
   const signalShutdown = new AbortController()
@@ -224,7 +404,8 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     await app.current?.fiber.dispose()
   })
 
-  const rootConfig = join(composed.profile.dir, PROFILE_ROOT_FILENAME)
+  const hostedBoot = hostedRuntime ? hostedBootConfiguration() : undefined
+  const rootConfig = hostedBoot?.rootConfig ?? join(composed.profile.dir, PROFILE_ROOT_FILENAME)
   // Recomposition for the live user layers: bundle layers below, overlays
   // above, so a user edit can never displace them. Parsed app arguments are
   // not in here at all — they live in app-provided services that survive a
@@ -239,13 +420,19 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   // removing the override could never revert the row to the bundle default.
   const composeLive = (): PatchOptions[] => structuredClone([
     ...composed.bundlePatches,
-    ...loadOptionalPatches(NAME, composed.profile.patchPath) ?? [],
-    ...loadOptionalPatches(NAME, homePatchPath()) ?? [],
+    ...(hostedRuntime ? [] : loadOptionalPatches(NAME, composed.profile.patchPath) ?? []),
+    ...(hostedRuntime ? [] : loadOptionalPatches(NAME, homePatchPath()) ?? []),
     ...composed.overlays,
+    ...(hostedOverlay === undefined ? [] : hostedOverlay),
   ])
+  // The hosted suffix is launcher protocol, not an app flag: the tree sees
+  // the same inner arguments an ordinary invocation would.
+  const innerArguments = hostedRuntime
+    ? options.args.slice(0, options.args.length - HOSTED_RUNTIME_ARGUMENTS.length)
+    : options.args
   // Cloned for the same insert-aliasing reason as composeLive: the boot
   // application must not mutate the objects later reloads recompose from.
-  const ctx = await boot(NAME, rootConfig, structuredClone(allPatches(composed)), (hostCtx) => {
+  const ctx = await boot(NAME, rootConfig, structuredClone(bootPatches), (hostCtx) => {
     app.current = hostCtx
     // Before any config-tree entry mounts, so plugins resolve all launch-time
     // environment values from the same immutable provenance snapshot.
@@ -253,11 +440,32 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     // The command line and bounded exit request are launcher facts available
     // to every app plugin that injects the argument snapshot.
     provideCmdline(hostCtx, {
-      args: options.args,
-      exit: code => void shutdown.shutdown(code),
+      args: innerArguments,
+      // Callers that transfer durable ownership await this exact root-disposal
+      // barrier.  The shutdown controller retains its bounded escalation;
+      // ordinary callers may still intentionally ignore the returned promise.
+      exit: code => shutdown.shutdown(code),
     })
-  })
+  }, hostedBoot?.bareModuleBaseUrl)
   app.current = ctx
+  let didPublishHostedRegistry = false
+  if (options.profile === 'web') {
+    const url = loopbackWebUrl(ctx)
+    if (url !== undefined) {
+      didPublishHostedRegistry = await publishBoundWebRuntimeRegistry(ctx, url)
+    }
+  }
+  if (hostedRuntime) {
+    const desktopReady = ctx.get('fd199DesktopReady') as { signal?: () => Promise<void> } | undefined
+    if (desktopReady?.signal !== undefined) {
+      // The native first-generation and activated-restart gates must not
+      // admit the Host until this exact loopback registry record exists. A
+      // prepared adopter intentionally has no desktop-ready capability: it
+      // stays fenced until activation and later reports V3 runtime.ready.
+      if (!didPublishHostedRegistry) throw new Error('hosted Web runtime registry was not published')
+      await desktopReady.signal()
+    }
+  }
   // A surface can dispose the whole tree while boot or this post-boot watcher
   // setup is still in flight — a signal, or a fast one-shot's appExit. Loader
   // presence and fiber state own liveness; the initial check skips a tree
@@ -265,7 +473,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   // landed mid-setup. Watching is unconditional: a one-shot surface exits
   // through its bounded shutdown, which disposes the watchers before the
   // loop drains.
-  if (!signalShutdown.signal.aborted
+  if (!hostedRuntime && !signalShutdown.signal.aborted
     && ctx.fiber.state === FiberState.ACTIVE
     && ctx.get('loader') !== undefined) {
     try {

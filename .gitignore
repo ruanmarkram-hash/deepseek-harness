@@ -35,6 +35,12 @@ apps/desktop/dist/
 .artifacts/
 .dsh-build/
 .playwright-mcp/
+apps/mobile/.expo/
+apps/mobile/credentials.json
+apps/mobile/modules/dsh-device-identity/ios/.build/
+native/remote-host-app/.build/
+native/remote-host-keychain/.build/
+native/remote-host-app/dist/
 .orig
 .worktrees/
 worktrees/

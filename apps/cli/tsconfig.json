@@ -57,6 +57,12 @@
       "path": "../../packages/util/home-paths"
     },
     {
+      "path": "../../packages/util/atomic-write"
+    },
+    {
+      "path": "../../packages/mobile/remote-host-fd199"
+    },
+    {
       "path": "../../packages/mcp/mcp-client"
     },
     {

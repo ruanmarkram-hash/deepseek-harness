@@ -1,0 +1,9 @@
+{
+  "name": "libsodium",
+  "version": "1.0.22-stable",
+  "source": "https://download.libsodium.org/libsodium/releases/libsodium-1.0.22-stable.tar.gz",
+  "sha256": "bf2745b62184002bdb9a6e19bf41cf08678eacb0b6680b8806c87ce86a6977b9",
+  "minisignSignature": "libsodium-1.0.22-stable.tar.gz.minisig",
+  "minisignPublicKey": "libsodium-release.minisign.pub",
+  "verification": "The prepare script verifies the vendored Minisign signature with the published libsodium release key and then verifies this SHA-256 before extraction."
+}

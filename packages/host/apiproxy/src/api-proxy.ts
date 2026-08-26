@@ -1939,7 +1939,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return ok(request, namespaceView(descriptor))
   }
 
-  return {
+  return fenceDesktopDispatch({
     sessions: {
       // Attached sessions summarize from memory; persisted-but-unattached (cold)
       // sessions merge in from the persistence store so history survives restarts.
@@ -3654,5 +3654,77 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       pending.resolve(payload.answer)
       return Promise.resolve({ accepted: true })
     },
+  }, ctx)
+}
+
+/**
+ * Structural contract of the optional hosted FD199 desktop write fence. The
+ * real implementation and the Context service declaration are owned by
+ * `@deepseek-ai/dsh-remote-host-fd199`; this package stays dependency-free of
+ * it and resolves the service lazily per dispatch.
+ */
+interface HostedDesktopWriteFence {
+  /** Runs one complete desktop carrier/API operation under the current fence state. */
+  runDesktopOperation<T>(operation: () => Promise<T>): Promise<T>
+}
+
+/** The Context key the hosted FD199 startup plugin provides its fence under. */
+const HOSTED_WRITE_FENCE_KEY = 'fd199DesktopWriteFence'
+
+/** One unary API operation awaiting a correlated RPC response. */
+type UnaryOperation = (request: never, ...rest: never[]) => Promise<unknown>
+
+/** One API namespace of unary operations. */
+type UnaryNamespace = Record<string, UnaryOperation>
+
+/**
+ * Wraps every unary desktop operation so a mounted hosted FD199 fence gates
+ * it. Event streams stay unwrapped: they are read-side, and the handoff
+ * quiesce drains active writers instead of cutting readers.
+ * @param proxy - The complete ApiProxy literal.
+ * @param ctx - Host context resolving the optional fence service.
+ * @returns the same ApiProxy face with fenced unary dispatch.
+ */
+function fenceDesktopDispatch<P extends object>(
+  proxy: P,
+  ctx: Context,
+): P {
+  const resolveFence = (): HostedDesktopWriteFence | undefined => {
+    // Optional service: compositions without the hosted FD199 plugin keep
+    // their exact existing dispatch path with one map read per operation.
+    return ctx.get(HOSTED_WRITE_FENCE_KEY) as HostedDesktopWriteFence | undefined
   }
+  const fencedNamespace = (namespace: UnaryNamespace): UnaryNamespace =>
+    Object.fromEntries(Object.entries(namespace).map(([name, operation]) => [
+      name,
+      (...arguments_: Parameters<UnaryOperation>) => {
+        // Resolved per call: the hosted startup plugin mounts the fence after
+        // the gateway constructs its proxy, so a construction-time snapshot
+        // would leave every desktop operation unfenced forever.
+        const fence = resolveFence()
+        const invoke = () => operation(...arguments_)
+        if (fence === undefined) return invoke()
+        return fence.runDesktopOperation(invoke)
+      },
+    ]))
+  const fenced: Record<string, unknown> = {}
+  for (const [name, value] of Object.entries(proxy)) {
+    if (name === 'events') { fenced[name] = value; continue }
+    if (name === 'respond') {
+      const respond = value as (...arguments_: unknown[]) => Promise<unknown>
+      fenced[name] = (...arguments_: unknown[]) => {
+        const fence = resolveFence()
+        const invoke = () => respond(...arguments_)
+        if (fence === undefined) return invoke()
+        return fence.runDesktopOperation(invoke)
+      }
+      continue
+    }
+    if (typeof value === 'object' && value !== null) {
+      fenced[name] = fencedNamespace(value as UnaryNamespace)
+      continue
+    }
+    fenced[name] = value
+  }
+  return fenced as unknown as P
 }
