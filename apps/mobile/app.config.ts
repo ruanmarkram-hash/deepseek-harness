@@ -18,7 +18,7 @@ const config: ExpoConfig = {
     bundleIdentifier: DSH_MOBILE_BUNDLE_ID,
     supportsTablet: true,
     infoPlist: {
-      ITSAppUsesNonExemptEncryption: true,
+      ITSAppUsesNonExemptEncryption: false,
       NSCameraUsageDescription: 'DSH Mobile uses the camera only to scan a short-lived DSH Host pairing QR code.',
     },
   },
