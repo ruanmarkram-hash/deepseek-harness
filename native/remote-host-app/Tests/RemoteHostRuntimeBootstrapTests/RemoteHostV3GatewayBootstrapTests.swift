@@ -187,6 +187,14 @@ import Testing
   #expect(!RemoteHostV3SealedGatewayPackaging.isTrustedInstallationNode(owner: user, mode: S_IFDIR | 0o755, hasExtendedACL: true, expectedOwner: user))
 }
 
+@Test func sealedGatewayMatchesOnlyTheExactPackagedDesignatedRequirementText() {
+  let expected = "identifier \"com.deepseek.dsh.remote-host\" and anchor apple generic and certificate leaf[subject.OU] = F2H9RBSH38"
+  let substituted = "identifier \"com.deepseek.dsh.remote-host\" and anchor apple generic and certificate leaf[subject.OU] = ATTACKER123"
+  #expect(RemoteHostV3SealedGatewayPackaging.matchesPackagedDesignatedRequirement(expected, designated: expected))
+  #expect(!RemoteHostV3SealedGatewayPackaging.matchesPackagedDesignatedRequirement(expected, designated: substituted))
+  #expect(!RemoteHostV3SealedGatewayPackaging.matchesPackagedDesignatedRequirement("identifier \"com.deepseek.dsh.remote-host\"", designated: "identifier \"com.deepseek.dsh.remote-host\""))
+}
+
 @Test func hostedAndGatewayLoadersShareTheTwoCanonicalInstallationBoundaries() throws {
   let home = URL(fileURLWithPath: "/Users/tester", isDirectory: true)
   #expect(try RemoteHostV3SealedGatewayPackaging.expectedInstallationOwner(

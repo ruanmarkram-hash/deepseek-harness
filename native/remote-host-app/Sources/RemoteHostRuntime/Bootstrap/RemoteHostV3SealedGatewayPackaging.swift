@@ -246,6 +246,18 @@ public enum RemoteHostV3SealedGatewayPackaging {
     owner == expectedOwner && !hasExtendedACL && mode & (S_IWGRP | S_IWOTH) == 0
   }
 
+  /**
+   Compares the canonical requirement text emitted by Security.framework.
+
+   `SecRequirementCopyData` is not a stable semantic identity: compiling the
+   same requirement text can produce different opaque bytes from the copy
+   embedded in a code signature. The strict validity check below remains the
+   authority for evaluating the packaged requirement against the signed app.
+   */
+  static func matchesPackagedDesignatedRequirement(_ packaged: String, designated: String) -> Bool {
+    packaged.contains("anchor apple generic") && packaged == designated
+  }
+
   static func validateRunningHost(bundle: Bundle) throws {
     let bundleURL = bundle.bundleURL.standardizedFileURL
     guard bundleURL == bundleURL.resolvingSymlinksInPath().standardizedFileURL,
@@ -268,13 +280,12 @@ public enum RemoteHostV3SealedGatewayPackaging {
           SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSStrictValidate), requirement) == errSecSuccess
     else { throw RemoteHostV3SealedGatewayPackagingError.invalidHostCodeSignature }
     var designated: SecRequirement?
-    var designatedData: CFData?
-    var expectedData: CFData?
+    var designatedString: CFString?
     guard SecCodeCopyDesignatedRequirement(code, [], &designated) == errSecSuccess,
           let designated,
-          SecRequirementCopyData(designated, [], &designatedData) == errSecSuccess,
-          SecRequirementCopyData(requirement, [], &expectedData) == errSecSuccess,
-          designatedData as Data? == expectedData as Data?
+          SecRequirementCopyString(designated, [], &designatedString) == errSecSuccess,
+          let designatedString,
+          matchesPackagedDesignatedRequirement(requirementText, designated: designatedString as String)
     else { throw RemoteHostV3SealedGatewayPackagingError.invalidHostCodeSignature }
   }
 
