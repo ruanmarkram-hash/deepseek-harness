@@ -20,6 +20,7 @@ const config: ExpoConfig = {
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
       NSCameraUsageDescription: 'DSH Mobile uses the camera only to scan a short-lived DSH Host pairing QR code.',
+      NSFaceIDUsageDescription: 'DSH Mobile uses Face ID to authenticate access to this phone’s protected pairing identity.',
     },
   },
   android: {
