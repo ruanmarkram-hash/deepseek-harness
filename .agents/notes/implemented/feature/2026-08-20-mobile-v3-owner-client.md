@@ -16,11 +16,11 @@ The app supports both physical local transfer and internet pairing. Internet pai
 
 One verified invitation, durable event cursor, and next epoch are stored in a non-rendered native Keychain record. Import opens no connection. An explicit user action opens the production V3 socket and reports connected state only after mutual authentication and the encrypted Host commit. The app lists and creates sessions, projects Host snapshots and ordered events, and sends text prompts without inventing local messages or persisting rendered conversation content.
 
-Backgrounding, disconnect, malformed traffic, or replacement closes the physical socket and clears the in-memory presence session. Explicit retry is allowed only after the previous transport retires and uses the Host-issued exact next epoch. **Forget invitation** clears the local Keychain route, epoch, cursor, and projection; it does not revoke the Host route. Host revocation invalidates the route and requires a fresh pairing.
+An iOS `inactive` interruption, including the system presence prompt, preserves a pending in-memory presence session. Actual backgrounding, disconnect, malformed traffic, or replacement closes the physical socket and clears that session. Explicit retry is allowed only after the previous transport retires and uses the Host-issued exact next epoch. **Forget invitation** clears the local Keychain route, epoch, cursor, and projection; it does not revoke the Host route. Host revocation invalidates the route and requires a fresh pairing.
 
 ## Verification
 
-Focused TypeScript tests cover strict invitation and pairing-code parsing, encrypted internet invitation transfer, durable state serialization, exact-epoch reconnect, abort and socket retirement races, snapshot and replay cursor ordering, request dispatch, and forget behavior. Native Swift tests cover protected identity lifecycle and presence-session clearing. Production acceptance additionally requires the processed TestFlight build on a physical iPhone over a network different from the notarized Host.
+Focused TypeScript tests cover strict invitation and pairing-code parsing, encrypted internet invitation transfer, temporary `inactive` interruption, actual background teardown, durable state serialization, exact-epoch reconnect, abort and socket retirement races, snapshot and replay cursor ordering, request dispatch, and forget behavior. Native Swift tests cover protected identity lifecycle and presence-session clearing. Production acceptance additionally requires the processed TestFlight build on a physical iPhone over a network different from the notarized Host.
 
 ## Alternatives considered
 

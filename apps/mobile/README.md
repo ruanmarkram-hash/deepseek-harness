@@ -10,7 +10,7 @@ The production flow creates a protected Ed25519 signing identity and an independ
 
 For internet pairing, the phone scans or enters the short-lived `dsh3` code shown by the signed Host, sends only its public enrollment offer to the fixed relay origin, displays the complete fingerprint for Host-side comparison, and waits for local Host approval. The returned invitation is encrypted to that phone identity and contains the device route credential, Host pin, enrollment incarnations, and exact next connection epoch, but no Host credential or private key. A local file or clipboard transfer of the same public offer and phone-safe invitation remains available.
 
-The app stores one verified invitation, event cursor, and next epoch in its native Keychain record. It opens no socket during import. An explicit connect action performs the authenticated V3 relay handshake and reports live state only after the Host commit is verified. Backgrounding or disconnect closes the physical transport and clears the in-memory presence session; a later explicit retry uses only the Host-issued exact next epoch.
+The app stores one verified invitation, event cursor, and next epoch in its native Keychain record. It opens no socket during import. An explicit connect action performs the authenticated V3 relay handshake and reports live state only after the Host commit is verified. An iOS `inactive` interruption, including the system presence prompt, preserves the pending presence session. Actual backgrounding or disconnect closes the physical transport and clears that session; a later explicit retry uses only the Host-issued exact next epoch.
 
 ## Mobile scope
 

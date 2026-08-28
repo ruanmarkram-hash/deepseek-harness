@@ -16,11 +16,11 @@ DSH Mobile 是 V3 Host owner 客户端。其原生模块把独立 Ed25519 签名
 
 一个已验证邀请、持久事件 cursor 和下一 epoch 存储在不渲染的原生钥匙串记录中。导入不会打开连接。显式用户操作会打开生产 V3 socket，并且只在双向认证和加密 Host commit 完成后报告已连接。应用列出并创建会话，投影 Host snapshot 和有序事件，并发送文本提示，不会虚构本地消息或持久化已渲染对话内容。
 
-进入后台、断开连接、畸形 traffic 或替换 transport 都会关闭物理 socket 并清除内存中的在场会话。只有旧 transport 已退出后才允许显式重试，并且只使用 Host 签发的确切下一 epoch。**Forget invitation** 会清除本地钥匙串路由、epoch、cursor 和投影，但不会撤销 Host 路由。Host 撤销会使路由失效并要求重新配对。
+iOS 的 `inactive` 中断（包括系统在场提示）会保留待处理的内存在场会话。实际进入后台、断开连接、畸形 traffic 或替换 transport 都会关闭物理 socket 并清除该会话。只有旧 transport 已退出后才允许显式重试，并且只使用 Host 签发的确切下一 epoch。**Forget invitation** 会清除本地钥匙串路由、epoch、cursor 和投影，但不会撤销 Host 路由。Host 撤销会使路由失效并要求重新配对。
 
 ## 验证
 
-聚焦 TypeScript 测试覆盖严格邀请和配对代码解析、加密互联网邀请传输、持久状态串行化、确切 epoch 重连、abort 与 socket 退出竞争、snapshot 与 replay cursor 顺序、请求分派和忘记行为。原生 Swift 测试覆盖受保护身份生命周期和在场会话清除。生产验收还要求已处理 TestFlight 构建在实体 iPhone 上通过与已公证 Host 不同的网络运行。
+聚焦 TypeScript 测试覆盖严格邀请和配对代码解析、加密互联网邀请传输、临时 `inactive` 中断、实际后台清理、持久状态串行化、确切 epoch 重连、abort 与 socket 退出竞争、snapshot 与 replay cursor 顺序、请求分派和忘记行为。原生 Swift 测试覆盖受保护身份生命周期和在场会话清除。生产验收还要求已处理 TestFlight 构建在实体 iPhone 上通过与已公证 Host 不同的网络运行。
 
 ## 考虑过的替代方案
 

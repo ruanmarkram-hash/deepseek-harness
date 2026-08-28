@@ -10,7 +10,7 @@
 
 进行互联网配对时，手机扫描或输入已签名 Host 显示的短期 `dsh3` 代码，只向固定 relay origin 发送公开注册 offer，显示完整指纹供 Host 端比对，并等待 Host 本地批准。返回的邀请会加密给该手机身份，包含设备路由凭据、Host pin、注册 incarnation 和确切下一连接 epoch，但不包含 Host 凭据或私钥。仍可通过本地文件或剪贴板传输同一个公开 offer 和手机安全邀请。
 
-应用在原生钥匙串记录中存储一个已验证邀请、事件 cursor 和下一 epoch。导入时不会打开 socket。显式连接操作执行经过认证的 V3 relay 握手，只有验证 Host commit 后才报告实时状态。进入后台或断开连接会关闭物理 transport 并清除内存中的在场会话；之后的显式重试只使用 Host 签发的确切下一 epoch。
+应用在原生钥匙串记录中存储一个已验证邀请、事件 cursor 和下一 epoch。导入时不会打开 socket。显式连接操作执行经过认证的 V3 relay 握手，只有验证 Host commit 后才报告实时状态。iOS 的 `inactive` 中断（包括系统在场提示）会保留待处理的在场会话。实际进入后台或断开连接会关闭物理 transport 并清除该会话；之后的显式重试只使用 Host 签发的确切下一 epoch。
 
 ## 移动端范围
 

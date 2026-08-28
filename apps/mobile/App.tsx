@@ -5,6 +5,7 @@ import { AppState, Image, KeyboardAvoidingView, Platform, Pressable, SafeAreaVie
 import * as Crypto from 'expo-crypto'
 import { createMobileEnrollmentOffer, fingerprintMobileEnrollmentOffer, importMobileHostInvitation, type MobileEnrollmentOffer } from './enrollment'
 import { completeAnywherePairing } from './anywhere-pairing'
+import { disconnectRemoteWhenBackgrounded } from './mobile-app-state'
 import { connectStoredHost } from './mobile-connection-action'
 import { nativeMobileIdentityProvider, nativeMobileRemoteStateStore } from './native-identity'
 import { mobileRemoteSocketFactory } from './mobile-remote-socket'
@@ -43,7 +44,7 @@ export default function App(): React.JSX.Element {
     })
   }
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', (next) => { if (next !== 'active') client.current?.disconnect() })
+    const subscription = AppState.addEventListener('change', next => disconnectRemoteWhenBackgrounded(next, () => client.current?.disconnect()))
     return () => { subscription.remove(); client.current?.disconnect() }
   }, [])
   useEffect(() => {
