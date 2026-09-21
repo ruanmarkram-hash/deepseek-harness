@@ -5,6 +5,7 @@ import { AppState, Image, KeyboardAvoidingView, Platform, Pressable, SafeAreaVie
 import * as Crypto from 'expo-crypto'
 import { createMobileEnrollmentOffer, fingerprintMobileEnrollmentOffer, importMobileHostInvitation, type MobileEnrollmentOffer } from './enrollment'
 import { completeAnywherePairing } from './anywhere-pairing'
+import { MobilePairingActions, pairingError } from './mobile-pairing-actions'
 import { disconnectRemoteWhenBackgrounded } from './mobile-app-state'
 import { connectStoredHost } from './mobile-connection-action'
 import { nativeMobileIdentityProvider, nativeMobileRemoteStateStore } from './native-identity'
@@ -243,6 +244,7 @@ function PairingSheet({ existing, onConnect, onImport, onRemotePair, onOpenForge
   const [invitation, setInvitation] = useState('')
   const [pairingCode, setPairingCode] = useState('')
   const [remoteBusy, setRemoteBusy] = useState(false)
+  const [pairingActions] = useState(() => new MobilePairingActions())
   const [error, setError] = useState<string | undefined>()
   const [summary, setSummary] = useState<PairingSummary | undefined>(existing)
   const [cameraPermission, requestCameraPermission] = useCameraPermissions()
@@ -263,22 +265,35 @@ function PairingSheet({ existing, onConnect, onImport, onRemotePair, onOpenForge
     try { parsed = JSON.parse(raw) } catch { setError('Paste the complete Host invitation. It has not been retained.'); return }
     try { const imported = await onImport(parsed); setSummary(imported); setMode('ready') } catch (cause) { setError(pairingError(cause)) }
   }
-  const submitRemotePairing = async (code = pairingCode) => {
-    if (remoteBusy || offer === undefined) return
-    setRemoteBusy(true)
-    setError(undefined); setPairingCode('')
-    try { const imported = await onRemotePair(code, offer); setSummary(imported); setMode('ready') } catch (cause) { setError(pairingError(cause)); setMode('remote') } finally { setRemoteBusy(false) }
+  const submitRemotePairing = async () => {
+    if (offer === undefined) return
+    await pairingActions.submit(async () => {
+      setRemoteBusy(true)
+      setError(undefined); setPairingCode('')
+      try { const imported = await onRemotePair(pairingCode, offer); setSummary(imported); setMode('ready') } catch (cause) { setError(pairingError(cause)); setMode('remote') } finally { setRemoteBusy(false) }
+    })
+  }
+  const capturePairingCode = (value: string) => {
+    try {
+      const code = pairingActions.scanCode(value)
+      if (code === undefined) return
+      setPairingCode(code)
+      setError(undefined)
+      setMode('remote')
+    } catch (cause) { setError(pairingError(cause)); setMode('remote') }
   }
   const beginScan = async () => {
-    if (cameraPermission?.granted) return setMode('scan')
-    const result = await requestCameraPermission()
-    if (result.granted) setMode('scan'); else setError('Camera access is needed to scan the Host QR code. You can enter its pairing code instead.')
+    if (remoteBusy) return
+    const granted = cameraPermission?.granted || (await requestCameraPermission()).granted
+    if (granted) {
+      if (pairingActions.beginScan()) { setError(undefined); setMode('scan') }
+    } else setError('Camera access is needed to scan the Host QR code. You can enter its pairing code instead.')
   }
   return <><Text style={styles.sheetEyebrow}>{mode === 'remote' || mode === 'scan' ? 'INTERNET PAIRING' : 'LOCAL PAIRING'}</Text><Text style={styles.sheetTitle}>{mode === 'ready' ? 'Host invitation verified' : mode === 'offer' ? 'Transfer this phone offer' : mode === 'import' ? 'Import Host invitation' : mode === 'scan' ? 'Scan Host code' : mode === 'remote' ? 'Pair from anywhere' : 'Pair this phone'}</Text><Text style={styles.sheetCopy}>{mode === 'ready' ? 'The invitation matches this protected phone identity. No connection is opened here.' : mode === 'remote' || mode === 'scan' ? 'Scan or enter the short-lived code from your signed DSH Host. It works on cellular data or any internet connection and still requires approval at the Host.' : 'Pairing is a physical local transfer between this phone and your signed DSH Host.'}</Text>
     {mode === 'start' && <><Text style={styles.fieldLabel}>PHONE LABEL</Text><TextInput accessibilityLabel="Phone label" autoCorrect={false} maxLength={64} onChangeText={setLabel} style={styles.fieldInput} value={label} /><Pressable accessibilityRole="button" onPress={() => void prepareOffer('remote')} style={styles.primaryButton}><Text style={styles.primaryButtonText}>Scan or enter pairing code</Text></Pressable><Pressable accessibilityRole="button" onPress={() => void prepareOffer('offer')} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Use local transfer instead</Text></Pressable><Pressable accessibilityRole="button" onPress={() => { setError(undefined); setMode('import') }} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Import Host invitation</Text></Pressable></>}
     {mode === 'offer' && offer !== undefined && <><PhoneFingerprint offer={offer} /><View style={styles.publicOffer}><Text style={styles.publicOfferLabel}>PUBLIC PHONE IDENTITY</Text><Text selectable style={styles.offerCode}>{JSON.stringify(offer)}</Text></View><Text style={styles.safeNote}>Transfer this public offer locally to the signed Host. Compare the fingerprint above before approving. The offer contains no private key, shared secret, route token, or relay credential.</Text><Pressable accessibilityRole="button" onPress={() => { setError(undefined); setMode('import') }} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>I have the Host invitation</Text></Pressable></>}
     {mode === 'remote' && offer !== undefined && <><PhoneFingerprint offer={offer} /><Pressable accessibilityLabel="Scan Host pairing code" accessibilityRole="button" onPress={() => void beginScan()} style={styles.scanCard}><View style={styles.scanMark}><Text style={styles.scanGlyph}>⌁</Text></View><View style={styles.rowCopy}><Text style={styles.rowTitle}>Scan Host pairing code</Text><Text style={styles.rowDetail}>Use the QR code shown by the signed Host.</Text></View></Pressable><Text style={styles.fieldLabel}>PAIRING CODE</Text><TextInput accessibilityLabel="Host pairing code" autoCapitalize="none" autoCorrect={false} onChangeText={setPairingCode} placeholder="dsh3.…" placeholderTextColor={colors.muted} spellCheck={false} style={styles.fieldInput} value={pairingCode} /><Text style={styles.safeNote}>Keep this fingerprint visible while the Host asks for approval. Approve only when every group matches.</Text><Pressable accessibilityRole="button" disabled={remoteBusy || pairingCode.trim() === ''} onPress={() => void submitRemotePairing()} style={[styles.primaryButton, (remoteBusy || pairingCode.trim() === '') && styles.buttonDisabled]}><Text style={styles.primaryButtonText}>{remoteBusy ? 'Waiting for Host approval…' : 'Pair with Host'}</Text></Pressable></>}
-    {mode === 'scan' && offer !== undefined && <><PhoneFingerprint offer={offer} /><View style={{ height: 300, marginTop: 18, overflow: 'hidden', borderRadius: 16 }}><CameraView barcodeScannerSettings={{ barcodeTypes: ['qr'] }} onBarcodeScanned={remoteBusy ? undefined : ({ data }) => { setPairingCode(data); void submitRemotePairing(data) }} style={{ flex: 1 }} /></View><Pressable accessibilityRole="button" onPress={() => setMode('remote')} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Enter code instead</Text></Pressable></>}
+    {mode === 'scan' && offer !== undefined && <><PhoneFingerprint offer={offer} /><View style={{ height: 300, marginTop: 18, overflow: 'hidden', borderRadius: 16 }}><CameraView barcodeScannerSettings={{ barcodeTypes: ['qr'] }} onBarcodeScanned={({ data }) => capturePairingCode(data)} style={{ flex: 1 }} /></View><Pressable accessibilityRole="button" onPress={() => { pairingActions.endScan(); setMode('remote') }} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Enter code instead</Text></Pressable></>}
     {mode === 'import' && <><Pressable accessibilityHint="Explains why camera scanning is unavailable" accessibilityLabel="Scan Host invitation" accessibilityRole="button" onPress={() => setError('Camera scanning is not installed in this build. Paste the Host invitation instead.')} style={styles.scanCard}><View style={styles.scanMark}><Text style={styles.scanGlyph}>⌁</Text></View><View style={styles.rowCopy}><Text style={styles.rowTitle}>Scan Host invitation</Text><Text style={styles.rowDetail}>Camera scanning is not installed in this build.</Text></View></Pressable><Text style={styles.fieldLabel}>PASTE HOST INVITATION</Text><TextInput accessibilityLabel="Paste Host invitation" autoCapitalize="none" autoCorrect={false} multiline onChangeText={setInvitation} placeholder="{…}" placeholderTextColor={colors.muted} spellCheck={false} style={styles.invitationInput} textAlignVertical="top" value={invitation} /><Text style={styles.safeNote}>The pasted invitation is validated, then cleared. It is never shown after import or written to logs.</Text><Pressable accessibilityRole="button" disabled={invitation.trim() === ''} onPress={() => void importInvitation()} style={[styles.primaryButton, invitation.trim() === '' && styles.buttonDisabled]}><Text style={styles.primaryButtonText}>Validate invitation</Text></Pressable></>}
     {mode === 'ready' && summary !== undefined && <><View style={styles.readyCard}><View style={styles.readyDot} /><View style={styles.rowCopy}><Text style={styles.rowTitle}>Ready to connect to DSH Host</Text><Text style={styles.rowDetail}>Transfer verified {new Date(summary.expiresAt).toLocaleString()}</Text></View></View><Text style={styles.safeNote}>The transfer expiry does not revoke this enrolled route. Connecting requires device-owner authentication and the matching signed Host relay. Device revocation remains a Host action.</Text><Pressable accessibilityRole="button" onPress={onConnect} style={styles.primaryButton}><Text style={styles.primaryButtonText}>Connect to Host</Text></Pressable><Pressable accessibilityRole="button" onPress={() => { setInvitation(''); setError(undefined); setMode('import') }} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Import fresh Host invitation</Text></Pressable><Pressable accessibilityRole="button" onPress={onOpenForget} style={styles.destructiveButton}><Text style={styles.destructiveButtonText}>Forget invitation</Text></Pressable></>}
     {error !== undefined && <View accessibilityLiveRegion="polite" style={styles.errorCard}><Text style={styles.errorTitle}>Could not continue pairing</Text><Text style={styles.errorCopy}>{error}</Text></View>}
@@ -314,14 +329,6 @@ function Brand(): React.JSX.Element {
   </View>
 }
 function stateLabel(state: MobileRemoteState): string { if (state.kind === 'connected') return 'LIVE HOST'; if (state.kind === 'connecting') return 'CONNECTING'; if (state.kind === 'reconnecting') return 'RECONNECTING'; if (state.kind === 're-pair-required') return 'RE-PAIR REQUIRED'; if (state.kind === 'revoked') return 'DEVICE REVOKED'; if (state.kind === 'error') return 'CONNECTION STOPPED'; if (state.kind === 'disconnected') return 'DISCONNECTED'; return 'HOST NOT PAIRED' }
-function pairingError(cause: unknown): string {
-  const message = cause instanceof Error ? cause.message : ''
-  if (message.includes('expired')) return 'This Host invitation has expired. Generate a new one from the Host.'
-  if (message.includes('different protected mobile identity')) return 'This invitation belongs to a different protected phone identity.'
-  if (message.includes('Expo Go')) return 'Use a signed DSH Mobile development or production build. Expo Go cannot pair this phone.'
-  if (message.includes('label')) return 'Choose a visible device label between 1 and 64 characters.'
-  return 'The Host invitation is invalid or incomplete. It has not been retained.'
-}
 
 const colors = { accent: '#657BFF', border: '#2C3240', card: '#11151E', ink: '#F4F6FC', muted: '#8E96A8', page: '#080A0E', danger: '#EE9AA5', user: '#222B4A' }
 const styles = StyleSheet.create({

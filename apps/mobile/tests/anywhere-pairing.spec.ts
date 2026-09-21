@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { completeAnywherePairing, parseAnywherePairingCode } from '../anywhere-pairing'
 import { fingerprintMobileEnrollmentOffer, type MobileEnrollmentOffer, type MobileHostInvitation } from '../enrollment'
 import type { MobileDeviceIdentity, MobileIdentityProvider } from '../remote'
+import { pairingError } from '../mobile-pairing-actions'
 
 const pairingId = 'pairing_identity_123'
 const pairingCode = 'c'.repeat(32)
@@ -74,6 +75,53 @@ function identityProvider(sharedSecret: Uint8Array, events: string[]): MobileIde
 }
 
 describe('anywhere mobile pairing', () => {
+  it.each([
+    [404, 'may have expired or been removed'],
+    [409, 'already has a phone offer'],
+    [401, 'rejected this pairing code'],
+    [403, 'rejected this pairing code'],
+    [429, 'too many requests'],
+    [500, 'HTTP 500'],
+  ])('reports offer HTTP %s without falsely declaring invitation expiry', async (status, expected) => {
+    const fetcher = vi.fn().mockResolvedValue(Response.json({ error: 'untrusted secret payload' }, { status })) as typeof fetch
+    const error = await completeAnywherePairing(
+      `dsh3.${pairingId}.${pairingCode}`, offer, identityProvider(sharedSecretFixture.slice(), []), fetcher,
+    ).catch((cause: unknown) => cause)
+    expect(pairingError(error)).toContain(expected)
+    expect(pairingError(error)).not.toContain('This Host invitation has expired')
+    expect(pairingError(error)).not.toContain('untrusted secret payload')
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+
+  it('distinguishes relay connectivity failure from expiry', async () => {
+    const fetcher = vi.fn().mockRejectedValue(new TypeError('network details')) as typeof fetch
+    const error = await completeAnywherePairing(
+      `dsh3.${pairingId}.${pairingCode}`, offer, identityProvider(sharedSecretFixture.slice(), []), fetcher,
+    ).catch((cause: unknown) => cause)
+    expect(pairingError(error)).toContain('Could not reach the pairing relay')
+    expect(pairingError(error)).not.toContain('network details')
+  })
+
+  it('does not turn an invitation polling server error into expiry', async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 503 })) as typeof fetch
+    const error = await completeAnywherePairing(
+      `dsh3.${pairingId}.${pairingCode}`, offer, identityProvider(sharedSecretFixture.slice(), []), fetcher, async () => undefined,
+    ).catch((cause: unknown) => cause)
+    expect(pairingError(error)).toContain('HTTP 503')
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it('reports approval timeout without claiming that the relay code expired', async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 204 })) as typeof fetch
+    const error = await completeAnywherePairing(
+      `dsh3.${pairingId}.${pairingCode}`, offer, identityProvider(sharedSecretFixture.slice(), []), fetcher, async () => undefined,
+    ).catch((cause: unknown) => cause)
+    expect(pairingError(error)).toContain('No Host approval was received within two minutes')
+    expect(fetcher).toHaveBeenCalledTimes(61)
+  })
+
   it('pins the signed Host fingerprint for the canonical public offer', () => {
     expect(fingerprintMobileEnrollmentOffer(offer)).toBe('2B5E-242C-B1C4-5D4E-6E0B-4835-55F2-3278-E16C-1148-BB04-31C6-8563-1D18-F045-51EC')
     expect(fingerprintMobileEnrollmentOffer({ ...offer, label: 'A/B' }))
