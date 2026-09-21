@@ -1,5 +1,4 @@
 import AppKit
-import CoreImage
 import Darwin
 import Foundation
 import RemoteHostFd199
@@ -257,36 +256,7 @@ private final class PairingNoRedirects: NSObject, URLSessionTaskDelegate {
   }
 
   private func showCode(_ code: String, expiresAt: Date) {
-    let alert = NSAlert()
-    alert.messageText = "Pair iPhone from anywhere"
-    alert.informativeText = "Scan this QR code in DSH Mobile or enter the code below manually. It expires at \(expiresAt.formatted(date: .omitted, time: .shortened)). Approval is still required here."
-    if let filter = CIFilter(name: "CIQRCodeGenerator") {
-      filter.setValue(Data(code.utf8), forKey: "inputMessage")
-      filter.setValue("M", forKey: "inputCorrectionLevel")
-      if let image = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 8, y: 8)) {
-        let representation = NSCIImageRep(ciImage: image)
-        let rendered = NSImage(size: representation.size)
-        rendered.addRepresentation(representation)
-        let qrView = NSImageView(image: rendered)
-        qrView.frame = NSRect(x: 0, y: 0, width: 232, height: 232)
-        let manualCode = NSTextField(string: code)
-        manualCode.isEditable = false
-        manualCode.isSelectable = true
-        manualCode.drawsBackground = false
-        manualCode.isBordered = false
-        manualCode.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-        manualCode.lineBreakMode = .byTruncatingMiddle
-        manualCode.toolTip = code
-        manualCode.widthAnchor.constraint(equalToConstant: 232).isActive = true
-        let view = NSStackView(views: [qrView, manualCode])
-        view.orientation = .vertical
-        view.alignment = .centerX
-        view.spacing = 8
-        alert.accessoryView = view
-      }
-    }
-    alert.addButton(withTitle: "I’ve scanned it")
-    alert.runModal()
+    PairingCodeDialog.make(code: code, expiresAt: expiresAt).runModal()
   }
 
   private func randomToken(bytes: Int) throws -> String {

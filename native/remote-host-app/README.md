@@ -14,6 +14,8 @@ The app contains the signed native children, `DSHRemoteHostKeychain.xpc`, the pi
 
 **Pair iPhone from anywhere…** creates a short-lived pairing code and presents it as both a QR code and selectable manual text. The phone submits only its public enrollment offer. The Host displays the complete fingerprint and device label; the person at the Mac must compare that fingerprint with the phone and approve it before provisioning can create a route or return the protected invitation. The file-import action applies the same bounded public-offer parsing and Host confirmation rule.
 
+The pairing dialog reserves space for the complete QR code, including its white scanning margin, and wraps the full manual code without truncation. The selectable manual code remains available if QR rendering fails.
+
 After pairing, **Start hosted runtime** launches the sealed hosted child and recovers an eligible signed FD199 journal. The hosted child receives relay records on fixed descriptor 198 and authority handoff records on fixed descriptor 199; it receives neither the Host token nor private agreement material. **Activate paired phone** completes the signed FD199 ownership transition before the native Host opens the authenticated V3 relay WebSocket. The browser and phone then use the same hosted runtime.
 
 The native epoch ledger permits one live Host route owner, commits an epoch only after the authenticated handshake, and reconciles a lost receipt without skipping the next epoch. A phone network interruption can reconnect through the retained route at the Host-issued next epoch. After a clean Host restart, **Start hosted runtime** restores the verified journal, active route, and hosted state before phone activation resumes.

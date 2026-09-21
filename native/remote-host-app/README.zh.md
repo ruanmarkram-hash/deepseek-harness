@@ -14,6 +14,8 @@ app 内含已签名原生 child、`DSHRemoteHostKeychain.xpc`、固定版本的 
 
 **Pair iPhone from anywhere…** 会创建短期 pairing code，并同时显示 QR code 和可选择的手动文本。手机只提交公开 enrollment offer。Host 会显示完整 fingerprint 和 device label；Mac 前的用户必须与手机比对 fingerprint 并批准，之后 provisioning 才能创建 route 或返回受保护 invitation。文件导入 action 使用相同的有界公开 offer 解析和 Host 确认规则。
 
+配对对话框为完整 QR code 及其白色扫描边距预留空间，手动代码完整换行显示而不截断。如果 QR 渲染失败，可选择的手动代码仍然可用。
+
 配对后，**Start hosted runtime** 会启动 sealed hosted child，并恢复符合条件的已签名 FD199 journal。hosted child 通过固定 descriptor 198 接收 relay record，通过固定 descriptor 199 接收 authority handoff record；它既不会收到 Host token，也不会收到私有 agreement material。**Activate paired phone** 会先完成已签名 FD199 ownership transition，随后原生 Host 才打开已认证的 V3 relay WebSocket。浏览器和手机由此使用同一个 hosted runtime。
 
 原生 epoch ledger 只允许一个 live Host route owner，仅在认证 handshake 后提交 epoch，并能在不跳过 next epoch 的情况下协调 lost receipt。手机网络中断后，可以通过保留的 route 按 Host 发出的 next epoch 重新连接。Host 正常重启后，**Start hosted runtime** 会先恢复已验证 journal、active route 和 hosted state，然后才恢复手机 activation。
