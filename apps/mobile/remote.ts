@@ -158,8 +158,20 @@ interface ConnectingAttempt {
   readonly config: MobileRemoteConnectionConfig
   readonly controller: AbortController
   epoch: number
+  stage: ConnectionStage
   socket: RemoteRelaySocket | undefined
   timeout: ReturnType<typeof setTimeout> | undefined
+}
+
+type ConnectionStage = 'owner-presence' | 'identity' | 'relay-open' | 'hello-send' | 'host-handshake' | 'host-bootstrap'
+
+const CONNECTION_STAGE_HELP: Record<ConnectionStage, string> = {
+  'owner-presence': 'Owner authentication did not complete.',
+  'identity': 'The protected phone identity could not be loaded.',
+  'relay-open': 'The phone could not open the relay connection. Check its internet connection.',
+  'hello-send': 'The phone could not prepare or send its first handshake message.',
+  'host-handshake': 'The encrypted Host handshake did not complete. Check that the Host is waiting for this phone.',
+  'host-bootstrap': 'The authenticated Host connection could not finish loading the workspace.',
 }
 
 interface HostSynchronization {
@@ -264,7 +276,7 @@ export class MobileRemoteClient {
     }
     this.cancelConnecting()
     const controller = new AbortController()
-    this.connecting = { config, controller, epoch: expectedEpoch, socket: undefined, timeout: undefined }
+    this.connecting = { config, controller, epoch: expectedEpoch, stage: 'owner-presence', socket: undefined, timeout: undefined }
     try {
       const hostEpoch = await this.epochProvider.nextConnectionEpoch(config, expectedEpoch, controller.signal)
       const finalityRecovery = expectedEpoch < MAX_REMOTE_WIRE_SEQUENCE && hostEpoch === expectedEpoch + 1
@@ -288,9 +300,9 @@ export class MobileRemoteClient {
   private async connectAt(config: MobileRemoteConnectionConfig, epoch: number, existingController?: AbortController): Promise<void> {
     this.publish({ kind: 'connecting' })
     const controller = existingController ?? new AbortController()
-    const connecting = this.connecting?.controller === controller
+    const connecting: ConnectingAttempt = this.connecting?.controller === controller
       ? this.connecting
-      : { config, controller, epoch, socket: undefined, timeout: undefined }
+      : { config, controller, epoch, stage: 'owner-presence', socket: undefined, timeout: undefined }
     connecting.epoch = epoch
     this.connecting = connecting
     this.armConnectionDeadline(connecting)
@@ -304,8 +316,10 @@ export class MobileRemoteClient {
       }, () => undefined)
       await this.awaitAttempt(presencePromise, connecting)
       if (controller.signal.aborted) return
+      connecting.stage = 'identity'
       const identity = await this.awaitAttempt(Promise.resolve().then(() => this.identityProvider.deviceIdentity()), connecting)
       if (controller.signal.aborted) return
+      connecting.stage = 'relay-open'
       const socketPromise = Promise.resolve().then(() => this.socketFactory.create(config, controller.signal))
       void socketPromise.then((socket) => {
         if (controller.signal.aborted) this.closeSocket(socket, 'mobile-connection-cancelled')
@@ -316,8 +330,22 @@ export class MobileRemoteClient {
         this.closeSocket(socket, 'mobile-connection-cancelled')
         return
       }
+      connecting.stage = 'hello-send'
+      let helloSent = false
+      // A successful carrier send is not proof that the relay or Host received it.
+      const handshakeSocket: RemoteRelaySocket = {
+        send(data): void {
+          socket.send(data)
+          if (!helloSent) {
+            helloSent = true
+            connecting.stage = 'host-handshake'
+          }
+        },
+        close: (code, reason) => socket.close(code, reason),
+        receive: signal => socket.receive(signal),
+      }
       transport = await this.awaitAttempt(connectRemoteRelayDevice({
-        socket,
+        socket: handshakeSocket,
         identity: { deviceId: identity.deviceId, enrollmentId: config.deviceEnrollmentId, agreement: identity.agreement },
         host: {
           deviceId: config.hostDeviceId,
@@ -332,6 +360,7 @@ export class MobileRemoteClient {
         transport.close()
         return
       }
+      connecting.stage = 'host-bootstrap'
       await this.awaitAttempt(this.epochProvider.recordAuthenticatedConnection(config, epoch, controller.signal), connecting)
       if (controller.signal.aborted || this.config !== config || this.expectedEpoch !== epoch) {
         transport.close()
@@ -375,7 +404,10 @@ export class MobileRemoteClient {
         transport.close('mobile-connection-bootstrap-failed')
       }
       this.identityProvider.clearUserPresence()
-      if (!controller.signal.aborted && this.config === config) this.publish({ kind: 'error', message: 'Could not establish the encrypted Host connection.' })
+      if (!controller.signal.aborted && this.config === config) this.publish({
+        kind: 'error',
+        message: `Connection stopped at ${connecting.stage}. ${CONNECTION_STAGE_HELP[connecting.stage]} You can retry.`,
+      })
     } finally {
       if (this.connecting === connecting) {
         this.clearConnectionDeadline(connecting)
@@ -669,7 +701,7 @@ export class MobileRemoteClient {
       if (connecting.socket !== undefined) this.closeSocket(connecting.socket, 'mobile-connection-timeout')
       this.disconnectPending(new Error('The Host connection did not complete before its deadline'))
       this.connecting = undefined
-      this.publish({ kind: 'error', message: 'The encrypted Host connection timed out. You can retry.' })
+      this.publish({ kind: 'error', message: `The encrypted Host connection timed out at ${connecting.stage}. You can retry.` })
     }, this.connectionTimeoutMs)
   }
 

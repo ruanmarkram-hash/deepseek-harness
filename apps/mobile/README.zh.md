@@ -14,6 +14,8 @@
 
 20 秒连接 deadline 覆盖所有者认证、socket 打开、handshake 和 workspace 初始化，包括 receipt 推进下一 epoch 之后。Timeout 会退役活动 transport 和发送权限，拒绝 pending request，并允许显式重试，但不会回滚已确认 epoch。配对与连接面板显示实时进度和错误；重复点击不会启动重叠尝试，workspace 成功加载后会关闭面板。
 
+连接失败和超时提示只标明一个固定阶段：所有者在场认证、身份加载、relay 打开、hello 准备或发送、Host 握手，或已认证 workspace 初始化。hello 发送成功只表示本地 carrier 接受了消息，不证明 Host 已收到。提示绝不包含底层错误、地址、标识符、凭据或帧内容；某一阶段失败并不意味着邀请过期，也不要求重新配对。
+
 所有者认证后，公开身份查询从当前原生身份会话投影公开字段，不再重复读取 Keychain。清除会话后不再复用；正常受保护加载和新的显式认证仍然必需。私有身份材料绝不返回 JavaScript。
 
 ## 移动端范围

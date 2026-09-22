@@ -14,6 +14,8 @@ The app stores one verified invitation, event cursor, and next epoch in its nati
 
 The 20-second connection deadline covers owner authentication, socket opening, handshake and workspace bootstrap, including after the receipt advances the next epoch. Timeout retires the active transport and send permission, rejects pending requests and enables explicit retry without rolling back the confirmed epoch. Pairing and connection sheets show live progress and errors; duplicate taps cannot start overlapping attempts, and successful workspace loading dismisses the sheet.
 
+Connection failures and timeouts name one fixed stage: owner presence, identity loading, relay opening, hello preparation/sending, Host handshake, or authenticated workspace bootstrap. A successful hello send records only local carrier acceptance, not delivery to the Host. Messages never include underlying errors, addresses, identifiers, credentials or frame contents, and a failed stage does not imply an expired invitation or require re-pairing.
+
 After owner authentication, public identity lookup projects public fields from that current native identity session without another Keychain read. Clearing the session removes this reuse; normal protected loading and a fresh explicit authentication remain required. Private identity material is never returned to JavaScript.
 
 ## Mobile scope

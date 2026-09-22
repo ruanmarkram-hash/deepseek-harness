@@ -2,7 +2,7 @@ import { x25519 } from '@noble/curves/ed25519.js'
 import { describe, expect, it, vi } from 'vitest'
 import { acceptRemoteRelayDevice, type RemoteRelaySocket } from '@deepseek-ai/dsh-remote-relay-protocol'
 import type { RemoteWireEnvelope, RemoteWireEventEnvelope, RemoteWireId, RemoteWireJson } from '@deepseek-ai/dsh-remote-wire'
-import { MobileRemoteClient, type MobileDeviceIdentity, type MobileRemoteConnectionConfig } from '../remote'
+import { MobileRemoteClient, type MobileDeviceIdentity, type MobileRemoteConnectionConfig, type MobileRemoteState } from '../remote'
 import { mobileConnectionView } from '../mobile-connection-view'
 
 const route = { routeId: 'remote_route_identifier_123', generation: 3, connectionEpoch: 2 }
@@ -185,6 +185,64 @@ function client(socket: RemoteRelaySocket, identity: MobileDeviceIdentity, state
 }
 
 describe('MobileRemoteClient', () => {
+  it.each([
+    ['owner-presence', 'presence'],
+    ['identity', 'identity'],
+    ['relay-open', 'socket'],
+    ['hello-send', 'random'],
+    ['hello-send', 'send'],
+    ['host-handshake', 'receive'],
+    ['host-bootstrap', 'snapshot'],
+  ] as const)('reports only fixed %s diagnostics for a %s failure', async (stage, failure) => {
+    const sentinel = 'SECRET_SENTINEL https://private.invalid/route-id?token=credential native-key-error'
+    const fail = (): never => { throw new Error(sentinel) }
+    const host = identity(hostDeviceId, 7)
+    const device = identity(deviceId, 9)
+    const [hostSocket, deviceSocket] = sockets()
+    const states: MobileRemoteState[] = []
+    let sends = 0
+    const socket: RemoteRelaySocket = {
+      send(data): void {
+        if (failure === 'send') fail()
+        sends += 1
+        deviceSocket.send(data)
+      },
+      close: (code, reason) => deviceSocket.close(code, reason),
+      receive: (signal) => {
+        if (failure === 'receive') fail()
+        return deviceSocket.receive(signal)
+      },
+    }
+    const remote = new MobileRemoteClient({
+      identityProvider: {
+        requireUserPresence: async () => { if (failure === 'presence') fail() },
+        deviceIdentity: async () => failure === 'identity' ? fail() : device,
+        clearUserPresence: () => undefined,
+      },
+      onEvent: () => undefined,
+      onSnapshot: () => { if (failure === 'snapshot') fail() },
+      onState: state => states.push(state),
+      randomBytes: failure === 'random' ? fail : random(9),
+      epochProvider: {
+        nextConnectionEpoch: async (_config, expected) => expected,
+        recordAuthenticatedConnection: async () => undefined,
+      },
+      socketFactory: { create: async () => failure === 'socket' ? fail() : socket },
+    })
+    const accepting = failure === 'snapshot'
+      ? hostAcceptance(hostSocket, host, device, route.connectionEpoch)
+      : Promise.resolve()
+    await Promise.all([remote.connect(config(host)), accepting])
+    const stopped = states.at(-1)
+    expect(stopped?.kind).toBe('error')
+    if (stopped?.kind !== 'error') throw new Error('Missing connection diagnostic')
+    expect(stopped.message).toContain(`Connection stopped at ${stage}.`)
+    expect(stopped.message).toContain('You can retry.')
+    expect(JSON.stringify(states)).not.toMatch(/SECRET_SENTINEL|private\.invalid|route-id|credential|native-key-error/)
+    expect(sends > 0).toBe(failure === 'receive' || failure === 'snapshot')
+    remote.disconnect()
+  })
+
   it.each(['device.describe', 'session.list', 'snapshot'])('retires a stalled %s after a receipt and retries only the next committed epoch', async (stall) => {
     vi.useFakeTimers()
     try {
@@ -252,7 +310,7 @@ describe('MobileRemoteClient', () => {
           {
             "disabled": false,
             "label": "Retry connection",
-            "message": "The encrypted Host connection timed out. You can retry.",
+            "message": "The encrypted Host connection timed out at host-bootstrap. You can retry.",
           },
         ]
       `)
@@ -549,7 +607,7 @@ describe('MobileRemoteClient', () => {
   it('times out a pending owner-presence request without opening a relay socket', async () => {
     const host = identity(hostDeviceId, 7)
     const device = identity(deviceId, 9)
-    const states: string[] = []
+    const states: MobileRemoteState[] = []
     let clearCalls = 0
     let deviceIdentityCalls = 0
     let socketCalls = 0
@@ -562,7 +620,7 @@ describe('MobileRemoteClient', () => {
       },
       onEvent: () => undefined,
       onSnapshot: () => undefined,
-      onState: state => states.push(state.kind),
+      onState: state => states.push(state),
       randomBytes: random(9),
       epochProvider: {
         nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch,
@@ -573,14 +631,17 @@ describe('MobileRemoteClient', () => {
     expect(clearCalls).toBeGreaterThan(0)
     expect(deviceIdentityCalls).toBe(0)
     expect(socketCalls).toBe(0)
-    expect(states).toEqual(['connecting', 'error'])
+    expect(states).toEqual([
+      { kind: 'connecting' },
+      { kind: 'error', message: 'The encrypted Host connection timed out at owner-presence. You can retry.' },
+    ])
   })
 
   it('aborts a pending raw socket open and closes a late socket after its connection deadline', async () => {
     const host = identity(hostDeviceId, 7)
     const device = identity(deviceId, 9)
     const [, deviceSocket] = sockets()
-    const states: string[] = []
+    const states: MobileRemoteState[] = []
     let abortSignal: AbortSignal | undefined
     let releaseSocket: ((socket: RemoteRelaySocket) => void) | undefined
     let closed = false
@@ -592,7 +653,7 @@ describe('MobileRemoteClient', () => {
         clearUserPresence: () => undefined },
       onEvent: () => undefined,
       onSnapshot: () => undefined,
-      onState: state => states.push(state.kind),
+      onState: state => states.push(state),
       randomBytes: random(9),
       epochProvider: {
         nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch,
@@ -609,14 +670,17 @@ describe('MobileRemoteClient', () => {
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(abortSignal?.aborted).toBe(true)
     expect(closed).toBe(true)
-    expect(states).toEqual(['connecting', 'error'])
+    expect(states).toEqual([
+      { kind: 'connecting' },
+      { kind: 'error', message: 'The encrypted Host connection timed out at relay-open. You can retry.' },
+    ])
   })
 
   it('aborts and physically closes an opened socket when the V3 handshake stalls', async () => {
     const host = identity(hostDeviceId, 7)
     const device = identity(deviceId, 9)
     const [, deviceSocket] = sockets()
-    const states: string[] = []
+    const states: MobileRemoteState[] = []
     let closed = false
     let clearCalls = 0
     const remote = new MobileRemoteClient({
@@ -628,7 +692,7 @@ describe('MobileRemoteClient', () => {
       },
       onEvent: () => undefined,
       onSnapshot: () => undefined,
-      onState: state => states.push(state.kind),
+      onState: state => states.push(state),
       randomBytes: random(9),
       epochProvider: {
         nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch,
@@ -640,7 +704,10 @@ describe('MobileRemoteClient', () => {
     await remote.connect(config(host))
     expect(clearCalls).toBeGreaterThan(0)
     expect(closed).toBe(true)
-    expect(states).toEqual(['connecting', 'error'])
+    expect(states).toEqual([
+      { kind: 'connecting' },
+      { kind: 'error', message: 'The encrypted Host connection timed out at host-handshake. You can retry.' },
+    ])
   })
 
   it('does not let a superseded attempt deadline overwrite a later verified connection', async () => {
