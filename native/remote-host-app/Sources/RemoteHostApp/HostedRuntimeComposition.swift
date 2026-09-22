@@ -53,14 +53,14 @@ enum HostedRuntimeComposition {
  */
 final class HostedRuntimeController: @unchecked Sendable {
   private let lock = NSLock()
-  private let agreement: RelayProtectedAgreement
+  private let agreement: any RelayProtectedAgreement & RelayHostPublicIdentityProvider
   private let store: RelaySecretStore
   private let connectionCoordinator: RelayHostRouteConnectionCoordinator
   private var coordinator: Fd199HandoffCoordinator?
   private var relay: HostedRelaySession?
   private var starting = false
 
-  init(agreement: RelayProtectedAgreement, store: RelaySecretStore, connectionCoordinator: RelayHostRouteConnectionCoordinator) {
+  init(agreement: any RelayProtectedAgreement & RelayHostPublicIdentityProvider, store: RelaySecretStore, connectionCoordinator: RelayHostRouteConnectionCoordinator) {
     self.agreement = agreement
     self.store = store
     self.connectionCoordinator = connectionCoordinator
@@ -72,7 +72,7 @@ final class HostedRuntimeController: @unchecked Sendable {
       guard let route = try self.store.activeRouteCredential() else { return nil }
       return PairingStatePublicIdentity(
         deviceId: route.deviceId, deviceEnrollmentId: route.deviceEnrollmentId,
-        hostEnrollmentId: route.hostEnrollmentId, signingPublicKey: route.deviceSigningPublicKey,
+        hostEnrollmentId: route.hostEnrollmentId, hostDeviceId: route.hostDeviceId, signingPublicKey: route.deviceSigningPublicKey,
         agreementPublicKey: route.deviceAgreementPublicKey
       )
     }, sealedHome: {
@@ -90,7 +90,7 @@ final class HostedRuntimeController: @unchecked Sendable {
     let artifacts = try RemoteHostV3HostedChildPackaging.loadAndValidateBundledArtifacts()
     let port = try PairingRepairPortReservation(port: artifacts.webConfiguration.port)
     return try withExtendedLifetime(port) {
-      try RelayPairingRepairEligibility.withEligibleRoute(store: store) { route in
+      try RelayPairingRepairEligibility.withEligibleRoute(store: store, host: agreement) { route in
         let target = PairingRepairTarget(
           deviceId: route.deviceId, deviceEnrollmentId: route.deviceEnrollmentId,
           hostEnrollmentId: route.hostEnrollmentId, signingPublicKey: route.deviceSigningPublicKey,

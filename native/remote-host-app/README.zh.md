@@ -24,6 +24,10 @@ app 内含已签名原生 child、`DSHRemoteHostKeychain.xpc`、固定版本的 
 
 私有 `storages/.pairing-repair/journal.json` 会在任何替换前保存精确的原始与目标公开字节及其 hash。每个文件替换都是原子的，并检查 preimage；部分失败只会回滚已知字节。中断的 journal 要求显式恢复，绝不覆盖意外的第三方写入。Hosted 启动和激活拒绝 prepared 或无效 journal。已完成 journal 保留为可恢复备份，但不阻止后续合法 runtime 写入。端口保留只能排除网络 listener，不能排除任意外部文件 writer。
 
+配对状态报告区分持久化 Host enrollment incarnation 与 route 的 Host device ID，并分别报告它们是否与原生 credential 相等，避免匹配的手机掩盖其存储 route 上不同的 Host identity。
+
+只有未改变的原生 credential 指向当前受保护 Host identity 时，才允许修复陈旧的公开 route Host device ID。修复在同一原生 route lease 和 transaction 内，将该 ID 与缓存且固定的 XPC identity 比较，并验证其 agreement public key 与受保护 agreement provider 一致。原生与受保护 Host 不匹配会被拒绝；此检查不会创建或替换任何 identity。
+
 配对后，**Start hosted runtime** 会启动 sealed hosted child，并恢复符合条件的已签名 FD199 journal。hosted child 通过固定 descriptor 198 接收 relay record，通过固定 descriptor 199 接收 authority handoff record；它既不会收到 Host token，也不会收到私有 agreement material。**Activate paired phone** 会先完成已签名 FD199 ownership transition，随后原生 Host 才打开已认证的 V3 relay WebSocket。浏览器和手机由此使用同一个 hosted runtime。
 
 认证后的原生 handshake 完成 epoch 提交后，Host 会等待 child 精确的持久化 epoch 同步确认，随后才转发手机连接。此公开且绑定 route 的同步不会改变原生 ledger 或 mobile handshake。

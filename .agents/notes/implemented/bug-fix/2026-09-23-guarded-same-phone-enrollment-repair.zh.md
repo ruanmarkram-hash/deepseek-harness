@@ -10,6 +10,8 @@ Status: implemented
 
 ## Decision
 
+原生 credential 必须匹配当前缓存且固定的 XPC Host device identity，且该 identity 的 agreement key 必须匹配同一个 typed protected agreement provider。两项检查均在持有的 route lease 和 transaction 内执行。只有此证明才允许替换语法有效但陈旧的公开 route Host device ID；正常激活仍拒绝冲突 enrollment。检查不调用 identity 创建路径，且不改变原生 credential。
+
 已签名 Host 提供单独且需要两次确认的离线修复。准入要求单一同手机公开 tuple 的两个 incarnation 均不匹配，key 和 label 匹配，route 引用内部一致，unit 版本受支持，公开和原生 epoch 均未使用。检查 recovery marker 和原生状态期间，原生 route lease 与 transaction 持续控制准入。Host 保留其 runtime-start 状态和配置的 loopback 端口。操作者停止所有外部 writer；端口保留不是通用文件 writer 锁。
 
 私有且基于目录 descriptor 的 journal 只存储精确的公开 preimage、提议 image 及其 hash。文件替换原子、有界、保留权限，并受 preimage 相等检查保护。部分操作只会回滚已识别的原始/目标字节。未知的中途写入会安全拒绝。Prepared 或损坏的 journal 会阻止 hosted 启动和激活，直至显式恢复；已完成 journal 是历史备份，而不是对后续 runtime 数据施加永久相等约束。原生 credential、invitation 和 epoch 记录绝不重写。

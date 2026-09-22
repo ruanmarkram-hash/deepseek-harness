@@ -3,6 +3,23 @@ import Foundation
 import Testing
 @testable import RemoteHostRelay
 
+private struct RepairProtectedHost: RelayHostPublicIdentityProvider, RelayProtectedAgreement {
+  let identity: RelayEnrollmentHostIdentity
+  let publicKey: String
+  func openHostIdentity() throws -> RelayEnrollmentHostIdentity { identity }
+  func deriveSharedSecret(peerPublicKey: String) throws -> Data { throw RelayOwnerError.unavailable }
+}
+
+private func repairProtectedHost(wrongIdentity: Bool = false, wrongAgreement: Bool = false) throws -> RepairProtectedHost {
+  func key(_ seed: UInt8) throws -> String {
+    try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: Data(repeating: seed, count: 32)).publicKey.rawRepresentation.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+  }
+  return try RepairProtectedHost(
+    identity: RelayEnrollmentHostIdentity(hostDeviceId: String(repeating: wrongIdentity ? "x" : "h", count: 16), agreementPublicKey: key(7)),
+    publicKey: key(wrongAgreement ? 8 : 7)
+  )
+}
+
 private final class PairingRepairStore: @unchecked Sendable, RelaySecretStore {
   let connectionEpochCoordinator: any RelayConnectionEpochCoordinator = RelayConnectionEpochInMemoryCoordinator()
   var active: RelayRouteCredential?
@@ -47,17 +64,19 @@ private func eligibleRepairStore() throws -> PairingRepairStore {
 @Test("repair native admission holds the sole route lease without changing credentials or epoch")
 func pairingRepairNativeEligibility() throws {
   let store = try eligibleRepairStore()
+  let host = try repairProtectedHost()
   let before = store.epoch
-  let result = try RelayPairingRepairEligibility.withEligibleRoute(store: store) { credential in credential.generation }
+  let result = try RelayPairingRepairEligibility.withEligibleRoute(store: store, host: host) { credential in credential.generation }
   #expect(result == 1 && store.writes == 0 && store.epoch == before)
   let lease = try store.connectionEpochCoordinator.acquireLease(routeId: store.active!.routeId)
-  #expect(throws: RelayPairingRepairRefusal.self) { try RelayPairingRepairEligibility.withEligibleRoute(store: store) { _ in true } }
+  #expect(throws: RelayPairingRepairRefusal.self) { try RelayPairingRepairEligibility.withEligibleRoute(store: store, host: host) { _ in true } }
   lease.release()
-  #expect(try RelayPairingRepairEligibility.withEligibleRoute(store: store) { _ in true })
+  #expect(try RelayPairingRepairEligibility.withEligibleRoute(store: store, host: host) { _ in true })
 }
 
 @Test("native pending, used, revoked, absent and inconsistent states cannot enter repair")
 func pairingRepairNativeRefusals() throws {
+  let host = try repairProtectedHost()
   for scenario in 0..<8 {
     let store = try eligibleRepairStore()
     let route = store.active!
@@ -72,7 +91,20 @@ func pairingRepairNativeRefusals() throws {
     default: store.active = nil
     }
     var called = false
-    #expect(throws: RelayPairingRepairRefusal.self) { try RelayPairingRepairEligibility.withEligibleRoute(store: store) { _ in called = true; return true } }
+    #expect(throws: RelayPairingRepairRefusal.self) { try RelayPairingRepairEligibility.withEligibleRoute(store: store, host: host) { _ in called = true; return true } }
     #expect(!called && store.writes == 0)
+  }
+}
+
+@Test("repair rejects a different protected Host identity or agreement key before public writes")
+func pairingRepairPinnedHostIdentity() throws {
+  for host in [try repairProtectedHost(wrongIdentity: true), try repairProtectedHost(wrongAgreement: true)] {
+    let store = try eligibleRepairStore()
+    var called = false
+    #expect(throws: RelayPairingRepairRefusal.hostIdentityMismatch) {
+      try RelayPairingRepairEligibility.withEligibleRoute(store: store, host: host) { _ in called = true; return true }
+    }
+    #expect(!called && store.writes == 0)
+    #expect(try RelayPairingRepairEligibility.withEligibleRoute(store: store, host: repairProtectedHost()) { _ in true })
   }
 }

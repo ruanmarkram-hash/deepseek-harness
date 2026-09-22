@@ -22,4 +22,6 @@ The signed Host offers a read-only **Check pairing state** action using its exis
 
 ## Consequences
 
+Host device identity equality on the stored route is independent of Host enrollment-incarnation equality. Both are observable booleans; a mismatch alone does not authorize replacement. The separate [guarded repair](2026-09-23-guarded-same-phone-enrollment-repair.md) additionally proves the native credential matches the current protected Host.
+
 Diagnosis distinguishes absent records, public tuple conflicts, and fixed read/validation failures without exporting credentials or changing runtime ownership. It covers the standard JSON storage layout, not arbitrary storage-backend overrides, and concurrent writes can change state after the observation. Matching records are not connectivity proof. Focused native tests pin the rendered report, conflict and failure handling, bounded reads, unsafe-path rejection, and preservation of file contents and modification time.

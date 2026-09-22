@@ -24,6 +24,10 @@ The pairing dialog reserves space for the complete QR code, including its white 
 
 The private `storages/.pairing-repair/journal.json` retains exact original and target public bytes with hashes before any replacement. Each file replacement is atomic and checks its preimage; partial failure rolls back only known bytes. An interrupted journal requires explicit recovery, and an unexpected third-party write is never overwritten. Hosted startup and activation reject prepared or invalid journals. Completed journals remain recoverable backups without preventing later legitimate runtime writes. The port reservation excludes a network listener, not arbitrary external file writers.
 
+The pairing-state report distinguishes the durable Host enrollment incarnation from the route's Host device ID. It reports equality with the native credential for each separately, so a matching phone does not conceal a different Host identity on its stored route.
+
+A stale public route Host device ID is repairable only when the unchanged native credential names the current protected Host identity. Under the same native route lease and transaction, repair compares that ID with the cached, pinned XPC identity and verifies its agreement public key matches the protected agreement provider. A native-to-protected-Host mismatch is refused; no identity is created or replaced by this check.
+
 After pairing, **Start hosted runtime** launches the sealed hosted child and recovers an eligible signed FD199 journal. The hosted child receives relay records on fixed descriptor 198 and authority handoff records on fixed descriptor 199; it receives neither the Host token nor private agreement material. **Activate paired phone** completes the signed FD199 ownership transition before the native Host opens the authenticated V3 relay WebSocket. The browser and phone then use the same hosted runtime.
 
 After the authenticated native handshake finalizes an epoch, the Host waits for the child's exact durable epoch-synchronization acknowledgment before forwarding the phone connection. This public, route-bound synchronization does not change the native ledger or mobile handshake.

@@ -4,19 +4,19 @@ import Testing
 
 private let diagnosticIdentity = PairingStatePublicIdentity(
   deviceId: "private-device-id", deviceEnrollmentId: "private-device-enrollment",
-  hostEnrollmentId: "private-host-enrollment", signingPublicKey: "private-signing-key",
+  hostEnrollmentId: "private-host-enrollment", hostDeviceId: "private-host-id", signingPublicKey: "private-signing-key",
   agreementPublicKey: "private-agreement-key"
 )
 private let diagnosticHome = URL(fileURLWithPath: "/fixture")
 
-private func diagnosticFiles(deviceEnrollment: String = "private-device-enrollment", hostEnrollment: String = "private-host-enrollment", empty: Bool = false) throws -> [PairingStateFile: Data] {
+private func diagnosticFiles(deviceEnrollment: String = "private-device-enrollment", hostEnrollment: String = "private-host-enrollment", hostDeviceId: String = "private-host-id", empty: Bool = false) throws -> [PairingStateFile: Data] {
   let device: [String: String] = [
     "id": "private-device-id", "incarnation": deviceEnrollment, "label": "Paired iPhone",
     "signingPublicKey": "private-signing-key", "agreementPublicKey": "private-agreement-key",
   ]
   return [
     .devices: try JSONSerialization.data(withJSONObject: ["tables": ["devices": empty ? [:] : ["private-device-id": device]]]),
-    .host: try JSONSerialization.data(withJSONObject: ["tables": ["host": empty ? [:] : ["identity": ["hostEnrollmentId": hostEnrollment]]]]),
+    .host: try JSONSerialization.data(withJSONObject: ["tables": ["host": empty ? [:] : ["identity": ["hostEnrollmentId": hostEnrollment]], "routes": empty ? [:] : ["private-device-id": ["hostDeviceId": hostDeviceId]]]]),
   ]
 }
 
@@ -34,6 +34,8 @@ func pairingDiagnosticMatchingSnapshot() throws {
   Device label matches hosted runtime: true
   Public Host record present: true
   Host enrollment matches: true
+  Public route record present: true
+  Route Host device ID matches: true
 
   Read-only check. No pairing or runtime state was changed. Matching records do not prove a live connection.
   """)
@@ -56,6 +58,18 @@ func pairingDiagnosticMissingRecords() throws {
   let result = PairingStateDiagnostic.check(activeIdentity: { diagnosticIdentity }, sealedHome: { diagnosticHome }, read: { _, file in files[file]! })
   #expect(result.text.contains("Public device record present: false"))
   #expect(result.text.contains("Public Host record present: false"))
+  #expect(result.text.contains("Public route record present: false"))
+  #expect(result.text.contains("Route Host device ID matches: false"))
+}
+
+@Test("diagnostic distinguishes a route Host identity mismatch without exposing either identifier")
+func pairingDiagnosticRouteHostMismatch() throws {
+  let files = try diagnosticFiles(hostDeviceId: "different-private-host-id")
+  let result = PairingStateDiagnostic.check(activeIdentity: { diagnosticIdentity }, sealedHome: { diagnosticHome }, read: { _, file in files[file]! })
+  #expect(result.text.contains("Public route record present: true"))
+  #expect(result.text.contains("Route Host device ID matches: false"))
+  #expect(result.text.contains("Host enrollment matches: true"))
+  #expect(!result.text.contains("private-"))
 }
 
 @Test("missing pairing never reads configuration or public files")

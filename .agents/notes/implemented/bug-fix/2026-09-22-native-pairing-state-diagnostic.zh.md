@@ -22,4 +22,6 @@ Status: implemented
 
 ## Consequences
 
+存储 route 上的 Host device identity 是否相等，与 Host enrollment incarnation 是否相等相互独立。两者均以布尔值呈现；仅有不匹配不能授权替换。单独的[受保护修复](2026-09-23-guarded-same-phone-enrollment-repair.md) 还会证明原生 credential 与当前受保护 Host 匹配。
+
 诊断能区分记录缺失、公开 tuple 冲突以及固定的读取/验证失败，而不导出 credential 或改变 runtime ownership。它覆盖标准 JSON 存储布局，不覆盖任意存储后端覆盖配置；并发写入可能在观察后改变状态。记录匹配不是连接成立的证据。定向原生测试固定报告渲染、冲突和失败处理、有界读取、不安全路径拒绝，以及文件内容和修改时间的保留行为。

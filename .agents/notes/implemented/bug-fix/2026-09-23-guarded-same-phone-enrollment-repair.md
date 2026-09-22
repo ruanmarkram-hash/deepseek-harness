@@ -10,6 +10,8 @@ An approved native route can disagree with an older unused public device and Hos
 
 ## Decision
 
+The native credential must match the current cached, pinned XPC Host device identity, and that identity's agreement key must match the same typed protected agreement provider. Both checks occur inside the held route lease and transaction. Only this proof permits replacement of a syntactically valid stale public route Host device ID; normal activation still rejects conflicting enrollment. The check calls no identity-creation path and leaves native credentials unchanged.
+
 The signed Host exposes a separate, twice-confirmed offline repair. Admission requires one same-phone public tuple with both incarnation mismatches, matching keys and label, internally consistent route references, supported unit versions, and unused public/native epochs. A native route lease and transaction hold admission while recovery markers and native state are checked. The Host reserves its runtime-start state and configured loopback port. The operator stops every external writer; the port reservation is not a universal file-writer lock.
 
 A private descriptor-relative journal stores only exact public preimages and proposed images with hashes. File replacement is atomic, bounded, permission-preserving and guarded by preimage equality. Partial work rolls back only recognized original/target bytes. Unknown intervening writes fail closed. Prepared or corrupt journals block hosted startup and activation until explicit recovery; completed journals are historical backups, not permanent equality constraints on evolving runtime data. Native credentials, invitations and epoch records are never rewritten.

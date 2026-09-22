@@ -6,6 +6,7 @@ struct PairingStatePublicIdentity {
   let deviceId: String
   let deviceEnrollmentId: String
   let hostEnrollmentId: String
+  let hostDeviceId: String
   let signingPublicKey: String
   let agreementPublicKey: String
 }
@@ -29,8 +30,12 @@ enum PairingStateDiagnostic {
     let tables: Tables
   }
   private struct Host: Decodable { let hostEnrollmentId: String }
+  private struct Route: Decodable { let hostDeviceId: String }
   private struct Hosts: Decodable {
-    struct Tables: Decodable { let host: [String: Host] }
+    struct Tables: Decodable {
+      let host: [String: Host]
+      let routes: [String: Route]?
+    }
     let tables: Tables
   }
 
@@ -64,6 +69,7 @@ enum PairingStateDiagnostic {
     catch { return report("Public Host directory could not be decoded.") }
     let device = devices.tables.devices[identity.deviceId]
     let host = hosts.tables.host["identity"]
+    let route = hosts.tables.routes?[identity.deviceId]
     return report([
       "Active pairing credential present: true",
       "Public device record present: \(device != nil)",
@@ -74,6 +80,8 @@ enum PairingStateDiagnostic {
       "Device label matches hosted runtime: \(device?.label == "Paired iPhone")",
       "Public Host record present: \(host != nil)",
       "Host enrollment matches: \(host?.hostEnrollmentId == identity.hostEnrollmentId)",
+      "Public route record present: \(route != nil)",
+      "Route Host device ID matches: \(route?.hostDeviceId == identity.hostDeviceId)",
     ].joined(separator: "\n"))
   }
 

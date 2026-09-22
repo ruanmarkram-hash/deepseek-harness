@@ -5,9 +5,9 @@ import Testing
 
 private let repairTarget = PairingRepairTarget(deviceId: "phone", deviceEnrollmentId: "new-device", hostEnrollmentId: "new-host", signingPublicKey: "signing", agreementPublicKey: "agreement", routeId: "new-route", hostDeviceId: "host", generation: 1)
 
-private func repairFixture(epoch: Any = 0, pending: Bool = false, key: String = "signing") throws -> (Data, Data) {
+private func repairFixture(epoch: Any = 0, pending: Bool = false, key: String = "signing", oldHostDeviceId: String = "old-host-id-00001") throws -> (Data, Data) {
   let device: [String: Any] = ["id": "phone", "incarnation": "old-device", "label": "Paired iPhone", "signingPublicKey": key, "agreementPublicKey": "agreement", "enrolledAt": "unchanged", "otherMetadata": ["preserve": true]]
-  var route: [String: Any] = ["routeId": "old-route", "deviceId": "phone", "deviceEnrollmentId": "old-device", "hostDeviceId": "host", "hostEnrollmentId": "old-host", "generation": 1, "lastConnectionEpoch": epoch, "createdAt": "unchanged"]
+  var route: [String: Any] = ["routeId": "old-route", "deviceId": "phone", "deviceEnrollmentId": "old-device", "hostDeviceId": oldHostDeviceId, "hostEnrollmentId": "old-host", "generation": 1, "lastConnectionEpoch": epoch, "createdAt": "unchanged"]
   if pending { route["pendingConnectionEpoch"] = 1 }
   return (
     try JSONSerialization.data(withJSONObject: ["unit": ["name": "remote_devices", "version": 1], "global": ["untouched": true], "tables": ["devices": ["phone": device]]]),
@@ -43,13 +43,14 @@ func pairingRepairPlan() throws {
   let hostJSON = try #require(JSONSerialization.jsonObject(with: plan.host) as? [String: Any])
   let tables = try #require(hostJSON["tables"] as? [String: [String: [String: Any]]])
   #expect(tables["routes"]?["phone"]?["routeId"] as? String == "new-route")
+  #expect(tables["routes"]?["phone"]?["hostDeviceId"] as? String == repairTarget.hostDeviceId)
   #expect(tables["routes"]?["phone"]?["lastConnectionEpoch"] as? Int == 0)
   #expect(tables["routes"]?["phone"]?["createdAt"] as? String == "unchanged")
 }
 
 @Test("repair rejects used epochs, pending epochs, boolean epochs, and another phone key")
 func pairingRepairRejectsAmbiguousRecords() throws {
-  for fixture in [try repairFixture(epoch: 1), try repairFixture(pending: true), try repairFixture(epoch: false), try repairFixture(key: "another-key")] {
+  for fixture in [try repairFixture(epoch: 1), try repairFixture(pending: true), try repairFixture(epoch: false), try repairFixture(key: "another-key"), try repairFixture(oldHostDeviceId: ""), try repairFixture(oldHostDeviceId: "invalid!")] {
     #expect(throws: PairingRepairError.self) { try PairingStateRepair.plan(devices: fixture.0, host: fixture.1, target: repairTarget) }
   }
   let (devices, host) = try repairFixture()
