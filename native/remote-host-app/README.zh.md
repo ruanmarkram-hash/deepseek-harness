@@ -34,6 +34,8 @@ app 内含已签名原生 child、`DSHRemoteHostKeychain.xpc`、固定版本的 
 
 显式手机激活最多等待 120 秒以接收已配对手机的首个 frame，让设备所有者有时间在加密 handshake 开始前完成认证。首个 frame 原样接受正常的 route、enrollment 和 epoch 验证；畸形输入不会重试。加密 flight 保留 10 秒 deadline。Timeout 错误区分等待手机、处理 hello，以及等待 ready、ack 或 confirm，且不暴露 credential。Stop 和持久化 revocation 会阻止迟到的首个 frame 创建 transport。
 
+被拒绝的输入只报告固定 phase 和类别：畸形 flight、route tuple 不匹配、epoch 不匹配、无效 key material，或精确白名单内的 relay control 原因。Relay 报告始终终止连接，绝不授权本地 revocation、epoch 更改或 credential 替换。未知、过大、含重复 key 或额外字段的 control envelope 仍视为畸形输入；原始 frame 和任意服务器文本绝不显示。
+
 原生 epoch ledger 只允许一个 live Host route owner，仅在认证 handshake 后提交 epoch，并能在不跳过 next epoch 的情况下协调 lost receipt。手机网络中断后，可以通过保留的 route 按 Host 发出的 next epoch 重新连接。Host 正常重启后，启动本地 runtime 仍要求显式激活手机。激活失败会退役已经 seeded 的 child；请先执行 **Start hosted runtime**，再执行 **Activate paired phone** 来重试。配对 credential、已签名 journal 和原生 epoch 保持不变。Stop 会取消 pending activation，并等待进行中的生命周期清理完成，随后才允许另一个 owner。
 
 **Revoke paired phone…** 要求 Host 再次确认。它会退役 hosted child 的公开 route state，安装 durable native revocation fence，停止保留的 relay，执行幂等 remote deletion 和本地 Keychain cleanup，清除 hosted owner，并允许之后重新配对。含糊的 remote 或本地 cleanup 结果保持可恢复，且绝不会恢复可用 invitation。

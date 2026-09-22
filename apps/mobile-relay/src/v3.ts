@@ -19,6 +19,8 @@ const V3_INTERNAL_ROUTE_ID = 'x-dsh-remote-route-id'
 const V3_MAX_BODY_BYTES = 8 * 1024
 const V3_MAX_MESSAGES_PER_SECOND = 60
 const V3_PENDING_HANDSHAKE_MS = 30_000
+// The native Host waits 120 seconds for phone authentication; allow relay setup margin.
+const V3_HOST_RENDEZVOUS_MS = 125_000
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{15,95}$/
 const TOKEN = /^[A-Za-z0-9_-]{32,256}$/
 const UPGRADE = 'websocket'
@@ -74,6 +76,13 @@ interface V3Attachment {
   readonly connectedAt: number
   readonly rateWindowStartedAt: number
   readonly messagesInWindow: number
+}
+
+function pendingPeerDeadline(attachment: V3Attachment, metadata: V3RouteMetadata): number {
+  if (attachment.peer === 'host' && metadata.handshakeStartedAt !== null) {
+    return metadata.handshakeStartedAt + V3_PENDING_HANDSHAKE_MS
+  }
+  return attachment.connectedAt + (attachment.peer === 'host' ? V3_HOST_RENDEZVOUS_MS : V3_PENDING_HANDSHAKE_MS)
 }
 
 function json(status: number, body: Record<string, unknown>): Response {
@@ -312,6 +321,10 @@ export class RemoteRoute extends DurableObject<V3Env> {
       this.reject(socket, 'sender-denied')
       return
     }
+    if (this.connectionExpired(metadata, Date.now())) {
+      await this.resetActiveConnection(metadata, 'handshake-timeout')
+      return
+    }
     await this.forward(socket, attachment, metadata, message)
   }
 
@@ -335,20 +348,7 @@ export class RemoteRoute extends DurableObject<V3Env> {
   override async alarm(): Promise<void> {
     const now = Date.now()
     const metadata = await this.metadata()
-    if (metadata !== undefined && metadata.handshake !== 'live' && metadata.handshakeStartedAt !== null) {
-      const deadline = metadata.handshakeStartedAt + V3_PENDING_HANDSHAKE_MS
-      if (now >= deadline) {
-        await this.resetActiveConnection(metadata, 'handshake-timeout')
-        return
-      }
-    }
-    const pending = this.ctx.getWebSockets().some((socket) => {
-      const attachment = this.attachment(socket)
-      return socket.readyState === WebSocket.OPEN && attachment !== undefined && metadata !== undefined
-        && attachmentMatches(metadata, attachment) && attachment.supersededBy === null
-        && attachment.epoch === null && now - attachment.connectedAt >= V3_PENDING_HANDSHAKE_MS
-    })
-    if (pending && metadata !== undefined && metadata.handshake !== 'live') {
+    if (metadata !== undefined && this.connectionExpired(metadata, now)) {
       await this.resetActiveConnection(metadata, 'handshake-timeout')
       return
     }
@@ -548,7 +548,9 @@ export class RemoteRoute extends DurableObject<V3Env> {
     }
     if (!persistedBeforeForward && next !== metadata && !await this.commitTransition(metadata, next)) {
       this.reject(socket, 'route-revoked')
+      return
     }
+    if (next !== metadata) await this.scheduleAlarm(next)
   }
 
   private handshake(
@@ -635,12 +637,23 @@ export class RemoteRoute extends DurableObject<V3Env> {
     })
   }
 
+  private connectionExpired(metadata: V3RouteMetadata, now: number): boolean {
+    if (metadata.handshake === 'live') return false
+    if (metadata.handshakeStartedAt !== null && now >= metadata.handshakeStartedAt + V3_PENDING_HANDSHAKE_MS) return true
+    return this.ctx.getWebSockets().some((socket) => {
+      const attachment = this.attachment(socket)
+      return socket.readyState === WebSocket.OPEN && attachment !== undefined
+        && attachmentMatches(metadata, attachment) && attachment.supersededBy === null
+        && attachment.epoch === null && now >= pendingPeerDeadline(attachment, metadata)
+    })
+  }
+
   private evictExpiredPending(metadata: V3RouteMetadata, now: number, replacementId: string): void {
     for (const socket of this.ctx.getWebSockets()) {
       const attachment = this.attachment(socket)
       if (socket.readyState === WebSocket.OPEN && attachment !== undefined
         && attachment.supersededBy === null && attachmentMatches(metadata, attachment) && attachment.epoch === null
-        && attachment.connectedAt + V3_PENDING_HANDSHAKE_MS <= now) {
+        && pendingPeerDeadline(attachment, metadata) <= now) {
         socket.serializeAttachment({ ...attachment, supersededBy: replacementId })
         socket.close(4403, 'handshake-timeout')
       }
@@ -668,7 +681,7 @@ export class RemoteRoute extends DurableObject<V3Env> {
         .map(socket => this.attachment(socket))
         .filter((attachment): attachment is V3Attachment => attachment !== undefined
           && attachment.supersededBy === null && attachmentMatches(current, attachment) && attachment.epoch === null)
-        .map(attachment => attachment.connectedAt + V3_PENDING_HANDSHAKE_MS)
+        .map(attachment => pendingPeerDeadline(attachment, current))
       if (current.handshake !== 'live' && current.handshakeStartedAt !== null) {
         deadlines.push(current.handshakeStartedAt + V3_PENDING_HANDSHAKE_MS)
       }

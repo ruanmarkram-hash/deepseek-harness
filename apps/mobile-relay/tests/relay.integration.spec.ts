@@ -732,7 +732,101 @@ describe('mobile pairing relay v2', () => {
 })
 
 describe('trusted remote relay v3', () => {
-  it('keeps the oldest deadline on connect and advances it when that pending peer closes', async () => {
+  it.each(['host-idle', 'device-idle', 'handshake'] as const)('rejects a late %s frame before delayed alarm delivery', async (phase) => {
+    const relayEnv = env as unknown as Env
+    const route = relayEnv.REMOTE_ROUTES.getByName(ROUTE_ID)
+    await route.fetch(remoteRouteRequest('create', remoteRouteBody()))
+    const now = vi.spyOn(Date, 'now')
+    const startedAt = 1_800_000_000_000
+    now.mockReturnValue(startedAt)
+    const first = await openRemote(phase === 'device-idle' ? 'device' : 'host')
+    now.mockReturnValue(startedAt + (phase === 'host-idle' ? 124_000 : 1_000))
+    const second = await openRemote(phase === 'device-idle' ? 'host' : 'device')
+    const host = phase === 'device-idle' ? second : first
+    const device = phase === 'device-idle' ? first : second
+    if (phase === 'handshake') {
+      const hello = onceMessage(host)
+      device.send(JSON.stringify(relayFrame('hello', DEVICE_ID, HOST_ID)))
+      await hello
+    }
+    now.mockReturnValue(startedAt + (phase === 'host-idle' ? 125_000 : phase === 'device-idle' ? 30_000 : 31_000))
+    const messages: unknown[] = []
+    const recipient = phase === 'handshake' ? device : host
+    recipient.addEventListener('message', (event) => { messages.push(JSON.parse(String(event.data))) })
+    const hostClosed = onceClose(host)
+    const deviceClosed = onceClose(device)
+    const sender = phase === 'handshake' ? host : device
+    sender.send(JSON.stringify(phase === 'handshake' ? relayFrame('welcome', HOST_ID, DEVICE_ID) : relayFrame('hello', DEVICE_ID, HOST_ID)))
+    expect(await hostClosed).toMatchObject({ code: 4403 })
+    expect(await deviceClosed).toMatchObject({ code: 4403 })
+    expect(messages).toEqual([{ type: 'route-revoked', version: 3, reason: 'handshake-timeout' }])
+    await runInDurableObject(route, async (_, state) => {
+      expect(await state.storage.get('route')).toMatchObject({ activeEpoch: null, lastEpoch: 0, handshake: 'none' })
+      expect(await state.storage.getAlarm()).toBeNull()
+    })
+  })
+
+  it('keeps the authenticated idle Host through 30 seconds and expires it at 125 seconds', async () => {
+    const relayEnv = env as unknown as Env
+    const route = relayEnv.REMOTE_ROUTES.getByName(ROUTE_ID)
+    await route.fetch(remoteRouteRequest('create', remoteRouteBody()))
+    const now = vi.spyOn(Date, 'now')
+    const startedAt = 1_800_000_000_000
+    await runInDurableObject(route, async (instance, state) => {
+      const subject = instance as unknown as {
+        alarm(): Promise<void>
+        openConnection(request: Request, id: string): Promise<Response>
+      }
+      now.mockReturnValue(startedAt)
+      expect((await subject.openConnection(remoteConnectRequest('host'), ROUTE_ID)).status).toBe(101)
+      const host = state.getWebSockets()[0]!
+      for (const elapsed of [30_000, 124_999]) {
+        now.mockReturnValue(startedAt + elapsed)
+        await subject.alarm()
+        expect(host.readyState).toBe(WebSocket.OPEN)
+        expect(await state.storage.getAlarm()).toBe(startedAt + 125_000)
+        expect((await subject.openConnection(remoteConnectRequest('host'), ROUTE_ID)).status).toBe(409)
+      }
+      now.mockReturnValue(startedAt + 125_000)
+      await subject.alarm()
+      expect(host.readyState).not.toBe(WebSocket.OPEN)
+      expect(await state.storage.getAlarm()).toBeNull()
+      expect(await state.storage.get('route')).toMatchObject({ activeEpoch: null, lastEpoch: 0, handshake: 'none' })
+    })
+  })
+
+  it.each([1_000, 124_000])('switches a Host hello at %i ms to the unchanged 30-second handshake deadline', async (helloAt) => {
+    const relayEnv = env as unknown as Env
+    const route = relayEnv.REMOTE_ROUTES.getByName(ROUTE_ID)
+    await route.fetch(remoteRouteRequest('create', remoteRouteBody()))
+    const now = vi.spyOn(Date, 'now')
+    const startedAt = 1_800_000_000_000
+    await runInDurableObject(route, async (instance, state) => {
+      const subject = instance as unknown as {
+        alarm(): Promise<void>
+        openConnection(request: Request, id: string): Promise<Response>
+        webSocketMessage(socket: WebSocket, raw: string): Promise<void>
+      }
+      now.mockReturnValue(startedAt)
+      const hostResponse = await subject.openConnection(remoteConnectRequest('host'), ROUTE_ID)
+      hostResponse.webSocket?.accept()
+      now.mockReturnValue(startedAt + helloAt)
+      const deviceResponse = await subject.openConnection(remoteConnectRequest('device'), ROUTE_ID)
+      deviceResponse.webSocket?.accept()
+      const device = state.getWebSockets().find(socket => (socket.deserializeAttachment() as { peer: string }).peer === 'device')!
+      await subject.webSocketMessage(device, JSON.stringify(relayFrame('hello', DEVICE_ID, HOST_ID)))
+      expect(await state.storage.getAlarm()).toBe(startedAt + helloAt + 30_000)
+      now.mockReturnValue(startedAt + helloAt + 29_999)
+      await subject.alarm()
+      expect(await state.storage.get('route')).toMatchObject({ activeEpoch: 1, handshake: 'hello' })
+      now.mockReturnValue(startedAt + helloAt + 30_000)
+      await subject.alarm()
+      expect(await state.storage.get('route')).toMatchObject({ activeEpoch: null, lastEpoch: 0, handshake: 'none' })
+      expect(await state.storage.getAlarm()).toBeNull()
+    })
+  })
+
+  it('keeps the earliest role deadline on connect and advances it when that pending peer closes', async () => {
     const relayEnv = env as unknown as Env
     const route = relayEnv.REMOTE_ROUTES.getByName(ROUTE_ID)
     await route.fetch(remoteRouteRequest('create', remoteRouteBody()))
@@ -744,24 +838,24 @@ describe('trusted remote relay v3', () => {
         webSocketClose(socket: WebSocket): Promise<void>
       }
       now.mockReturnValue(startedAt)
-      expect((await subject.openConnection(remoteConnectRequest('host'), ROUTE_ID)).status).toBe(101)
+      expect((await subject.openConnection(remoteConnectRequest('device'), ROUTE_ID)).status).toBe(101)
       const first = await state.storage.getAlarm()
 
       now.mockReturnValue(startedAt + 29_999)
-      expect((await subject.openConnection(remoteConnectRequest('device'), ROUTE_ID)).status).toBe(101)
+      expect((await subject.openConnection(remoteConnectRequest('host'), ROUTE_ID)).status).toBe(101)
       const afterConnect = await state.storage.getAlarm()
-      const host = state.getWebSockets().find((socket) => {
+      const device = state.getWebSockets().find((socket) => {
         const attachment = socket.deserializeAttachment() as { peer?: string } | null
-        return attachment?.peer === 'host'
+        return attachment?.peer === 'device'
       })
-      expect(host).toBeDefined()
-      await subject.webSocketClose(host!)
+      expect(device).toBeDefined()
+      await subject.webSocketClose(device!)
       return { first, afterConnect, afterClose: await state.storage.getAlarm() }
     })
     expect(alarms).toEqual({
       first: startedAt + 30_000,
       afterConnect: startedAt + 30_000,
-      afterClose: startedAt + 59_999,
+      afterClose: startedAt + 154_999,
     })
   })
 
@@ -777,11 +871,11 @@ describe('trusted remote relay v3', () => {
       }
       now.mockReturnValue(startedAt)
       expect((await subject.openConnection(remoteConnectRequest('host'), ROUTE_ID)).status).toBe(101)
-      now.mockReturnValue(startedAt + 30_000)
+      now.mockReturnValue(startedAt + 125_000)
       const replacement = await subject.openConnection(remoteConnectRequest('host'), ROUTE_ID)
       return { replacement: replacement.status, alarm: await state.storage.getAlarm() }
     })
-    expect(result).toEqual({ replacement: 101, alarm: startedAt + 60_000 })
+    expect(result).toEqual({ replacement: 101, alarm: startedAt + 250_000 })
   })
 
   it('fences a delayed expired-peer close while preserving current-peer close reset', async () => {
@@ -809,9 +903,9 @@ describe('trusted remote relay v3', () => {
       expect((await open('host')).status).toBe(101)
       const expiredHost = state.getWebSockets().find(socket => attachment(socket).peer === 'host')
       expect(expiredHost).toBeDefined()
-      now.mockReturnValue(startedAt + 1)
+      now.mockReturnValue(startedAt + 124_999)
       expect((await open('device')).status).toBe(101)
-      now.mockReturnValue(startedAt + 30_000)
+      now.mockReturnValue(startedAt + 125_000)
       expect((await open('host')).status).toBe(101)
       const replacementHost = state.getWebSockets().find((socket) => {
         const value = attachment(socket)
@@ -851,9 +945,9 @@ describe('trusted remote relay v3', () => {
         openConnection(request: Request, id: string): Promise<Response>
       }
       now.mockReturnValue(startedAt)
-      expect((await subject.openConnection(remoteConnectRequest('host'), ROUTE_ID)).status).toBe(101)
-      now.mockReturnValue(startedAt + 29_999)
       expect((await subject.openConnection(remoteConnectRequest('device'), ROUTE_ID)).status).toBe(101)
+      now.mockReturnValue(startedAt + 29_999)
+      expect((await subject.openConnection(remoteConnectRequest('host'), ROUTE_ID)).status).toBe(101)
       const scheduled = await state.storage.getAlarm()
       now.mockReturnValue(startedAt + 30_000)
       await subject.alarm()
@@ -891,8 +985,8 @@ describe('trusted remote relay v3', () => {
       return { beforeClose, afterClose: await state.storage.getAlarm() }
     })
     expect(alarms).toEqual({
-      beforeClose: startedAt + 30_100,
-      afterClose: startedAt + 30_100,
+      beforeClose: startedAt + 125_100,
+      afterClose: startedAt + 125_100,
     })
   })
 

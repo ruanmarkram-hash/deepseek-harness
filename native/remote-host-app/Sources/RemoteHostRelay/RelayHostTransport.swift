@@ -126,6 +126,7 @@ public actor RelayHostTransport {
   private var sealer: XChaChaFrameSealer?
   private var nextInboundSequence = 1
   private var nextOutboundSequence = 1
+  private var rejectionDiagnostic: RelayPeerInputDiagnostic?
 
   public init(credential: RelayRouteCredential, agreement: RelayProtectedAgreement, socket: RelayHostSocket, clock: RelayTransportClock, random: RelayTransportRandom, expectedConnectionEpoch: Int, reconciliationEpoch: Int? = nil, finalizeConnectionEpoch: @escaping @Sendable (Int) throws -> Void, ensureConnectionAdmitted: @escaping @Sendable () throws -> Void = {}, flightTimeoutNanoseconds: UInt64 = 10_000_000_000) throws {
     guard flightTimeoutNanoseconds > 0, expectedConnectionEpoch >= 1, expectedConnectionEpoch <= Self.maximumSequence,
@@ -153,6 +154,7 @@ public actor RelayHostTransport {
   }
 
   public func currentState() -> RelayHostTransportState { state }
+  public func failureDiagnostic() -> RelayPeerInputDiagnostic? { rejectionDiagnostic }
   func hasSecretMaterialForTest() async -> Bool {
     guard let sealer else { return clientToHostKey != nil }
     let sealerAlive = !(await sealer.destroyedForVerification())
@@ -195,7 +197,7 @@ public actor RelayHostTransport {
     do {
       let input = try await socket.receive()
       try ensureConnectionAdmitted()
-      let flight = try RelayFlightCodec.decode(input)
+      let flight = try decodePeerFlight(input)
       try validateRoute(flight)
       guard flight.kind == .ciphertext, flight.sequence == nextInboundSequence,
             var key = clientToHostKey,
@@ -264,7 +266,7 @@ public actor RelayHostTransport {
   }
 
   private func process(_ input: Data) async throws {
-    let flight = try RelayFlightCodec.decode(input)
+    let flight = try decodePeerFlight(input)
     try validateRoute(flight)
     try gate.acceptInbound(flight)
     switch (state, flight.kind) {
@@ -276,14 +278,27 @@ public actor RelayHostTransport {
     }
   }
 
+  private func decodePeerFlight(_ input: Data) throws -> RelayFlight {
+    do { return try RelayFlightCodec.decode(input) }
+    catch {
+      rejectionDiagnostic = RelayPeerInputDiagnostic.control(input) ?? .malformedFlight
+      throw error
+    }
+  }
+
   private func receiveBeforeDeadline() async throws -> Data {
     try await receiveRelayFrameBeforeDeadline(socket: socket, clock: clock, expiry: deadline, fence: writeFence)
   }
 
   private func receiveHello(_ inbound: RelayFlight) async throws {
-    guard inbound.connectionEpoch == expectedConnectionEpoch || inbound.connectionEpoch == reconciliationEpoch,
-          let peerText = inbound.ephemeralPublicKey, let peer = base64urlDecode(peerText), peer.count == 32
-    else { throw RelayOwnerError.invalidCredential }
+    guard inbound.connectionEpoch == expectedConnectionEpoch || inbound.connectionEpoch == reconciliationEpoch else {
+      rejectionDiagnostic = .epochMismatch
+      throw RelayOwnerError.invalidCredential
+    }
+    guard let peerText = inbound.ephemeralPublicKey, let peer = base64urlDecode(peerText), peer.count == 32 else {
+      rejectionDiagnostic = .keyMaterialInvalid
+      throw RelayOwnerError.invalidCredential
+    }
     // This native-only call is the sole static-key agreement seam. Its private key never
     // crosses the actor boundary. The future enrolled-device static key is required before
     // this can become the deployed three-DH session derivation.
@@ -354,7 +369,10 @@ public actor RelayHostTransport {
   }
 
   private func derive3DH(ephemeral: Curve25519.KeyAgreement.PrivateKey, peerEphemeral: String, context: Data) throws -> (clientToHost: Data, hostToClient: Data) {
-    guard canonicalX25519(agreement.publicKey), canonicalX25519(credential.deviceAgreementPublicKey) else { throw RelayOwnerError.invalidCredential }
+    guard canonicalX25519(agreement.publicKey), canonicalX25519(credential.deviceAgreementPublicKey) else {
+      rejectionDiagnostic = .keyMaterialInvalid
+      throw RelayOwnerError.invalidCredential
+    }
     var ss = try checkedSecret(agreement.deriveSharedSecret(peerPublicKey: credential.deviceAgreementPublicKey))
     var eS = try ephemeralSecret(ephemeral, credential.deviceAgreementPublicKey)
     var Se = try checkedSecret(agreement.deriveSharedSecret(peerPublicKey: peerEphemeral))
@@ -427,10 +445,13 @@ public actor RelayHostTransport {
 
   private func validateRoute(_ flight: RelayFlight) throws {
     guard flight.routeId == credential.routeId, flight.generation == credential.generation,
-      (acceptedEpoch.map({ flight.connectionEpoch == $0 }) ?? (state == .awaitingHello)),
       flight.senderDeviceId == credential.deviceId, flight.senderEnrollmentId == credential.deviceEnrollmentId,
       flight.recipientDeviceId == credential.hostDeviceId, flight.recipientEnrollmentId == credential.hostEnrollmentId
-    else { throw RelayOwnerError.invalidCredential }
+    else { rejectionDiagnostic = .routeTupleMismatch; throw RelayOwnerError.invalidCredential }
+    guard acceptedEpoch.map({ flight.connectionEpoch == $0 }) ?? (state == .awaitingHello) else {
+      rejectionDiagnostic = .epochMismatch
+      throw RelayOwnerError.invalidCredential
+    }
   }
 
   private func checkDeadline() throws {

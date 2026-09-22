@@ -190,6 +190,9 @@ public actor RelayHostSocketSupervisor {
       guard value == .waitingForPhone else { throw RelayOwnerError.invalidState }
       guard clock.nowNanoseconds() < expiry else { throw RelayOwnerError.deadlineExceeded }
       try epochLedger.ensureReservationIsAdmitted(reservation)
+      if let diagnostic = RelayPeerInputDiagnostic.control(firstFrame) {
+        throw RelayHostConnectionRejection(phase: .waitingForPhone, reason: diagnostic)
+      }
       value = .handshaking
       timeoutPhase = .hello
       let transport = try RelayHostTransport(credential: credential, agreement: agreement, socket: socket, clock: clock, random: random, expectedConnectionEpoch: reservation.epoch, reconciliationEpoch: reservation.reconciliationEpoch, finalizeConnectionEpoch: { [epochLedger] epoch in try epochLedger.finalize(reservation, connectionEpoch: epoch) }, ensureConnectionAdmitted: { [epochLedger] in try epochLedger.ensureReservationIsAdmitted(reservation) }, flightTimeoutNanoseconds: flightTimeoutNanoseconds)
@@ -204,9 +207,13 @@ public actor RelayHostSocketSupervisor {
       guard value == .handshaking else { throw RelayOwnerError.invalidState }
       value = .established
     } catch {
+      let diagnostic = await transport?.failureDiagnostic()
       await stop()
       if let ownerError = error as? RelayOwnerError, ownerError == .deadlineExceeded {
         throw RelayHostConnectionTimeout(phase: timeoutPhase)
+      }
+      if let diagnostic {
+        throw RelayHostConnectionRejection(phase: timeoutPhase, reason: diagnostic)
       }
       throw error
     }

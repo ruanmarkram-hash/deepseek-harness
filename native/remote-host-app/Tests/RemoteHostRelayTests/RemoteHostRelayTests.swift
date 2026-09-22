@@ -757,6 +757,97 @@ private func encryptedDeviceCiphertext(sequence: Int, plaintext: Data, hello: Re
   }
 }
 
+@Test func hostPeerDiagnosticAcceptsOnlyExactAllowlistedControlEnvelopes() throws {
+  let valid: [(String, String, String, RelayPeerInputDiagnostic)] = [
+    ("route-revoked", "reason", "handshake-timeout", .relayHandshakeTimeout),
+    ("route-revoked", "reason", "peer-disconnected", .relayPeerDisconnected),
+    ("route-revoked", "reason", "route-rotated", .relayRouteRotated),
+    ("route-revoked", "reason", "route-revoked", .relayRouteRevoked),
+    ("route-revoked", "reason", "handshake-denied", .relayHandshakeDenied),
+    ("route-revoked", "reason", "sequence-denied", .relaySequenceDenied),
+    ("route-revoked", "reason", "recipient-unavailable", .relayRecipientUnavailable),
+    ("relay-error", "code", "recipient-offline", .relayRecipientOffline),
+    ("relay-error", "code", "malformed-message", .relayMalformedMessage),
+    ("relay-error", "code", "sender-denied", .relaySenderDenied),
+    ("relay-error", "code", "route-revoked", .relayRouteRevoked),
+  ]
+  for (type, key, reason, diagnostic) in valid {
+    let object: [String: Any] = ["version": 3, "type": type, key: reason]
+    #expect(RelayPeerInputDiagnostic.control(try JSONSerialization.data(withJSONObject: object)) == diagnostic)
+    for replacement in [true, 2, 3.1, "3"] as [Any] {
+      var changed = object; changed["version"] = replacement
+      #expect(RelayPeerInputDiagnostic.control(try JSONSerialization.data(withJSONObject: changed)) == nil)
+    }
+    var extra = object; extra["credential"] = "private-marker"
+    #expect(RelayPeerInputDiagnostic.control(try JSONSerialization.data(withJSONObject: extra)) == nil)
+    var unknown = object; unknown[key] = "private-marker"
+    #expect(RelayPeerInputDiagnostic.control(try JSONSerialization.data(withJSONObject: unknown)) == nil)
+  }
+  for text in [
+    "{\"version\":3,\"version\":3,\"type\":\"relay-error\",\"code\":\"sender-denied\"}",
+    "{\"version\":3,\"type\":\"relay-error\",\"reason\":\"sender-denied\"}",
+    "{\"version\":3,\"type\":\"route-revoked\",\"reason\":\"sender-denied\"}",
+    String(repeating: "x", count: 1025),
+  ] { #expect(RelayPeerInputDiagnostic.control(Data(text.utf8)) == nil) }
+}
+
+@Test func hostPeerDiagnosticRelayTimeoutFailsClosedWithoutRevokingOrAdvancingEpoch() async throws {
+  for afterHello in [false, true] {
+    let credential = try route(); let store = MemoryStore(); store.active = credential
+    store.epochs[credential.routeId] = try RelayConnectionEpochState.initial(routeId: credential.routeId)
+    let socket = CoordinatedStartableSocket(); let clock = ControlledHostClock()
+    defer { clock.advance(to: UInt64.max) }
+    let supervisor = RelayHostSocketSupervisor(credential: credential, agreement: TestAgreement(), epochLedger: RelayConnectionEpochLedger(store: store), connectionCoordinator: RelayHostRouteConnectionCoordinator(store: store), socketFactory: CoordinatedSocketFactory(socket: socket), clock: clock, random: TestRandom())
+    let starting = Task { try await supervisor.start() }
+    await socket.waitForReceive(count: 1)
+    if afterHello { await socket.enqueue(flight("hello")); await socket.waitForReceive(count: 2) }
+    await socket.enqueue(Data("{\"type\":\"route-revoked\",\"version\":3,\"reason\":\"handshake-timeout\"}".utf8))
+    await #expect(throws: RelayHostConnectionRejection(phase: afterHello ? .ready : .waitingForPhone, reason: .relayHandshakeTimeout)) { try await starting.value }
+    #expect(await supervisor.state() == .stopped)
+    #expect(await socket.closed)
+    #expect((await socket.sent).count == (afterHello ? 1 : 0))
+    #expect(store.active == credential)
+    #expect(store.epochs[credential.routeId]?.lastCommittedEpoch == 0)
+    #expect(store.epochs[credential.routeId]?.pendingEpoch == 1)
+    #expect(store.epochs[credential.routeId]?.revoking == false)
+  }
+}
+
+private struct InvalidPublicAgreement: RelayProtectedAgreement {
+  let publicKey = "invalid-public-key"
+  func deriveSharedSecret(peerPublicKey: String) throws -> Data { throw RelayOwnerError.unavailable }
+}
+
+@Test func hostPeerDiagnosticSeparatesFirstFrameDecodeRouteEpochAndKeyFailures() async throws {
+  var routeMismatch = try JSONSerialization.jsonObject(with: flight("hello")) as! [String: Any]
+  routeMismatch["recipientEnrollmentId"] = String(repeating: "z", count: 24)
+  var epochMismatch = try JSONSerialization.jsonObject(with: flight("hello")) as! [String: Any]
+  epochMismatch["connectionEpoch"] = 2
+  let cases: [(Data, RelayPeerInputDiagnostic, Bool)] = [
+    (Data("{\"private-marker\":true}".utf8), .malformedFlight, false),
+    (try JSONSerialization.data(withJSONObject: routeMismatch), .routeTupleMismatch, false),
+    (try JSONSerialization.data(withJSONObject: epochMismatch), .epochMismatch, false),
+    (flight("hello"), .keyMaterialInvalid, true),
+    (Data("{\"type\":\"relay-error\",\"version\":3,\"code\":\"private-marker\"}".utf8), .malformedFlight, false),
+  ]
+  for (frame, diagnostic, badKey) in cases {
+    let credential = try route(); let store = MemoryStore(); store.active = credential
+    store.epochs[credential.routeId] = try RelayConnectionEpochState.initial(routeId: credential.routeId)
+    let socket = CoordinatedStartableSocket(); let clock = ControlledHostClock()
+    defer { clock.advance(to: UInt64.max) }
+    let agreement: any RelayProtectedAgreement = badKey ? InvalidPublicAgreement() : TestAgreement()
+    let supervisor = RelayHostSocketSupervisor(credential: credential, agreement: agreement, epochLedger: RelayConnectionEpochLedger(store: store), connectionCoordinator: RelayHostRouteConnectionCoordinator(store: store), socketFactory: CoordinatedSocketFactory(socket: socket), clock: clock, random: TestRandom())
+    await socket.enqueue(frame)
+    let expected = RelayHostConnectionRejection(phase: .hello, reason: diagnostic)
+    await #expect(throws: expected) { try await supervisor.start() }
+    #expect(!expected.description.contains("private-marker"))
+    #expect(!expected.description.contains(credential.routeId))
+    #expect((await socket.sent).isEmpty)
+    #expect(await socket.closed)
+    #expect(store.epochs[credential.routeId]?.lastCommittedEpoch == 0)
+  }
+}
+
 @Test func handshakePinsHelloEpochAndRejectsLaterEpochSubstitution() async throws {
   let socket = RecordingSocket(); let transport = try RelayHostTransport(credential: route(), agreement: TestAgreement(), socket: socket, clock: TestClock(), random: TestRandom(), expectedConnectionEpoch: 1, commitConnectionEpoch: {})
   try await transport.processSimulatedInbound(flight("hello"))

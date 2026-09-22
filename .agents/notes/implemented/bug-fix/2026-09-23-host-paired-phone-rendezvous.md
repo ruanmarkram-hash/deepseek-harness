@@ -14,6 +14,8 @@ Explicit activation retains its single native route owner and epoch reservation 
 
 Stop cancels the pending read even before its continuation is installed. A completed rendezvous timer cannot close a later handshake. State and durable admission are rechecked after suspension, so late reads cannot construct a transport or finalize an epoch after Stop or revocation.
 
+The Host distinguishes exact, bounded relay control envelopes from cryptographic flights. Only fixed server reasons receive a `relay-reported` diagnostic; all terminate the connection without treating the relay as authority to revoke native credentials. Malformed input and route, epoch or key validation failures retain their original refusal and receive only a fixed category and phase. No rejected values or arbitrary server strings enter diagnostics.
+
 ## Alternatives considered
 
 **Increasing every handshake deadline** grants stalled cryptographic exchanges more time and still conflates human interaction with protocol progress.
@@ -27,3 +29,5 @@ The native Host changes without a mobile wire change or replacement invitation. 
 ## Verification
 
 Focused supervisor tests complete a real encrypted hello-to-receipt transcript after 119 seconds, advance past the obsolete rendezvous timer, and verify each later flight still expires after 10 seconds. Other cases cover the initial timeout, malformed and revoked first frames, exclusive ownership, Stop with a noncooperative late read, and cancellation before continuation installation. Existing transport timeout-fence and application-I/O teardown tests pass alongside them. Signed-bundle and physical-phone verification remain separate release checks.
+
+Diagnostic tests reject unknown reasons, boolean or incorrect versions, extra fields, oversized input and duplicate keys. Production supervisor paths distinguish relay timeouts before hello and after welcome, preserve credentials and pending epochs, and report malformed, tuple, epoch and key failures without sentinel secrets or route IDs in their descriptions.

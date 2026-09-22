@@ -10,6 +10,8 @@
 
 Host 和手机只能使用 `dsh-remote-v3` 以及角色绑定凭据 subprotocol 连接 `/v3/routes/:routeId/connect`。relay 在转发不透明握手或密文消息前验证确切路由、generation、epoch、角色、方向、消息 vocabulary、大小和 sequence。它不能完成密码学握手、解密 frame、声称 peer delivery 或授权 DSH 操作。轮换和撤销会立即关闭两端并使旧凭据失效。成功删除路由返回 `204`；路由 metadata 已不存在时的重试返回 `404` 缺失路由结果，供 Host 的持久撤销恢复使用。
 
+已认证的 Host socket 可等待手机首个有效 hello 最多 125 秒，即原生 Host 的 120 秒会合预算加五秒 relay 调度余量。未绑定的设备 socket 仍在 30 秒后过期。首个被接受的 hello 启动保持不变的 30 秒密码学握手预算，其中包括尚未发送 welcome 的 Host。alarm、转发前过期检查和过期连接所有者替换使用相同的角色特定截止时间；有效状态转换会重新计算最早的 alarm。这些等待不会放宽认证、独占对端所有权、撤销或 epoch 验证。
+
 ## 互联网配对约定
 
 `/v3/pairings/:pairingId` 提供独立的短期 QR 或文本代码会合点。它接受一个公开手机注册 offer，只向持有代码的 Host 暴露该 offer，并且只返回由 Host 加密给该手机受保护身份的邀请。配对对象存储代码 verifier 以及有界公开值或加密传输值；它不是路由 relay，也绝不接收活动 Host 路由凭据。offer、批准、获取、确认、过期和重放都采用失败关闭。

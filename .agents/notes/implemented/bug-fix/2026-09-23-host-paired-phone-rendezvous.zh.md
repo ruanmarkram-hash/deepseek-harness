@@ -14,6 +14,8 @@ Host 的首个加密 deadline 在手机发送 frame 之前就开始计时。设�
 
 即使 continuation 尚未安装，Stop 也会取消 pending read。已完成的 rendezvous timer 不能关闭后续 handshake。每次挂起后都会重新检查状态及持久化准入，因此 Stop 或 revocation 后的迟到读取不能构造 transport 或提交 epoch。
 
+Host 区分精确且有界的 relay control envelope 与加密 flight。只有固定服务器原因获得 `relay-reported` 诊断；它们均终止连接，但绝不将 relay 视为撤销原生 credential 的授权方。畸形输入以及 route、epoch 或 key 验证失败保留原有拒绝行为，只附加固定类别和 phase。被拒绝的值及任意服务器字符串不会进入诊断。
+
 ## 考虑过的替代方案
 
 **延长所有 handshake deadline** 会为停滞的加密交换提供更多时间，却仍混淆人工交互与协议进展。
@@ -27,3 +29,5 @@ Host 的首个加密 deadline 在手机发送 frame 之前就开始计时。设�
 ## 验证
 
 聚焦 supervisor 测试在等待 119 秒后完成真实加密 hello-to-receipt transcript，越过已失效的 rendezvous timer，并验证每个后续 flight 仍在 10 秒后到期。其他用例覆盖首帧 timeout、畸形及已撤销首帧、独占 ownership、Stop 后不配合取消的迟到读取，以及 continuation 安装前的取消。现有 transport timeout-fence 和应用 I/O teardown 测试也同时通过。已签名 bundle 和实体手机验证仍属于单独发布检查。
+
+诊断测试拒绝未知原因、布尔或错误 version、额外字段、过大输入和重复 key。Production supervisor 路径区分 hello 前与 welcome 后的 relay timeout，保留 credential 和 pending epoch，并报告畸形、tuple、epoch 与 key 失败，且描述不含用于泄漏检测的 secret 标记或 route ID。
