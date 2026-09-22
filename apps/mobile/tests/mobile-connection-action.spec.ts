@@ -35,6 +35,25 @@ async function pairedStore(native: MemoryNativeStore): Promise<NativeMobileRemot
 }
 
 describe('connectStoredHost', () => {
+  it('serializes duplicate taps even before React publishes connecting, then permits explicit retry', async () => {
+    let release: (() => void) | undefined
+    let entered: (() => void) | undefined
+    const started = new Promise<void>((resolve) => { entered = resolve })
+    const client = {
+      connect: vi.fn(async () => new Promise<void>((resolve) => { release = resolve; entered?.() })),
+      reconnect: vi.fn(async () => undefined) }
+    const persisted = await pairedStore(new MemoryNativeStore())
+    const first = connectStoredHost(client as never, { kind: 'disconnected' }, persisted, vi.fn())
+    const second = connectStoredHost(client as never, { kind: 'disconnected' }, persisted, vi.fn())
+    await second
+    await started
+    expect(client.connect).toHaveBeenCalledOnce()
+    release?.()
+    await first
+    await connectStoredHost(client as never, { kind: 'error', message: 'timed out' }, persisted, vi.fn())
+    expect(client.reconnect).toHaveBeenCalledOnce()
+  })
+
   it('opens local pairing rather than opening a socket without a stored invitation', async () => {
     const client = { connect: vi.fn(), reconnect: vi.fn() }
     const openPairing = vi.fn()

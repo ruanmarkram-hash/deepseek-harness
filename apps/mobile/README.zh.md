@@ -10,7 +10,11 @@
 
 进行互联网配对时，手机扫描或输入已签名 Host 显示的短期 `dsh3` 代码。扫描只填写代码字段，不发送任何内容；**Pair with Host** 向固定 relay origin 发送一次公开注册 offer，显示完整指纹供 Host 端比对，并等待 Host 本地批准。Relay 冲突、代码不可用、连接失败和审批超时使用不同提示；找不到代码并不能证明代码已过期。返回的邀请会加密给该手机身份，包含设备路由凭据、Host pin、注册 incarnation 和确切下一连接 epoch，但不包含 Host 凭据或私钥。仍可通过本地文件或剪贴板传输同一个公开 offer 和手机安全邀请。
 
-应用在原生钥匙串记录中存储一个已验证邀请、事件 cursor 和下一 epoch。导入时不会打开 socket。显式连接操作执行经过认证的 V3 relay 握手，只有验证 Host commit 后才报告实时状态。iOS 的 `inactive` 中断（包括系统在场提示）会保留待处理的在场会话。实际进入后台或断开连接会关闭物理 transport 并清除该会话；之后的显式重试只使用 Host 签发的确切下一 epoch。
+应用在原生钥匙串记录中存储一个已验证邀请、事件 cursor 和下一 epoch。导入时不会打开 socket。显式连接操作执行经过认证的 V3 relay 握手，只有经过认证的 Host receipt 已持久记录且 Host workspace 初始化完成后，才报告实时状态。iOS 的 `inactive` 中断（包括系统在场提示）会保留待处理的在场会话。实际进入后台或断开连接会关闭物理 transport 并清除该会话；之后的显式重试只使用 Host 签发的确切下一 epoch。
+
+20 秒连接 deadline 覆盖所有者认证、socket 打开、handshake 和 workspace 初始化，包括 receipt 推进下一 epoch 之后。Timeout 会退役活动 transport 和发送权限，拒绝 pending request，并允许显式重试，但不会回滚已确认 epoch。配对与连接面板显示实时进度和错误；重复点击不会启动重叠尝试，workspace 成功加载后会关闭面板。
+
+所有者认证后，公开身份查询从当前原生身份会话投影公开字段，不再重复读取 Keychain。清除会话后不再复用；正常受保护加载和新的显式认证仍然必需。私有身份材料绝不返回 JavaScript。
 
 ## 移动端范围
 

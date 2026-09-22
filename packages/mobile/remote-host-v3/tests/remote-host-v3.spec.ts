@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Duplex } from 'node:stream'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import Storage, { storageBackendServiceKey } from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
@@ -562,25 +564,31 @@ describe('RemoteHostV3InheritedWireProvider', () => {
     channel.receive(routeUpsert())
     channel.receive(record('epoch.begin', { deviceId: DEVICE }))
     channel.receive(record('epoch.commit', { deviceId: DEVICE, connectionEpoch: 1 }))
-    channel.receive(record('connection.open', {
-      connectionId: CONNECTION,
-      deviceId: DEVICE,
-      enrollmentId: DEVICE_ENROLLMENT,
-      signingPublicKey: SIGNING,
-      agreementPublicKey: AGREEMENT,
-      routeId: ROUTE,
-      generation: 1,
-      connectionEpoch: 1,
-    }))
-    channel.receive(record('connection.frame', { connectionId: CONNECTION }, new TextEncoder().encode(JSON.stringify({
-      version: 3,
-      type: 'request',
-      connectionEpoch: 1,
-      requestId: REQUEST,
-      idempotencyKey: 'remote_idempotency1',
-      method: 'session.list',
-      payload: {},
-    }))))
+    const exchangeDirectory = process.env.DSH_FRAME_PUMP_EXCHANGE_DIRECTORY
+    if (exchangeDirectory !== undefined) {
+      // The native regression supplies bytes emitted by the production Swift pump and bridge.
+      channel.receive(readFileSync(join(exchangeDirectory, 'input.bin')))
+    } else {
+      channel.receive(record('connection.open', {
+        connectionId: CONNECTION,
+        deviceId: DEVICE,
+        enrollmentId: DEVICE_ENROLLMENT,
+        signingPublicKey: SIGNING,
+        agreementPublicKey: AGREEMENT,
+        routeId: ROUTE,
+        generation: 1,
+        connectionEpoch: 1,
+      }))
+      channel.receive(record('connection.frame', { connectionId: CONNECTION }, new TextEncoder().encode(JSON.stringify({
+        version: 3,
+        type: 'request',
+        connectionEpoch: 1,
+        requestId: REQUEST,
+        idempotencyKey: 'remote_idempotency1',
+        method: 'session.list',
+        payload: {},
+      }))))
+    }
 
     await expect.poll(() => channel.sent.length).toBe(4)
     expect(directory.markSeen).toHaveBeenCalledWith(DEVICE, NOW)
@@ -590,6 +598,8 @@ describe('RemoteHostV3InheritedWireProvider', () => {
     expect(sent(channel, 3)).toMatchObject({ kind: 'connection.send', metadata: { connectionId: CONNECTION } })
     expect(JSON.parse(new TextDecoder().decode(sent(channel, 3).payload))).toMatchObject({ type: 'response', connectionEpoch: 1, requestId: REQUEST, result: { ok: true, value: { sessions: [] } } })
     expect(JSON.stringify(channel.sent)).not.toMatch(/token|private|secret/i)
+    expect(channel.destroyed).toBe(false)
+    if (exchangeDirectory !== undefined) writeFileSync(join(exchangeDirectory, 'output.bin'), channel.sent[3]!, { mode: 0o600 })
 
     abort.abort()
     await expect(serving).resolves.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_CLOSED' })

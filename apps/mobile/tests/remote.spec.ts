@@ -1,8 +1,9 @@
 import { x25519 } from '@noble/curves/ed25519.js'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { acceptRemoteRelayDevice, type RemoteRelaySocket } from '@deepseek-ai/dsh-remote-relay-protocol'
 import type { RemoteWireEnvelope, RemoteWireEventEnvelope, RemoteWireId, RemoteWireJson } from '@deepseek-ai/dsh-remote-wire'
 import { MobileRemoteClient, type MobileDeviceIdentity, type MobileRemoteConnectionConfig } from '../remote'
+import { mobileConnectionView } from '../mobile-connection-view'
 
 const route = { routeId: 'remote_route_identifier_123', generation: 3, connectionEpoch: 2 }
 const hostDeviceId = 'host_device_identifier_123'
@@ -168,17 +169,105 @@ async function hostAcceptance(socket: RemoteRelaySocket, host: MobileDeviceIdent
 
 function client(socket: RemoteRelaySocket, identity: MobileDeviceIdentity, states: string[]): MobileRemoteClient {
   return new MobileRemoteClient({
-    identityProvider: { deviceIdentity: async () => identity, requireUserPresence: async () => undefined, clearUserPresence: () => undefined },
+    identityProvider: {
+      deviceIdentity: async () => identity,
+      requireUserPresence: async () => undefined,
+      clearUserPresence: () => undefined },
     onEvent: () => undefined,
     onSnapshot: () => undefined,
     onState: state => states.push(state.kind),
     randomBytes: random(9),
-    epochProvider: { nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch, recordAuthenticatedConnection: async () => undefined },
+    epochProvider: {
+      nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch,
+      recordAuthenticatedConnection: async () => undefined },
     socketFactory: { create: async () => socket },
   })
 }
 
 describe('MobileRemoteClient', () => {
+  it.each(['device.describe', 'session.list', 'snapshot'])('retires a stalled %s after a receipt and retries only the next committed epoch', async (stall) => {
+    vi.useFakeTimers()
+    try {
+      const host = identity(hostDeviceId, 7)
+      const device = identity(deviceId, 9)
+      const [hostSocket, deviceSocket] = sockets()
+      const [retryHostSocket, retryDeviceSocket] = sockets()
+      const states: string[] = []
+      const view: ReturnType<typeof mobileConnectionView>[] = []
+      const committed: number[] = []
+      let socketCalls = 0
+      let snapshotCalls = 0
+      let releaseSnapshot: (() => void) | undefined
+      let nextEpoch = route.connectionEpoch
+      const remote = new MobileRemoteClient({
+        connectionTimeoutMs: 20_000,
+        identityProvider: {
+          deviceIdentity: async () => device,
+          requireUserPresence: async () => undefined,
+          clearUserPresence: () => undefined },
+        onEvent: () => undefined,
+        onSnapshot: () => {
+          snapshotCalls += 1
+          if (stall === 'snapshot' && snapshotCalls === 1) return new Promise<void>((resolve) => { releaseSnapshot = resolve })
+        },
+        onState: (state) => { states.push(state.kind); view.push(mobileConnectionView(state)) },
+        randomBytes: random(9),
+        epochProvider: {
+          nextConnectionEpoch: async (_config, expected) => { expect(expected).toBe(nextEpoch); return nextEpoch },
+          recordAuthenticatedConnection: async (_config, epoch) => { committed.push(epoch); nextEpoch = epoch + 1 },
+        },
+        socketFactory: { create: async () => socketCalls++ === 0 ? deviceSocket : retryDeviceSocket },
+      })
+      const accepting = acceptRemoteRelayDevice({
+        socket: hostSocket,
+        identity: { ...host, enrollmentId: hostEnrollmentId },
+        peer: { deviceId, enrollmentId: deviceEnrollmentId, agreementPublicKey: device.agreement.publicKey },
+        random: { randomBytes: random(20) },
+        route,
+        epochFinalizer: { finalize: async () => undefined } })
+      const attempt = remote.connect(config(host))
+      const accepted = await accepting
+      const incoming = accepted.receive()[Symbol.asyncIterator]()
+      const describe = await incoming.next()
+      expect(describe.done).toBe(false)
+      if (describe.done || describe.value.type !== 'device-control') throw new Error('Missing device description')
+      if (stall !== 'device.describe') {
+        await accepted.send({ version: 3, type: 'response', connectionEpoch: route.connectionEpoch, requestId: describe.value.requestId, result: { ok: true, value: { mode: 'replay', cursor: 0 } } }, { active: true, generation: 1, abortSignal: new AbortController().signal })
+        const list = await incoming.next()
+        expect(list.done).toBe(false)
+        if (list.done || list.value.type !== 'request') throw new Error('Missing session list')
+        if (stall === 'snapshot') await accepted.send({ version: 3, type: 'response', connectionEpoch: route.connectionEpoch, requestId: list.value.requestId, result: { ok: true, value: { items: [] } } }, { active: true, generation: 1, abortSignal: new AbortController().signal })
+      }
+      expect(committed).toEqual([route.connectionEpoch])
+      await vi.advanceTimersByTimeAsync(20_000)
+      await attempt
+      expect(states).toEqual(['connecting', 'error'])
+      expect(view).toMatchInlineSnapshot(`
+        [
+          {
+            "disabled": true,
+            "label": "Connecting…",
+            "message": "Authenticating and loading the Host workspace…",
+          },
+          {
+            "disabled": false,
+            "label": "Retry connection",
+            "message": "The encrypted Host connection timed out. You can retry.",
+          },
+        ]
+      `)
+      await expect(remote.request('session.list', {})).rejects.toThrow('not connected')
+      const retryHost = hostAcceptance(retryHostSocket, host, device, route.connectionEpoch + 1)
+      await Promise.all([retryHost, remote.reconnect()])
+      expect(committed).toEqual([route.connectionEpoch, route.connectionEpoch + 1])
+      expect(states).toEqual(['connecting', 'error', 'connecting', 'connected'])
+      releaseSnapshot?.()
+      await vi.advanceTimersByTimeAsync(20_000)
+      expect(states.at(-1)).toBe('connected')
+      remote.disconnect()
+    } finally { vi.useRealTimers() }
+  })
+
   it('reports connected only after the real relay protocol validates Host finish', async () => {
     const host = identity(hostDeviceId, 7)
     const device = identity(deviceId, 9)
@@ -198,12 +287,17 @@ describe('MobileRemoteClient', () => {
     const methods: string[] = []
     let releaseSnapshot: (() => void) | undefined
     const remote = new MobileRemoteClient({
-      identityProvider: { deviceIdentity: async () => device, requireUserPresence: async () => undefined, clearUserPresence: () => undefined },
+      identityProvider: {
+        deviceIdentity: async () => device,
+        requireUserPresence: async () => undefined,
+        clearUserPresence: () => undefined },
       onEvent: () => undefined,
-      onSnapshot: async () => new Promise<void>(resolve => { releaseSnapshot = resolve }),
+      onSnapshot: async () => new Promise<void>((resolve) => { releaseSnapshot = resolve }),
       onState: state => states.push(state.kind),
       randomBytes: random(9),
-      epochProvider: { nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch, recordAuthenticatedConnection: async () => undefined },
+      epochProvider: {
+        nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch,
+        recordAuthenticatedConnection: async () => undefined },
       socketFactory: { create: async () => deviceSocket },
     })
     const hostConnection = hostAcceptance(hostSocket, host, device, route.connectionEpoch, methods)
@@ -224,7 +318,10 @@ describe('MobileRemoteClient', () => {
     const states: string[] = []
     const recorded: number[] = []
     const remote = new MobileRemoteClient({
-      identityProvider: { deviceIdentity: async () => device, requireUserPresence: async () => undefined, clearUserPresence: () => undefined },
+      identityProvider: {
+        deviceIdentity: async () => device,
+        requireUserPresence: async () => undefined,
+        clearUserPresence: () => undefined },
       onEvent: () => undefined,
       onSnapshot: () => undefined,
       onState: state => states.push(state.kind),
@@ -247,7 +344,10 @@ describe('MobileRemoteClient', () => {
     const [hostSocket, deviceSocket] = sockets()
     const states: string[] = []
     const remote = new MobileRemoteClient({
-      identityProvider: { deviceIdentity: async () => device, requireUserPresence: async () => undefined, clearUserPresence: () => undefined },
+      identityProvider: {
+        deviceIdentity: async () => device,
+        requireUserPresence: async () => undefined,
+        clearUserPresence: () => undefined },
       onEvent: () => undefined,
       onSnapshot: () => undefined,
       onState: state => states.push(state.kind),
@@ -298,12 +398,17 @@ describe('MobileRemoteClient', () => {
     const suppliedEpochs: number[] = []
     let socketIndex = 0
     const remote = new MobileRemoteClient({
-      identityProvider: { deviceIdentity: async () => device, requireUserPresence: async () => undefined, clearUserPresence: () => undefined },
+      identityProvider: {
+        deviceIdentity: async () => device,
+        requireUserPresence: async () => undefined,
+        clearUserPresence: () => undefined },
       onEvent: () => undefined,
       onSnapshot: () => undefined,
       onState: state => states.push(state.kind),
       randomBytes: random(9),
-      epochProvider: { nextConnectionEpoch: async (_config, expectedEpoch) => { suppliedEpochs.push(expectedEpoch); return expectedEpoch + 1 }, recordAuthenticatedConnection: async () => undefined },
+      epochProvider: {
+        nextConnectionEpoch: async (_config, expectedEpoch) => { suppliedEpochs.push(expectedEpoch); return expectedEpoch + 1 },
+        recordAuthenticatedConnection: async () => undefined },
       socketFactory: { create: async () => [firstDeviceSocket, secondDeviceSocket][socketIndex++] ?? secondDeviceSocket },
     })
     const firstHost = hostAcceptance(firstHostSocket, host, device, 2)
@@ -336,12 +441,17 @@ describe('MobileRemoteClient', () => {
     const epochs: number[] = []
     let socketIndex = 0
     const remote = new MobileRemoteClient({
-      identityProvider: { deviceIdentity: async () => device, requireUserPresence: async () => undefined, clearUserPresence: () => undefined },
+      identityProvider: {
+        deviceIdentity: async () => device,
+        requireUserPresence: async () => undefined,
+        clearUserPresence: () => undefined },
       onEvent: () => undefined,
       onSnapshot: () => undefined,
       onState: state => states.push(state.kind),
       randomBytes: random(9),
-      epochProvider: { nextConnectionEpoch: async (_config, expectedEpoch) => { epochs.push(expectedEpoch); return expectedEpoch }, recordAuthenticatedConnection: async () => undefined },
+      epochProvider: {
+        nextConnectionEpoch: async (_config, expectedEpoch) => { epochs.push(expectedEpoch); return expectedEpoch },
+        recordAuthenticatedConnection: async () => undefined },
       socketFactory: { create: async () => [firstDeviceSocket, secondDeviceSocket][socketIndex++] ?? secondDeviceSocket },
     })
     const initial = { ...config(host), connectionEpoch: 2 }
@@ -367,12 +477,17 @@ describe('MobileRemoteClient', () => {
     let abortSignal: AbortSignal | undefined
     let closed = false
     const remote = new MobileRemoteClient({
-      identityProvider: { deviceIdentity: async () => device, requireUserPresence: async () => undefined, clearUserPresence: () => undefined },
+      identityProvider: {
+        deviceIdentity: async () => device,
+        requireUserPresence: async () => undefined,
+        clearUserPresence: () => undefined },
       onEvent: () => undefined,
       onSnapshot: () => undefined,
       onState: state => states.push(state.kind),
       randomBytes: random(9),
-      epochProvider: { nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch, recordAuthenticatedConnection: async () => undefined },
+      epochProvider: {
+        nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch,
+        recordAuthenticatedConnection: async () => undefined },
       socketFactory: {
         create: async (_config, signal) => {
           abortSignal = signal
@@ -403,14 +518,16 @@ describe('MobileRemoteClient', () => {
     const remote = new MobileRemoteClient({
       identityProvider: {
         deviceIdentity: async () => { deviceIdentityCalls += 1; return device },
-        requireUserPresence: async () => new Promise<void>(resolve => { releasePresence = resolve }),
+        requireUserPresence: async () => new Promise<void>((resolve) => { releasePresence = resolve }),
         clearUserPresence: () => { clearCalls += 1 },
       },
       onEvent: () => undefined,
       onSnapshot: () => undefined,
       onState: state => states.push(state.kind),
       randomBytes: random(9),
-      epochProvider: { nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch, recordAuthenticatedConnection: async () => undefined },
+      epochProvider: {
+        nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch,
+        recordAuthenticatedConnection: async () => undefined },
       socketFactory: {
         create: async () => {
           socketCalls += 1
@@ -447,7 +564,9 @@ describe('MobileRemoteClient', () => {
       onSnapshot: () => undefined,
       onState: state => states.push(state.kind),
       randomBytes: random(9),
-      epochProvider: { nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch, recordAuthenticatedConnection: async () => undefined },
+      epochProvider: {
+        nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch,
+        recordAuthenticatedConnection: async () => undefined },
       socketFactory: { create: async () => { socketCalls += 1; throw new Error('Timed out presence must not open a socket') } },
     })
     await remote.connect(config(host))
@@ -467,16 +586,21 @@ describe('MobileRemoteClient', () => {
     let closed = false
     const remote = new MobileRemoteClient({
       connectionTimeoutMs: 5,
-      identityProvider: { deviceIdentity: async () => device, requireUserPresence: async () => undefined, clearUserPresence: () => undefined },
+      identityProvider: {
+        deviceIdentity: async () => device,
+        requireUserPresence: async () => undefined,
+        clearUserPresence: () => undefined },
       onEvent: () => undefined,
       onSnapshot: () => undefined,
       onState: state => states.push(state.kind),
       randomBytes: random(9),
-      epochProvider: { nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch, recordAuthenticatedConnection: async () => undefined },
+      epochProvider: {
+        nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch,
+        recordAuthenticatedConnection: async () => undefined },
       socketFactory: {
         create: async (_config, signal) => {
           abortSignal = signal
-          return new Promise(resolve => { releaseSocket = resolve })
+          return new Promise((resolve) => { releaseSocket = resolve })
         },
       },
     })
@@ -506,7 +630,9 @@ describe('MobileRemoteClient', () => {
       onSnapshot: () => undefined,
       onState: state => states.push(state.kind),
       randomBytes: random(9),
-      epochProvider: { nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch, recordAuthenticatedConnection: async () => undefined },
+      epochProvider: {
+        nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch,
+        recordAuthenticatedConnection: async () => undefined },
       socketFactory: {
         create: async () => ({ ...deviceSocket, close: () => { closed = true; deviceSocket.close() } }),
       },
@@ -531,7 +657,7 @@ describe('MobileRemoteClient', () => {
         deviceIdentity: async () => device,
         requireUserPresence: async () => {
           presenceCalls += 1
-          if (presenceCalls === 1) return new Promise<void>(resolve => { releaseFirstPresence = resolve })
+          if (presenceCalls === 1) return new Promise<void>((resolve) => { releaseFirstPresence = resolve })
         },
         clearUserPresence: () => { clearCalls += 1 },
       },
@@ -539,7 +665,9 @@ describe('MobileRemoteClient', () => {
       onSnapshot: () => undefined,
       onState: state => states.push(state.kind),
       randomBytes: random(9),
-      epochProvider: { nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch, recordAuthenticatedConnection: async () => undefined },
+      epochProvider: {
+        nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch,
+        recordAuthenticatedConnection: async () => undefined },
       socketFactory: { create: async () => deviceSocket },
     })
     const first = remote.connect(config(host))
@@ -562,16 +690,21 @@ describe('MobileRemoteClient', () => {
     let cursor = 0
     const remote = new MobileRemoteClient({
       cursorStore: {
-        apply: async message => { cursor = message.cursor },
+        apply: async (message) => { cursor = message.cursor },
         read: async () => cursor,
-        replace: async next => { cursor = next },
+        replace: async (next) => { cursor = next },
       },
-      identityProvider: { deviceIdentity: async () => device, requireUserPresence: async () => undefined, clearUserPresence: () => undefined },
+      identityProvider: {
+        deviceIdentity: async () => device,
+        requireUserPresence: async () => undefined,
+        clearUserPresence: () => undefined },
       onEvent: message => projected.push(message.cursor),
       onSnapshot: () => undefined,
       onState: state => states.push(state.kind),
       randomBytes: random(9),
-      epochProvider: { nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch, recordAuthenticatedConnection: async () => undefined },
+      epochProvider: {
+        nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch,
+        recordAuthenticatedConnection: async () => undefined },
       socketFactory: { create: async () => deviceSocket },
     })
     const hostConnection = hostAcceptance(hostSocket, host, device, route.connectionEpoch)
@@ -597,12 +730,17 @@ describe('MobileRemoteClient', () => {
     const states: string[] = []
     const remote = new MobileRemoteClient({
       cursorStore: { apply: async () => undefined, read: async () => 0, replace: async () => undefined },
-      identityProvider: { deviceIdentity: async () => device, requireUserPresence: async () => undefined, clearUserPresence: () => undefined },
+      identityProvider: {
+        deviceIdentity: async () => device,
+        requireUserPresence: async () => undefined,
+        clearUserPresence: () => undefined },
       onEvent: () => undefined,
       onSnapshot: () => undefined,
       onState: state => states.push(state.kind),
       randomBytes: random(9),
-      epochProvider: { nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch, recordAuthenticatedConnection: async () => undefined },
+      epochProvider: {
+        nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch,
+        recordAuthenticatedConnection: async () => undefined },
       socketFactory: { create: async () => deviceSocket },
     })
     const hostConnection = hostAcceptance(hostSocket, host, device, route.connectionEpoch)
@@ -621,12 +759,17 @@ describe('MobileRemoteClient', () => {
     const states: string[] = []
     const remote = new MobileRemoteClient({
       cursorStore: { apply: async () => { throw new Error('Keychain unavailable') }, read: async () => 0, replace: async () => undefined },
-      identityProvider: { deviceIdentity: async () => device, requireUserPresence: async () => undefined, clearUserPresence: () => undefined },
+      identityProvider: {
+        deviceIdentity: async () => device,
+        requireUserPresence: async () => undefined,
+        clearUserPresence: () => undefined },
       onEvent: () => undefined,
       onSnapshot: () => undefined,
       onState: state => states.push(state.kind),
       randomBytes: random(9),
-      epochProvider: { nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch, recordAuthenticatedConnection: async () => undefined },
+      epochProvider: {
+        nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch,
+        recordAuthenticatedConnection: async () => undefined },
       socketFactory: { create: async () => deviceSocket },
     })
     const hostConnection = hostAcceptance(hostSocket, host, device, route.connectionEpoch)
@@ -650,16 +793,21 @@ describe('MobileRemoteClient', () => {
     let socketIndex = 0
     const remote = new MobileRemoteClient({
       cursorStore: {
-        apply: async message => { cursor = message.cursor },
+        apply: async (message) => { cursor = message.cursor },
         read: async () => cursor,
-        replace: async next => { cursor = next },
+        replace: async (next) => { cursor = next },
       },
-      identityProvider: { deviceIdentity: async () => device, requireUserPresence: async () => undefined, clearUserPresence: () => undefined },
+      identityProvider: {
+        deviceIdentity: async () => device,
+        requireUserPresence: async () => undefined,
+        clearUserPresence: () => undefined },
       onEvent: message => projected.push(message.cursor),
-      onSnapshot: value => { snapshots.push(value) },
+      onSnapshot: (value) => { snapshots.push(value) },
       onState: state => states.push(state.kind),
       randomBytes: random(9),
-      epochProvider: { nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch, recordAuthenticatedConnection: async () => undefined },
+      epochProvider: {
+        nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch,
+        recordAuthenticatedConnection: async () => undefined },
       socketFactory: { create: async () => [firstDeviceSocket, secondDeviceSocket][socketIndex++] ?? secondDeviceSocket },
     })
     const firstHost = hostAcceptance(firstHostSocket, host, device, 2)
@@ -690,13 +838,18 @@ describe('MobileRemoteClient', () => {
     let baselineCalls = 0
     const remote = new MobileRemoteClient({
       cursorStore: { apply: async () => undefined, read: async () => 4, replace: async () => undefined },
-      identityProvider: { deviceIdentity: async () => device, requireUserPresence: async () => undefined, clearUserPresence: () => undefined },
+      identityProvider: {
+        deviceIdentity: async () => device,
+        requireUserPresence: async () => undefined,
+        clearUserPresence: () => undefined },
       onEvent: () => undefined,
       onSnapshot: () => { projection = [...projection, 'session-list'] },
       onBaselineSnapshot: () => { baselineCalls += 1; projection = [] },
       onState: state => states.push(state.kind),
       randomBytes: random(9),
-      epochProvider: { nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch, recordAuthenticatedConnection: async () => undefined },
+      epochProvider: {
+        nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch,
+        recordAuthenticatedConnection: async () => undefined },
       socketFactory: { create: async () => [firstDeviceSocket, secondDeviceSocket][socketIndex++] ?? secondDeviceSocket },
     })
     const firstHost = hostAcceptance(firstHostSocket, host, device, 2)
@@ -720,19 +873,24 @@ describe('MobileRemoteClient', () => {
     let socketIndex = 0
     let releaseApply: (() => void) | undefined
     let startedApply: (() => void) | undefined
-    const applying = new Promise<void>(resolve => { startedApply = resolve })
+    const applying = new Promise<void>((resolve) => { startedApply = resolve })
     const remote = new MobileRemoteClient({
       cursorStore: {
-        apply: async () => new Promise<void>(resolve => { releaseApply = resolve; startedApply?.() }),
+        apply: async () => new Promise<void>((resolve) => { releaseApply = resolve; startedApply?.() }),
         read: async () => 0,
         replace: async () => undefined,
       },
-      identityProvider: { deviceIdentity: async () => device, requireUserPresence: async () => undefined, clearUserPresence: () => undefined },
+      identityProvider: {
+        deviceIdentity: async () => device,
+        requireUserPresence: async () => undefined,
+        clearUserPresence: () => undefined },
       onEvent: () => undefined,
       onSnapshot: () => undefined,
       onState: state => states.push(state.kind),
       randomBytes: random(9),
-      epochProvider: { nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch, recordAuthenticatedConnection: async () => undefined },
+      epochProvider: {
+        nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch,
+        recordAuthenticatedConnection: async () => undefined },
       socketFactory: { create: async () => [firstDeviceSocket, secondDeviceSocket][socketIndex++] ?? secondDeviceSocket },
     })
     const firstHost = hostAcceptance(firstHostSocket, host, device, 2)

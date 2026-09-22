@@ -298,14 +298,16 @@ export class MobileRemoteClient {
     try {
       const presencePromise = Promise.resolve().then(() => this.identityProvider.requireUserPresence())
       void presencePromise.then(() => {
-        if (controller.signal.aborted && this.connecting === undefined && this.transport === undefined) this.identityProvider.clearUserPresence()
+        if (
+          controller.signal.aborted && this.connecting === undefined && this.transport === undefined
+        ) this.identityProvider.clearUserPresence()
       }, () => undefined)
       await this.awaitAttempt(presencePromise, connecting)
       if (controller.signal.aborted) return
       const identity = await this.awaitAttempt(Promise.resolve().then(() => this.identityProvider.deviceIdentity()), connecting)
       if (controller.signal.aborted) return
       const socketPromise = Promise.resolve().then(() => this.socketFactory.create(config, controller.signal))
-      void socketPromise.then(socket => {
+      void socketPromise.then((socket) => {
         if (controller.signal.aborted) this.closeSocket(socket, 'mobile-connection-cancelled')
       }, () => undefined)
       const socket = await this.awaitAttempt(socketPromise, connecting)
@@ -344,7 +346,7 @@ export class MobileRemoteClient {
       this.expectedEpoch = epoch + 1
       const fence = { controller: new AbortController(), generation: epoch }
       let releaseSnapshot: (() => void) | undefined
-      const snapshotReady = new Promise<void>(resolve => { releaseSnapshot = resolve })
+      const snapshotReady = new Promise<void>((resolve) => { releaseSnapshot = resolve })
       const activation: ActiveConnection = {
         deviceId: identity.deviceId,
         epoch,
@@ -521,16 +523,17 @@ export class MobileRemoteClient {
     const cursor = this.cursorStore === undefined
       ? 0
       : await this.awaitAttempt(this.cursorStore.read(), connecting)
-    const described = await this.deviceControlOn(activation, 'device.describe', { cursor })
+    const described = await this.awaitAttempt(this.deviceControlOn(activation, 'device.describe', { cursor }), connecting)
     if (!described.ok) throw new Error('The signed Host rejected its device description request')
     const synchronization = hostSynchronization(described.value)
     if (synchronization.mode === 'snapshot') {
       if (this.cursorStore === undefined) throw new Error('The Host snapshot requires durable mobile cursor storage')
-      await this.awaitAttempt(Promise.resolve((this.onBaselineSnapshot ?? this.onSnapshot)(synchronization.snapshot as RemoteWireJson)), connecting)
+      await this.awaitAttempt(
+        Promise.resolve((this.onBaselineSnapshot ?? this.onSnapshot)(synchronization.snapshot as RemoteWireJson)), connecting)
       if (!this.isActive(activation)) throw new Error('The Host connection retired before its snapshot completed')
       await this.awaitAttempt(this.cursorStore.replace(synchronization.cursor), connecting)
     }
-    const snapshot = await this.requestOn(activation, 'session.list', {})
+    const snapshot = await this.awaitAttempt(this.requestOn(activation, 'session.list', {}), connecting)
     if (!snapshot.ok) throw new Error('The signed Host did not provide a session snapshot')
     await this.awaitAttempt(Promise.resolve(this.onSnapshot(snapshot.value)), connecting)
     if (!this.isActive(activation)) throw new Error('The Host connection retired before its snapshot completed')
@@ -601,7 +604,9 @@ export class MobileRemoteClient {
     await this.sendRequestOn(transport, requestId, envelope, this.requiredFence())
   }
 
-  private async sendRequestOn(transport: TrustedRemoteRelayConnection, requestId: RemoteWireId, envelope: RemoteWireEnvelope, fence: RemoteRelaySendFence): Promise<void> {
+  private async sendRequestOn(
+    transport: TrustedRemoteRelayConnection, requestId: RemoteWireId, envelope: RemoteWireEnvelope, fence: RemoteRelaySendFence,
+  ): Promise<void> {
     try {
       const result = await transport.send(envelope, fence)
       if (result.status === 'committed-before-fence') return
@@ -655,10 +660,14 @@ export class MobileRemoteClient {
   private armConnectionDeadline(connecting: ConnectingAttempt): void {
     this.clearConnectionDeadline(connecting)
     connecting.timeout = setTimeout(() => {
-      if (this.connecting !== connecting || this.config !== connecting.config || this.expectedEpoch !== connecting.epoch) return
+      if (this.connecting !== connecting || this.config !== connecting.config) return
+      const transport = this.transport
+      this.retireActive(transport)
       connecting.controller.abort()
       this.identityProvider.clearUserPresence()
+      transport?.close('mobile-connection-timeout')
       if (connecting.socket !== undefined) this.closeSocket(connecting.socket, 'mobile-connection-timeout')
+      this.disconnectPending(new Error('The Host connection did not complete before its deadline'))
       this.connecting = undefined
       this.publish({ kind: 'error', message: 'The encrypted Host connection timed out. You can retry.' })
     }, this.connectionTimeoutMs)
@@ -672,11 +681,11 @@ export class MobileRemoteClient {
         reject(new Error('DSH Host connection cancelled'))
       }
       operation.then(
-        value => {
+        (value) => {
           connecting.controller.signal.removeEventListener('abort', abort)
           resolve(value)
         },
-        error => {
+        (error) => {
           connecting.controller.signal.removeEventListener('abort', abort)
           reject(error)
         },

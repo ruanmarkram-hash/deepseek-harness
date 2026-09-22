@@ -173,7 +173,7 @@ final class HostedRelaySession: Fd199RelayBridge.SessionOwner, @unchecked Sendab
   }
 
   func hostedChildDidClose(metadata: Data) {
-    guard framePump.isCurrent(metadata: metadata) else { return }
+    guard framePump.isCurrentClose(metadata: metadata) else { return }
     Task { [weak self] in await self?.stop() }
   }
 

@@ -192,10 +192,11 @@ private final class DshDeviceIdentityStore {
   private let presence = DshPresenceSession<DshPrivateIdentity>()
 
   func publicDescriptor() throws -> [String: String] {
-    var record = try loadOrCreate()
-    defer { record.resetBytes(in: 0..<record.count) }
-    let identity = try DshPrivateIdentity(record: record)
-    return identity.publicDescriptor()
+    try presence.publicProjection(project: { $0.publicDescriptor() }, load: {
+      var record = try loadOrCreate()
+      defer { record.resetBytes(in: 0..<record.count) }
+      return try DshPrivateIdentity(record: record).publicDescriptor()
+    })
   }
 
   func requireUserPresence(promise: Promise) {

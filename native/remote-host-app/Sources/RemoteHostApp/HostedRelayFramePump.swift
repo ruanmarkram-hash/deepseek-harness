@@ -1,6 +1,7 @@
 import Foundation
 import RemoteHostFd199
 import RemoteHostWire
+import RemoteHostRelay
 
 /**
  The narrow, testable boundary between the authenticated phone carrier and a
@@ -12,7 +13,7 @@ final class HostedRelayFramePump: @unchecked Sendable {
   private let lock = NSLock()
   private let sendToPhone: @Sendable (Data) async throws -> Void
   private let failed: @Sendable () -> Void
-  private var metadata: Data?
+  private var reference: RelayConnectionReference?
   private var stopped = false
   private var queue: [Data] = []
   private var queuedBytes = 0
@@ -27,25 +28,26 @@ final class HostedRelayFramePump: @unchecked Sendable {
   }
 
   func install(metadata: Data) throws {
+    let reference = try RelayConnectionReference(openMetadata: metadata)
     lock.lock()
     defer { lock.unlock() }
-    guard !stopped, self.metadata == nil else { throw Fd199BridgeError.detached }
-    self.metadata = metadata
+    guard !stopped, self.reference == nil else { throw Fd199BridgeError.detached }
+    self.reference = reference
   }
 
   func clear() {
     lock.lock()
     stopped = true
-    metadata = nil
+    reference = nil
     queue.removeAll(keepingCapacity: false)
     queuedBytes = 0
     lock.unlock()
   }
 
-  func isCurrent(metadata candidate: Data) -> Bool {
+  func isCurrentClose(metadata candidate: Data) -> Bool {
     lock.lock()
     defer { lock.unlock() }
-    return !stopped && metadata == candidate
+    return !stopped && reference?.matchesClose(candidate) == true
   }
 
   /// Returns the unchanged JSON bytes that must become `connection.frame`.
@@ -53,16 +55,16 @@ final class HostedRelayFramePump: @unchecked Sendable {
     lock.lock()
     defer { lock.unlock() }
     guard !stopped, payload.count <= RemoteWire.maximumRecordBytes,
-          Self.isEnvelopeJSON(payload), let metadata
+          Self.isEnvelopeJSON(payload), let reference
     else { throw Fd199BridgeError.invalidPhoneRecord }
-    return (metadata, payload)
+    return (reference.metadata, payload)
   }
 
   /// Enqueues unchanged child JSON on one bounded FIFO phone-carrier writer.
   func childPlaintext(metadata candidate: Data, payload: Data) {
     let startDrain: Bool
     lock.lock()
-    guard !stopped, metadata == candidate, Self.isEnvelopeJSON(payload),
+    guard !stopped, reference?.matchesSend(candidate) == true, Self.isEnvelopeJSON(payload),
           queue.count < 64, queuedBytes <= RemoteWire.maximumRecordBytes - payload.count
     else {
       lock.unlock()

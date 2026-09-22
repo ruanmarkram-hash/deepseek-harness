@@ -30,6 +30,18 @@ final class DshPresenceSession<Identity> {
     return active
   }
 
+  /** Projects public data from current authentication, otherwise uses normal protected loading. */
+  func publicProjection<Public>(project: (Identity) -> Public, load: () throws -> Public) rethrows -> Public {
+    lock.lock()
+    if let active {
+      let result = project(active)
+      lock.unlock()
+      return result
+    }
+    lock.unlock()
+    return try load()
+  }
+
   func clear() {
     lock.lock()
     generation = generation &+ 1

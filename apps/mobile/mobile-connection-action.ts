@@ -3,6 +3,8 @@
 import type { NativeMobileRemoteStateStore } from './mobile-remote-state'
 import type { MobileRemoteClient, MobileRemoteState } from './remote'
 
+const pendingActions = new WeakSet<MobileRemoteClient>()
+
 /**
  * Open or retry only after a user action. Missing durable pairing state returns
  * the caller to local pairing rather than constructing a route or socket.
@@ -18,19 +20,20 @@ export async function connectStoredHost(
   stateStore: NativeMobileRemoteStateStore,
   openPairing: () => void,
 ): Promise<void> {
-  const stored = await stateStore.restore()
-  if (stored === undefined) {
-    openPairing()
-    return
+  if (pendingActions.has(client) || remoteState.kind === 'connected' || remoteState.kind === 'connecting') return
+  pendingActions.add(client)
+  try {
+    const stored = await stateStore.restore()
+    if (stored === undefined || remoteState.kind === 're-pair-required') {
+      openPairing()
+      return
+    }
+    if (remoteState.kind === 'reconnecting' || remoteState.kind === 'error') {
+      await client.reconnect()
+      return
+    }
+    await client.connect(stored.config)
+  } finally {
+    pendingActions.delete(client)
   }
-  if (remoteState.kind === 'connected' || remoteState.kind === 'connecting') return
-  if (remoteState.kind === 're-pair-required') {
-    openPairing()
-    return
-  }
-  if (remoteState.kind === 'reconnecting' || remoteState.kind === 'error') {
-    await client.reconnect()
-    return
-  }
-  await client.connect(stored.config)
 }
