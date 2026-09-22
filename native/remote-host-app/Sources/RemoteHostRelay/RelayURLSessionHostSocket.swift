@@ -93,9 +93,23 @@ public final class RelayURLSessionHostSocketFactory: @unchecked Sendable, RelayH
 /** Observable state for one explicitly Host-owned native V3 connection. */
 public enum RelayHostSocketSupervisorState: Equatable, Sendable {
   case idle
+  case waitingForPhone
   case handshaking
   case established
   case stopped
+}
+
+/** Fixed, credential-free diagnostics for the stage whose deadline expired. */
+public struct RelayHostConnectionTimeout: Error, CustomStringConvertible, Equatable {
+  public enum Phase: String, Sendable {
+    case waitingForPhone = "waiting-for-paired-phone"
+    case hello = "processing-hello"
+    case ready = "awaiting-ready"
+    case ack = "awaiting-ack"
+    case confirm = "awaiting-confirm"
+  }
+  public let phase: Phase
+  public var description: String { "deadlineExceeded (\(phase.rawValue))" }
 }
 
 /**
@@ -112,13 +126,16 @@ public actor RelayHostSocketSupervisor {
   private let epochLedger: RelayConnectionEpochLedger
   private let connectionCoordinator: RelayHostRouteConnectionCoordinator
   private let flightTimeoutNanoseconds: UInt64
+  private let rendezvousTimeoutNanoseconds: UInt64
+  private let rendezvousFence = RelayHostSendFence()
+  private var rendezvousRead: RelayDeadlineRace<Data>?
   private var socket: (any RelayHostStartableSocket)?
   private var transport: RelayHostTransport?
   private var epochReservation: RelayConnectionEpochReservation?
   private var coordinatorClaimed = false
   private var value: RelayHostSocketSupervisorState = .idle
 
-  public init(credential: RelayRouteCredential, agreement: RelayProtectedAgreement, epochLedger: RelayConnectionEpochLedger, connectionCoordinator: RelayHostRouteConnectionCoordinator, socketFactory: RelayHostSocketFactory = RelayURLSessionHostSocketFactory(), clock: RelayTransportClock = RelaySystemClock(), random: RelayTransportRandom = RelaySystemRandom(), flightTimeoutNanoseconds: UInt64 = 10_000_000_000) {
+  public init(credential: RelayRouteCredential, agreement: RelayProtectedAgreement, epochLedger: RelayConnectionEpochLedger, connectionCoordinator: RelayHostRouteConnectionCoordinator, socketFactory: RelayHostSocketFactory = RelayURLSessionHostSocketFactory(), clock: RelayTransportClock = RelaySystemClock(), random: RelayTransportRandom = RelaySystemRandom(), flightTimeoutNanoseconds: UInt64 = 10_000_000_000, rendezvousTimeoutNanoseconds: UInt64 = 120_000_000_000) {
     self.credential = credential
     self.agreement = agreement
     self.epochLedger = epochLedger
@@ -127,6 +144,7 @@ public actor RelayHostSocketSupervisor {
     self.clock = clock
     self.random = random
     self.flightTimeoutNanoseconds = flightTimeoutNanoseconds
+    self.rendezvousTimeoutNanoseconds = rendezvousTimeoutNanoseconds
   }
 
   public func state() -> RelayHostSocketSupervisorState { value }
@@ -139,12 +157,18 @@ public actor RelayHostSocketSupervisor {
     return epoch
   }
 
-  /** Runs the exact four inbound handshake flights after the owner explicitly starts. */
+  /** Waits for the paired phone separately, then runs four bounded cryptographic flights. */
   public func start() async throws {
     guard value == .idle else { throw RelayOwnerError.invalidState }
-    value = .handshaking
+    value = .waitingForPhone
+    var timeoutPhase = RelayHostConnectionTimeout.Phase.waitingForPhone
     do {
+      guard rendezvousTimeoutNanoseconds > 0 else { throw RelayOwnerError.invalidCredential }
       try await connectionCoordinator.claim(self, credential: credential)
+      guard value == .waitingForPhone else {
+        await connectionCoordinator.release(self, credential: credential)
+        throw RelayOwnerError.invalidState
+      }
       coordinatorClaimed = true
       let reservation = try epochLedger.reserveExpectedEpoch(for: credential)
       epochReservation = reservation
@@ -152,18 +176,38 @@ public actor RelayHostSocketSupervisor {
       let socket = try socketFactory.make(credential: credential)
       self.socket = socket
       try await socket.start()
+      guard value == .waitingForPhone else { await socket.close(); throw RelayOwnerError.invalidState }
       // A revoke can be persisted by a different signed Host between the
       // admission check and `start`. Close before any handshake frame is read.
       try epochLedger.ensureReservationIsAdmitted(reservation)
+      let now = clock.nowNanoseconds()
+      guard now <= UInt64.max - rendezvousTimeoutNanoseconds else { throw RelayOwnerError.invalidCredential }
+      let expiry = now + rendezvousTimeoutNanoseconds
+      let read = RelayDeadlineRace<Data>()
+      rendezvousRead = read
+      let firstFrame = try await receiveRelayFrameBeforeDeadline(socket: socket, clock: clock, expiry: expiry, fence: rendezvousFence, race: read)
+      rendezvousRead = nil
+      guard value == .waitingForPhone else { throw RelayOwnerError.invalidState }
+      guard clock.nowNanoseconds() < expiry else { throw RelayOwnerError.deadlineExceeded }
+      try epochLedger.ensureReservationIsAdmitted(reservation)
+      value = .handshaking
+      timeoutPhase = .hello
       let transport = try RelayHostTransport(credential: credential, agreement: agreement, socket: socket, clock: clock, random: random, expectedConnectionEpoch: reservation.epoch, reconciliationEpoch: reservation.reconciliationEpoch, finalizeConnectionEpoch: { [epochLedger] epoch in try epochLedger.finalize(reservation, connectionEpoch: epoch) }, ensureConnectionAdmitted: { [epochLedger] in try epochLedger.ensureReservationIsAdmitted(reservation) }, flightTimeoutNanoseconds: flightTimeoutNanoseconds)
       self.transport = transport
+      try await transport.processInitialInbound(firstFrame)
+      timeoutPhase = .ready
       try await transport.processOneInbound()
+      timeoutPhase = .ack
       try await transport.processOneInbound()
+      timeoutPhase = .confirm
       try await transport.processOneInbound()
-      try await transport.processOneInbound()
+      guard value == .handshaking else { throw RelayOwnerError.invalidState }
       value = .established
     } catch {
       await stop()
+      if let ownerError = error as? RelayOwnerError, ownerError == .deadlineExceeded {
+        throw RelayHostConnectionTimeout(phase: timeoutPhase)
+      }
       throw error
     }
   }
@@ -195,6 +239,9 @@ public actor RelayHostSocketSupervisor {
   public func stop() async {
     guard value != .stopped else { return }
     value = .stopped
+    await rendezvousFence.invalidate()
+    rendezvousRead?.fail(RelayOwnerError.unavailable)
+    rendezvousRead = nil
     if let transport {
       await transport.stop()
       self.transport = nil

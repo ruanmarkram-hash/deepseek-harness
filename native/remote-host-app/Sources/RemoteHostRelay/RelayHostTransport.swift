@@ -21,9 +21,16 @@ public protocol RelayHostSocket: Sendable {
 
 /// Does not wait for a losing task. The deadline arm closes the socket first,
 /// so a non-cooperative adapter cannot keep the Host actor blocked past expiry.
-private final class RelayDeadlineRace<Value: Sendable>: @unchecked Sendable {
+final class RelayDeadlineRace<Value: Sendable>: @unchecked Sendable {
   private let lock = NSLock(); private var continuation: CheckedContinuation<Value, Error>?; private var settled = false
-  func install(_ continuation: CheckedContinuation<Value, Error>) { lock.lock(); defer { lock.unlock() }; self.continuation = continuation }
+  private var earlyResult: Result<Value, Error>?
+  @discardableResult func install(_ continuation: CheckedContinuation<Value, Error>) -> Bool {
+    lock.lock()
+    if let earlyResult { self.earlyResult = nil; lock.unlock(); continuation.resume(with: earlyResult); return false }
+    self.continuation = continuation
+    lock.unlock()
+    return true
+  }
   func succeed(_ value: Value) { settle(.success(value)) }
   func fail(_ error: Error) { settle(.failure(error)) }
   func claimTimeout() -> CheckedContinuation<Value, Error>? {
@@ -33,7 +40,20 @@ private final class RelayDeadlineRace<Value: Sendable>: @unchecked Sendable {
     return continuation
   }
   private func settle(_ result: Result<Value, Error>) {
-    lock.lock(); defer { lock.unlock() }; guard !settled, let continuation else { return }; settled = true; self.continuation = nil; continuation.resume(with: result)
+    lock.lock(); defer { lock.unlock() }; guard !settled else { return }; settled = true
+    if let continuation { self.continuation = nil; continuation.resume(with: result) }
+    else { earlyResult = result }
+  }
+}
+
+/** One bounded read shared by pre-handshake rendezvous and cryptographic flights. */
+func receiveRelayFrameBeforeDeadline(socket: RelayHostSocket, clock: RelayTransportClock, expiry: UInt64, fence: RelayHostSendFence, race: RelayDeadlineRace<Data> = RelayDeadlineRace()) async throws -> Data {
+  try await withCheckedThrowingContinuation { continuation in
+    guard race.install(continuation) else { return }
+    Task { do { race.succeed(try await socket.receive()) } catch { race.fail(error) } }
+    Task { do { try await clock.sleep(untilNanoseconds: expiry); if let continuation = race.claimTimeout() { await fence.invalidate(); Task { await socket.close() }; continuation.resume(throwing: RelayOwnerError.deadlineExceeded) } } catch {
+      if let continuation = race.claimTimeout() { await fence.invalidate(); Task { await socket.close() }; continuation.resume(throwing: error) }
+    } }
   }
 }
 
@@ -155,6 +175,19 @@ public actor RelayHostTransport {
     }
   }
 
+  /** Validates the exact first frame retained by the owned socket's rendezvous. */
+  public func processInitialInbound(_ input: Data) async throws {
+    do {
+      guard state == .awaitingHello else { throw RelayOwnerError.invalidState }
+      try ensureConnectionAdmitted()
+      try checkDeadline()
+      try await process(input)
+    } catch {
+      await stop()
+      throw error
+    }
+  }
+
   /// Receives and authenticates exactly one post-commit application frame.
   /// An invalid, replayed, or misrouted frame stops the transport before returning.
   public func receiveCiphertext() async throws -> Data {
@@ -244,15 +277,7 @@ public actor RelayHostTransport {
   }
 
   private func receiveBeforeDeadline() async throws -> Data {
-    let expiry = deadline
-    let socket = socket, clock = clock, fence = writeFence
-    return try await withCheckedThrowingContinuation { continuation in
-      let race = RelayDeadlineRace<Data>(); race.install(continuation)
-      Task { do { race.succeed(try await socket.receive()) } catch { race.fail(error) } }
-      Task { do { try await clock.sleep(untilNanoseconds: expiry); if let continuation = race.claimTimeout() { await fence.invalidate(); Task { await socket.close() }; continuation.resume(throwing: RelayOwnerError.deadlineExceeded) } } catch {
-        if let continuation = race.claimTimeout() { await fence.invalidate(); Task { await socket.close() }; continuation.resume(throwing: error) }
-      } }
-    }
+    try await receiveRelayFrameBeforeDeadline(socket: socket, clock: clock, expiry: deadline, fence: writeFence)
   }
 
   private func receiveHello(_ inbound: RelayFlight) async throws {

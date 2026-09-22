@@ -125,6 +125,9 @@ private actor CoordinatedStartableSocket: RelayHostStartableSocket {
   var started = false
   var closed = false
   var rejectWrites = false
+  var preserveReadOnClose = false
+  private var receives = 0
+  private var receiveObservers: [(Int, CheckedContinuation<Void, Never>)] = []
   private var receiveWaiter: CheckedContinuation<Data, Error>?
   private var sentWaiter: CheckedContinuation<Void, Never>?
   func start() async throws { started = true }
@@ -136,6 +139,10 @@ private actor CoordinatedStartableSocket: RelayHostStartableSocket {
   }
   func receive() async throws -> Data {
     guard !closed else { throw RelayOwnerError.unavailable }
+    receives += 1
+    let ready = receiveObservers.filter { $0.0 <= receives }
+    receiveObservers.removeAll { $0.0 <= receives }
+    for (_, continuation) in ready { continuation.resume() }
     if !inbound.isEmpty { return inbound.removeFirst() }
     return try await withCheckedThrowingContinuation { receiveWaiter = $0 }
   }
@@ -148,9 +155,14 @@ private actor CoordinatedStartableSocket: RelayHostStartableSocket {
     await withCheckedContinuation { sentWaiter = $0 }
   }
   func setRejectWrites() { rejectWrites = true }
+  func keepPendingReadAfterClose() { preserveReadOnClose = true }
+  func waitForReceive(count: Int) async {
+    if receives >= count { return }
+    await withCheckedContinuation { receiveObservers.append((count, $0)) }
+  }
   func close() async {
     closed = true
-    receiveWaiter?.resume(throwing: RelayOwnerError.unavailable); receiveWaiter = nil
+    if !preserveReadOnClose { receiveWaiter?.resume(throwing: RelayOwnerError.unavailable); receiveWaiter = nil }
   }
 }
 
@@ -221,6 +233,32 @@ private final class TestClock: @unchecked Sendable, RelayTransportClock {
   var value: UInt64 = 100
   func nowNanoseconds() -> UInt64 { value }
   func sleep(untilNanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: 60_000_000_000) }
+}
+
+private final class ControlledHostClock: @unchecked Sendable, RelayTransportClock {
+  private let lock = NSLock()
+  private var now: UInt64 = 0
+  private var sleepers: [(UInt64, CheckedContinuation<Void, Never>)] = []
+  func nowNanoseconds() -> UInt64 { lock.withLock { now } }
+  func sleep(untilNanoseconds expiry: UInt64) async throws {
+    await withCheckedContinuation { continuation in
+      let expired = lock.withLock {
+        if now >= expiry { return true }
+        sleepers.append((expiry, continuation))
+        return false
+      }
+      if expired { continuation.resume() }
+    }
+  }
+  func advance(to value: UInt64) {
+    let ready = lock.withLock {
+      now = value
+      let ready = sleepers.filter { $0.0 <= value }
+      sleepers.removeAll { $0.0 <= value }
+      return ready
+    }
+    for (_, continuation) in ready { continuation.resume() }
+  }
 }
 private final class ImmediateDeadlineClock: @unchecked Sendable, RelayTransportClock {
   func nowNanoseconds() -> UInt64 { 100 }
@@ -581,6 +619,142 @@ private func encryptedDeviceCiphertext(sequence: Int, plaintext: Data, hello: Re
   #expect(!(await socket.snapshot().1))
   await transport.stop()
   #expect(!(await transport.hasSecretMaterialForTest()))
+}
+
+@Test func hostRendezvousDelayedPhoneCompletesAuthenticatedTranscript() async throws {
+  let credential = try route(); let store = MemoryStore(); store.active = credential
+  store.epochs[credential.routeId] = try RelayConnectionEpochState.initial(routeId: credential.routeId)
+  let socket = CoordinatedStartableSocket(); let clock = ControlledHostClock()
+  defer { clock.advance(to: UInt64.max) }
+  let supervisor = RelayHostSocketSupervisor(credential: credential, agreement: TestAgreement(), epochLedger: RelayConnectionEpochLedger(store: store), connectionCoordinator: RelayHostRouteConnectionCoordinator(store: store), socketFactory: CoordinatedSocketFactory(socket: socket), clock: clock, random: TestRandom())
+  let started = Task { try await supervisor.start() }
+  await socket.waitForReceive(count: 1)
+  clock.advance(to: 119_000_000_000)
+  #expect(await supervisor.state() == .waitingForPhone)
+  #expect(store.epochs[credential.routeId]?.lastCommittedEpoch == 0)
+  let helloBytes = flight("hello")
+  await socket.enqueue(helloBytes)
+  await socket.waitForReceive(count: 2)
+  let hello = try RelayFlightCodec.decode(helloBytes)
+  let welcome = try RelayFlightCodec.decode((await socket.sent)[0])
+  // The expired rendezvous timer cannot retire the active cryptographic flight.
+  clock.advance(to: 121_000_000_000)
+  await socket.enqueue(try await encryptedDeviceFlight(type: "ready", text: "dsh-remote/v3/ready", hello: hello, welcome: welcome))
+  await socket.waitForReceive(count: 3)
+  await socket.enqueue(try await encryptedDeviceFlight(type: "ack", text: "dsh-remote/v3/ack", hello: hello, welcome: welcome))
+  await socket.waitForReceive(count: 4)
+  #expect(store.epochs[credential.routeId]?.lastCommittedEpoch == 0)
+  await socket.enqueue(try await encryptedDeviceFlight(type: "confirm", text: "dsh-remote/v3/confirm", hello: hello, welcome: welcome))
+  try await started.value
+  #expect(await supervisor.state() == .established)
+  #expect(store.epochs[credential.routeId]?.lastCommittedEpoch == 1)
+  #expect(store.epochs[credential.routeId]?.pendingEpoch == nil)
+  #expect(try await supervisor.establishedConnectionEpoch() == 1)
+  #expect(try (await socket.sent).map { try RelayFlightCodec.decode($0).kind } == [.welcome, .finish, .commit, .receipt])
+  await supervisor.stop()
+}
+
+@Test func hostRendezvousTimeoutHasDistinctPhaseAndRetainsUncommittedEpoch() async throws {
+  let credential = try route(); let store = MemoryStore(); store.active = credential
+  store.epochs[credential.routeId] = try RelayConnectionEpochState.initial(routeId: credential.routeId)
+  let socket = CoordinatedStartableSocket(); let clock = ControlledHostClock()
+  defer { clock.advance(to: UInt64.max) }
+  let ledger = RelayConnectionEpochLedger(store: store)
+  let supervisor = RelayHostSocketSupervisor(credential: credential, agreement: TestAgreement(), epochLedger: ledger, connectionCoordinator: RelayHostRouteConnectionCoordinator(store: store), socketFactory: CoordinatedSocketFactory(socket: socket), clock: clock, random: TestRandom())
+  let started = Task { try await supervisor.start() }
+  await socket.waitForReceive(count: 1)
+  clock.advance(to: 120_000_000_000)
+  await #expect(throws: RelayHostConnectionTimeout(phase: .waitingForPhone)) { try await started.value }
+  #expect(await socket.closed)
+  #expect((await socket.sent).isEmpty)
+  #expect(store.epochs[credential.routeId]?.lastCommittedEpoch == 0)
+  #expect(store.epochs[credential.routeId]?.pendingEpoch == 1)
+  let retry = try ledger.reserveExpectedEpoch(for: credential)
+  #expect(retry.epoch == 1)
+  ledger.release(retry)
+}
+
+@Test func hostRendezvousPreservesEveryPostHelloTenSecondDeadline() async throws {
+  for (inboundCount, phase) in [(2, RelayHostConnectionTimeout.Phase.ready), (3, .ack), (4, .confirm)] {
+    let credential = try route(); let store = MemoryStore(); store.active = credential
+    store.epochs[credential.routeId] = try RelayConnectionEpochState.initial(routeId: credential.routeId)
+    let socket = CoordinatedStartableSocket(); let clock = ControlledHostClock()
+    defer { clock.advance(to: UInt64.max) }
+    let supervisor = RelayHostSocketSupervisor(credential: credential, agreement: TestAgreement(), epochLedger: RelayConnectionEpochLedger(store: store), connectionCoordinator: RelayHostRouteConnectionCoordinator(store: store), socketFactory: CoordinatedSocketFactory(socket: socket), clock: clock, random: TestRandom())
+    let started = Task { try await supervisor.start() }
+    await socket.waitForReceive(count: 1)
+    clock.advance(to: 119_000_000_000)
+    let helloBytes = flight("hello")
+    await socket.enqueue(helloBytes)
+    await socket.waitForReceive(count: 2)
+    let hello = try RelayFlightCodec.decode(helloBytes)
+    let welcome = try RelayFlightCodec.decode((await socket.sent)[0])
+    if inboundCount >= 3 {
+      await socket.enqueue(try await encryptedDeviceFlight(type: "ready", text: "dsh-remote/v3/ready", hello: hello, welcome: welcome))
+      await socket.waitForReceive(count: 3)
+    }
+    if inboundCount == 4 {
+      await socket.enqueue(try await encryptedDeviceFlight(type: "ack", text: "dsh-remote/v3/ack", hello: hello, welcome: welcome))
+      await socket.waitForReceive(count: 4)
+    }
+    clock.advance(to: 129_000_000_000)
+    await #expect(throws: RelayHostConnectionTimeout(phase: phase)) { try await started.value }
+    #expect(await socket.closed)
+    #expect(store.epochs[credential.routeId]?.lastCommittedEpoch == 0)
+  }
+}
+
+@Test func hostRendezvousRejectsMalformedAndRevokedFirstFrames() async throws {
+  for revoked in [false, true] {
+    let credential = try route(); let store = MemoryStore(); store.active = credential
+    store.epochs[credential.routeId] = try RelayConnectionEpochState.initial(routeId: credential.routeId)
+    let socket = CoordinatedStartableSocket(); let clock = ControlledHostClock()
+    defer { clock.advance(to: UInt64.max) }
+    let supervisor = RelayHostSocketSupervisor(credential: credential, agreement: TestAgreement(), epochLedger: RelayConnectionEpochLedger(store: store), connectionCoordinator: RelayHostRouteConnectionCoordinator(store: store), socketFactory: CoordinatedSocketFactory(socket: socket), clock: clock, random: TestRandom())
+    let started = Task { try await supervisor.start() }
+    await socket.waitForReceive(count: 1)
+    if revoked { try RelayConnectionEpochLedger.beginRevocation(for: credential, store: store) }
+    await socket.enqueue(revoked ? flight("hello") : Data("{}".utf8))
+    await #expect(throws: (any Error).self) { try await started.value }
+    #expect((await socket.sent).isEmpty)
+    #expect(await socket.closed)
+    #expect(store.epochs[credential.routeId]?.lastCommittedEpoch == 0)
+  }
+}
+
+@Test func hostRendezvousStopFencesLateReadAndReleasesExclusiveOwner() async throws {
+  let credential = try route(); let store = MemoryStore(); store.active = credential
+  store.epochs[credential.routeId] = try RelayConnectionEpochState.initial(routeId: credential.routeId)
+  let socket = CoordinatedStartableSocket(); let clock = ControlledHostClock()
+  defer { clock.advance(to: UInt64.max) }
+  await socket.keepPendingReadAfterClose()
+  let coordinator = RelayHostRouteConnectionCoordinator(store: store)
+  let supervisor = RelayHostSocketSupervisor(credential: credential, agreement: TestAgreement(), epochLedger: RelayConnectionEpochLedger(store: store), connectionCoordinator: coordinator, socketFactory: CoordinatedSocketFactory(socket: socket), clock: clock, random: TestRandom())
+  let started = Task { try await supervisor.start() }
+  await socket.waitForReceive(count: 1)
+  let replacementSocket = CoordinatedStartableSocket()
+  let replacement = RelayHostSocketSupervisor(credential: credential, agreement: TestAgreement(), epochLedger: RelayConnectionEpochLedger(store: store), connectionCoordinator: coordinator, socketFactory: CoordinatedSocketFactory(socket: replacementSocket), clock: clock, random: TestRandom())
+  await #expect(throws: (any Error).self) { try await replacement.start() }
+  #expect(!(await replacementSocket.started))
+  await supervisor.stop()
+  await #expect(throws: (any Error).self) { try await started.value }
+  await socket.enqueue(flight("hello"))
+  #expect(await supervisor.state() == .stopped)
+  #expect((await socket.sent).isEmpty)
+  let ledger = RelayConnectionEpochLedger(store: store)
+  let retry = try ledger.reserveExpectedEpoch(for: credential)
+  #expect(retry.epoch == 1)
+  ledger.release(retry)
+}
+
+@Test func hostRendezvousCancellationBeforeContinuationInstallationSettles() async throws {
+  let race = RelayDeadlineRace<Data>()
+  race.fail(RelayOwnerError.unavailable)
+  await #expect(throws: RelayOwnerError.unavailable) {
+    let _: Data = try await withCheckedThrowingContinuation { continuation in
+      #expect(!race.install(continuation))
+    }
+  }
 }
 
 @Test func handshakePinsHelloEpochAndRejectsLaterEpochSubstitution() async throws {
