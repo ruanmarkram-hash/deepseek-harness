@@ -11,6 +11,8 @@ public enum Fd199HostedChildOutput: Equatable, Sendable {
   case close(metadata: Data)
   /** A public-only durable-device receipt emitted in response to `device.enroll`. */
   case deviceEnrolled(metadata: Data)
+  /** Exact durable acknowledgment of a native-finalized epoch. */
+  case epochSynchronized(metadata: Data, payload: Data)
 }
 
 /**

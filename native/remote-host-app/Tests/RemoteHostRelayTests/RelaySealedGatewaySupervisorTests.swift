@@ -414,6 +414,21 @@ private func readyGateway(
   ])
 }
 
+@Test func hostedChildSupervisorForwardsEpochAcknowledgmentWithoutDroppingPayload() throws {
+  let (hostRelay, childRelay) = try gatewaySocketPair()
+  let (hostAuthority, childAuthority) = try gatewaySocketPair()
+  defer { childRelay.closeFile(); childAuthority.closeFile() }
+  let output = HostedChildOutputBox()
+  let supervisor = Fd199HostedChildSupervisor(testRelayChannel: hostRelay, testAuthorityChannel: hostAuthority, onOutput: output.append)
+  defer { supervisor.stop() }
+  let metadata = Data("{\"connectionEpoch\":1}".utf8)
+  // The consumer, not the transport adapter, rejects a nonempty receipt.
+  let payload = Data([1])
+  try childRelay.write(contentsOf: RemoteWire.encode(RemoteWireRecord(kind: .epochSynchronized, metadata: metadata, payload: payload)))
+  try waitForGateway { output.snapshot().count == 1 }
+  #expect(output.snapshot() == [.epochSynchronized(metadata: metadata, payload: payload)])
+}
+
 @Test func hostedChildSupervisorReapsOnExplicitAndErrorStopPaths() throws {
   let (normalHostRelay, normalChildRelay) = try gatewaySocketPair()
   let (normalHostAuthority, normalChildAuthority) = try gatewaySocketPair()

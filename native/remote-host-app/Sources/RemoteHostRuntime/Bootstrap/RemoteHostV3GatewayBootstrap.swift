@@ -71,16 +71,16 @@ public enum RemoteHostV3GatewayBootstrap {
     switch direction {
     case .hostToGateway:
       switch kind {
-      case .routeUpsert, .routeRevoked, .epochBegin, .epochCommit, .connectionOpen, .connectionFrame, .connectionClosed, .hostStopping, .deviceEnroll, .enrollmentSeed:
+      case .routeUpsert, .routeRevoked, .epochBegin, .epochCommit, .connectionOpen, .connectionFrame, .connectionClosed, .hostStopping, .deviceEnroll, .enrollmentSeed, .epochSynchronize:
         return true
-      case .runtimeReady, .epochBegun, .epochCommitted, .connectionSend, .connectionClose, .deviceEnrolled:
+      case .runtimeReady, .epochBegun, .epochCommitted, .connectionSend, .connectionClose, .deviceEnrolled, .epochSynchronized:
         return false
       }
     case .gatewayToHost:
       switch kind {
-      case .runtimeReady, .epochBegun, .epochCommitted, .connectionSend, .connectionClose, .deviceEnrolled:
+      case .runtimeReady, .epochBegun, .epochCommitted, .connectionSend, .connectionClose, .deviceEnrolled, .epochSynchronized:
         return true
-      case .routeUpsert, .routeRevoked, .epochBegin, .epochCommit, .connectionOpen, .connectionFrame, .connectionClosed, .hostStopping, .deviceEnroll, .enrollmentSeed:
+      case .routeUpsert, .routeRevoked, .epochBegin, .epochCommit, .connectionOpen, .connectionFrame, .connectionClosed, .hostStopping, .deviceEnroll, .enrollmentSeed, .epochSynchronize:
         return false
       }
     }

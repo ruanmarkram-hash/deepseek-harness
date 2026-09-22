@@ -342,6 +342,8 @@ public final class Fd199HostedChildSupervisor: Fd199AuthorityChannelProviding, @
         outputs.append(.close(metadata: record.metadata))
       case .deviceEnrolled:
         outputs.append(.deviceEnrolled(metadata: record.metadata))
+      case .epochSynchronized:
+        outputs.append(.epochSynchronized(metadata: record.metadata, payload: record.payload))
       default:
         continue
       }

@@ -19,6 +19,9 @@ public enum RemoteWireKind: UInt8, CaseIterable, Sendable {
   case deviceEnrolled = 15
   /// FD199-gated public identity lifetime seed from the signed Host to its child.
   case enrollmentSeed = 16
+  /// FD199-gated projection of a native-finalized epoch, followed by its durable receipt.
+  case epochSynchronize = 17
+  case epochSynchronized = 18
 }
 
 /** A length-prefixed Remote Wire record with bounded UTF-8 metadata and opaque payload. */

@@ -52,6 +52,8 @@ const KIND = {
   'device.enroll': 14,
   'device.enrolled': 15,
   'enrollment.seed': 16,
+  'epoch.synchronize': 17,
+  'epoch.synchronized': 18,
 } as const
 
 type WireKind = keyof typeof KIND
@@ -108,7 +110,11 @@ function recordWithRawMetadata(kind: WireKind, metadata: string): Uint8Array {
   return output
 }
 
-function sent(channel: TestWire, index: number): { readonly kind: WireKind; readonly metadata: Record<string, unknown>; readonly payload: Uint8Array } {
+function sent(channel: TestWire, index: number): {
+  readonly kind: WireKind
+  readonly metadata: Record<string, unknown>
+  readonly payload: Uint8Array
+} {
   const value = channel.sent[index]
   if (value === undefined) throw new Error('missing test wire write')
   const kind = Object.entries(KIND).find(([, byte]) => byte === value[4])?.[0] as WireKind | undefined
@@ -225,6 +231,115 @@ async function create(allocator: RemoteHostV3RouteAllocator) {
     generation: 1,
   })
 }
+
+function finalizedEpoch(epoch: number, changes: Record<string, unknown> = {}) {
+  return { routeId: ROUTE, deviceId: DEVICE, deviceEnrollmentId: DEVICE_ENROLLMENT,
+    hostDeviceId: HOST, hostEnrollmentId: HOST_ENROLLMENT, generation: 1, connectionEpoch: epoch, ...changes }
+}
+
+async function nativeEpochHarness(requireSeed = true) {
+  const { allocator, dispose } = await harness()
+  disposers.push(dispose)
+  let device: RemoteDeviceRecord | undefined = enrolledDevice()
+  const devices = { get: () => device, seed: async () => device } as unknown as RemoteDeviceDirectory
+  const channel = new TestWire()
+  const provider = new RemoteHostV3InheritedWireProvider(channel, allocator, devices, requireSeed)
+  const abort = new AbortController()
+  const iterator = provider.accept(abort.signal)[Symbol.asyncIterator]()
+  const accepted = iterator.next()
+  void accepted.catch(() => {})
+  disposers.push(async () => { abort.abort(); await accepted.catch(() => {}) })
+  await expect.poll(() => channel.sent.length).toBe(1)
+  channel.receive(enrollmentSeed())
+  channel.receive(routeUpsert())
+  await expect.poll(() => allocator.get(DEVICE)?.routeId).toBe(ROUTE)
+  return { allocator, channel, accepted, iterator, revoke: () => { device = undefined } }
+}
+
+describe('native finalized epoch synchronization', () => {
+  it('acknowledges durable finalization before admitting the first connection', async () => {
+    const { channel, allocator, accepted } = await nativeEpochHarness()
+    channel.receive(record('epoch.synchronize', finalizedEpoch(1)))
+    await expect.poll(() => channel.sent.length).toBe(2)
+    expect(sent(channel, 1)).toMatchObject({ kind: 'epoch.synchronized', metadata: finalizedEpoch(1) })
+    expect(allocator.get(DEVICE)).toMatchObject({ lastConnectionEpoch: 1 })
+    channel.receive(record('connection.open', { connectionId: CONNECTION, deviceId: DEVICE, enrollmentId: DEVICE_ENROLLMENT,
+      signingPublicKey: SIGNING, agreementPublicKey: AGREEMENT, routeId: ROUTE, generation: 1, connectionEpoch: 1 }))
+    const result = await accepted
+    expect(result.done).toBe(false)
+    if (result.done) throw new Error('expected open connection')
+    expect(result.value.route.connectionEpoch).toBe(1)
+    const frames = result.value.receive(new AbortController().signal)[Symbol.asyncIterator]()
+    channel.receive(record('connection.frame', { connectionId: CONNECTION }, new TextEncoder().encode(JSON.stringify({
+      version: 3, type: 'request', connectionEpoch: 1, requestId: REQUEST, idempotencyKey: 'remote_idempotency1', method: 'host.describe', payload: {},
+    }))))
+    await expect(frames.next()).resolves.toMatchObject({ done: false, value: { type: 'request', connectionEpoch: 1, method: 'host.describe' } })
+    await expect(result.value.send({ version: 3, type: 'response', connectionEpoch: 1, requestId: REQUEST,
+      result: { ok: true, value: {} } }, { active: true, generation: 1, abortSignal: new AbortController().signal })).resolves.toEqual({ status: 'committed-before-fence' })
+    expect(sent(channel, 2)).toMatchObject({ kind: 'connection.send', metadata: { connectionId: CONNECTION } })
+  })
+
+  it('replays lost acknowledgments and projects later native progress without synthetic intermediate connections', async () => {
+    const { channel, allocator } = await nativeEpochHarness()
+    for (const epoch of [1, 1, 4, 4]) channel.receive(record('epoch.synchronize', finalizedEpoch(epoch)))
+    await expect.poll(() => channel.sent.length).toBe(5)
+    expect(allocator.get(DEVICE)).toMatchObject({ lastConnectionEpoch: 4 })
+    expect(allocator.get(DEVICE)?.pendingConnectionEpoch).toBeUndefined()
+  })
+
+  it('finishes an exact pending child epoch only after native finalization', async () => {
+    const { channel, allocator } = await nativeEpochHarness()
+    await allocator.beginConnection(DEVICE)
+    channel.receive(record('epoch.synchronize', finalizedEpoch(1)))
+    await expect.poll(() => channel.sent.length).toBe(2)
+    expect(allocator.get(DEVICE)?.pendingConnectionEpoch).toBeUndefined()
+    expect(allocator.get(DEVICE)?.lastConnectionEpoch).toBe(1)
+  })
+
+  it.each([
+    ['route', { routeId: ROUTE_TWO }], ['device', { deviceId: DEVICE_TWO }],
+    ['device incarnation', { deviceEnrollmentId: DEVICE_TWO_ENROLLMENT }],
+    ['host', { hostDeviceId: 'other_host_000001' }], ['host incarnation', { hostEnrollmentId: 'other_host_enroll1' }],
+    ['generation', { generation: 2 }], ['zero epoch', { connectionEpoch: 0 }],
+    ['unsafe epoch', { connectionEpoch: Number.MAX_SAFE_INTEGER + 1 }], ['extra key', { extra: true }],
+  ])('rejects changed %s without modifying the route', async (_label, changes) => {
+    const { channel, allocator, accepted } = await nativeEpochHarness()
+    const before = allocator.get(DEVICE)
+    channel.receive(record('epoch.synchronize', finalizedEpoch(1, changes)))
+    await expect(accepted).rejects.toBeInstanceOf(Error)
+    expect(allocator.get(DEVICE)).toEqual(before)
+    expect(channel.sent).toHaveLength(1)
+  })
+
+  it.each(['rollback', 'pending', 'revoked', 'absent route', 'non-native'] as const)('rejects %s admission', async (reason) => {
+    const { channel, allocator, accepted, revoke } = await nativeEpochHarness(reason !== 'non-native')
+    if (reason === 'rollback' || reason === 'pending') {
+      await allocator.beginConnection(DEVICE)
+      await allocator.commitConnection(DEVICE, 1)
+      await allocator.beginConnection(DEVICE)
+      if (reason === 'rollback') await allocator.commitConnection(DEVICE, 2)
+    }
+    if (reason === 'revoked') revoke()
+    if (reason === 'absent route') await allocator.remove(DEVICE)
+    const before = allocator.get(DEVICE)
+    channel.receive(record('epoch.synchronize', finalizedEpoch(1)))
+    await expect(accepted).rejects.toBeInstanceOf(Error)
+    expect(allocator.get(DEVICE)).toEqual(before)
+  })
+
+  it('cannot rewrite an already-open connection epoch', async () => {
+    const { channel, allocator, accepted, iterator } = await nativeEpochHarness()
+    channel.receive(record('epoch.synchronize', finalizedEpoch(1)))
+    await expect.poll(() => channel.sent.length).toBe(2)
+    channel.receive(record('connection.open', { connectionId: CONNECTION, deviceId: DEVICE, enrollmentId: DEVICE_ENROLLMENT,
+      signingPublicKey: SIGNING, agreementPublicKey: AGREEMENT, routeId: ROUTE, generation: 1, connectionEpoch: 1 }))
+    await accepted
+    const next = iterator.next()
+    channel.receive(record('epoch.synchronize', finalizedEpoch(2)))
+    await expect(next).rejects.toBeInstanceOf(Error)
+    expect(allocator.get(DEVICE)?.lastConnectionEpoch).toBe(1)
+  })
+})
 
 describe('RemoteHostV3RouteAllocator', () => {
   it('persists only public route facts and one stable Host incarnation', async () => {
@@ -488,7 +603,7 @@ describe('RemoteHostV3InheritedWireProvider', () => {
     const device = enrolledDevice()
     const devices = {
       get: vi.fn<RemoteDeviceDirectory['get']>(() => undefined),
-      enroll: vi.fn<RemoteDeviceDirectory['enroll']>(async input => {
+      enroll: vi.fn<RemoteDeviceDirectory['enroll']>(async (input) => {
         expect(input).toEqual({ id: DEVICE, label: 'Ruan’s iPhone', signingPublicKey: SIGNING, agreementPublicKey: AGREEMENT })
         return device
       }),

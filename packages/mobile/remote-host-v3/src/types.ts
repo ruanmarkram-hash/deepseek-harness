@@ -44,6 +44,12 @@ export interface RemoteHostV3Route {
   readonly createdAt: string
 }
 
+/** Public projection of an epoch already finalized by the signed native transport. */
+export type RemoteHostV3FinalizedEpoch = Pick<RemoteHostV3Route, 'routeId' | 'deviceId' | 'deviceEnrollmentId' | 'hostDeviceId' | 'hostEnrollmentId' | 'generation'> & {
+  /** Authenticated native transport epoch; never an uncompleted reservation. */
+  readonly connectionEpoch: number
+}
+
 /** Read end of the private transport handed from the signed Host app to its verified runtime child. */
 export interface RemoteHostV3RuntimePipe extends TrustedRemoteConnectionProvider {
   /** Fixed handoff kind; the pipe is inherited at process launch, never discovered through a socket path or localhost port. */

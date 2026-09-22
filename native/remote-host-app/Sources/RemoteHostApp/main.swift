@@ -330,6 +330,12 @@ private final class PairingNoRedirects: NSObject, URLSessionTaskDelegate {
     let activatePhone = NSMenuItem(title: "Activate paired phone", action: #selector(activatePairedPhone), keyEquivalent: "")
     activatePhone.target = self
     menu.addItem(activatePhone)
+    let checkPairing = NSMenuItem(title: "Check pairing state", action: #selector(checkPairingState), keyEquivalent: "")
+    checkPairing.target = self
+    menu.addItem(checkPairing)
+    let repairPairing = NSMenuItem(title: "Repair matching pairing records…", action: #selector(repairMatchingPairingRecords), keyEquivalent: "")
+    repairPairing.target = self
+    menu.addItem(repairPairing)
     let copyInvitation = NSMenuItem(title: "Copy fresh iPhone invitation", action: #selector(copyActiveInvitation), keyEquivalent: "")
     copyInvitation.target = self
     menu.addItem(copyInvitation)
@@ -356,12 +362,12 @@ private final class PairingNoRedirects: NSObject, URLSessionTaskDelegate {
     alert.informativeText = "Start the sealed hosted runtime, then activate the paired phone transport."
     alert.addButton(withTitle: "Start hosted runtime")
     alert.addButton(withTitle: "Activate paired phone")
-    alert.addButton(withTitle: "Revoke paired phone…")
+    alert.addButton(withTitle: "Check pairing state")
     alert.addButton(withTitle: "Not now")
     switch alert.runModal() {
     case .alertFirstButtonReturn: startHostedRuntime()
     case .alertSecondButtonReturn: activatePairedPhone()
-    case .alertThirdButtonReturn: revokePairedPhone()
+    case .alertThirdButtonReturn: checkPairingState()
     default: break
     }
   }
@@ -470,6 +476,32 @@ private final class PairingNoRedirects: NSObject, URLSessionTaskDelegate {
   @objc private func copyActiveInvitation() {
     do { presentPhoneInvitation(try actions.reissueActiveInvitation()) }
     catch { showFailure("There is no active route for this Host to copy.") }
+  }
+
+  @objc private func checkPairingState() {
+    let alert = NSAlert()
+    alert.messageText = "DSH Host pairing state"
+    alert.informativeText = hostedRuntime.checkPairingState().text
+    alert.addButton(withTitle: "OK")
+    alert.addButton(withTitle: "Repair matching pairing records…")
+    if alert.runModal() == .alertSecondButtonReturn { repairMatchingPairingRecords() }
+  }
+
+  @objc private func repairMatchingPairingRecords() {
+    let alert = NSAlert()
+    alert.messageText = "Repair matching pairing records?"
+    alert.informativeText = "Quit DSH Desktop and stop the Web service first. This repairs only the same already-approved phone's unused public enrollment records. Native credentials, invitations and epochs are preserved. Recoverable originals remain in the private local repair journal. No other writers may be running."
+    alert.addButton(withTitle: "Cancel")
+    alert.addButton(withTitle: "Repair matching records")
+    guard alert.runModal() == .alertSecondButtonReturn else { return }
+    do { showSuccess(try hostedRuntime.repairMatchingPairingRecords().rawValue) }
+    catch let refusal as RelayPairingRepairRefusal { showFailure(refusal.rawValue) }
+    catch PairingRepairError.runtimeRunning { showFailure("Repair refused: a hosted runtime or configured Web port is still in use. Stop all writers first.") }
+    catch PairingRepairError.ineligible { showFailure("Repair refused: public records are not the exact same-phone unused enrollment expected by this repair.") }
+    catch PairingRepairError.changed { showFailure("Repair refused: public records changed since the protected backup. No ambiguous record was overwritten.") }
+    catch PairingRepairError.recoveryRequired { showFailure("Repair stopped: a protected repair journal requires review. Do not delete it or reset pairing.") }
+    catch PairingRepairError.unsafePath { showFailure("Repair refused: storage paths, ownership, permissions or file types are unsafe.") }
+    catch { showFailure("Repair could not complete. Native authorization, unused-epoch and recovery-state checks must pass; credentials were not changed. Review the protected repair journal before retrying.") }
   }
 
   @objc private func revokePairedPhone() {

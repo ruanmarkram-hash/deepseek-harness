@@ -13,6 +13,7 @@ import type {
 } from '@deepseek-ai/dsh-remote-devices'
 import type {
   RemoteHostV3ControllerApi,
+  RemoteHostV3FinalizedEpoch,
   RemoteHostV3NativeProvider,
   RemoteHostV3Route,
   RemoteHostV3RuntimePipe,
@@ -269,6 +270,32 @@ export class RemoteHostV3RouteAllocator {
       if (current === undefined) return undefined
       await this.routes.delete(deviceId)
       return copyRoute(current)
+    })
+  }
+
+  /**
+   * Projects native finalization without changing the ordinary allocator protocol.
+   * @param input - Exact route facts and epoch proven by the native transport.
+   * @returns the durably committed public route; rollback and unresolved future reservations fail closed.
+   */
+  async synchronizeFinalizedEpoch(input: RemoteHostV3FinalizedEpoch): Promise<RemoteHostV3Route> {
+    return this.writes.run(async () => {
+      const current = this.routes.get(input.deviceId)
+      if (current === undefined || current.routeId !== input.routeId
+        || current.deviceEnrollmentId !== input.deviceEnrollmentId || current.hostDeviceId !== input.hostDeviceId
+        || current.hostEnrollmentId !== input.hostEnrollmentId || current.generation !== input.generation
+        || this.host.get('identity')?.hostEnrollmentId !== input.hostEnrollmentId
+        || !Number.isSafeInteger(input.connectionEpoch) || input.connectionEpoch < 1 || input.connectionEpoch > 2_147_483_647
+        || input.connectionEpoch < current.lastConnectionEpoch
+        || (current.pendingConnectionEpoch !== undefined && current.pendingConnectionEpoch > input.connectionEpoch)) {
+        throw new RemoteHostV3Error('REMOTE_HOST_V3_EPOCH_INVALID', 'Native finalized epoch conflicts with durable route')
+      }
+      if (current.lastConnectionEpoch === input.connectionEpoch && current.pendingConnectionEpoch === undefined) return copyRoute(current)
+      const next = await this.routes.update(input.deviceId, (value) => {
+        const { pendingConnectionEpoch: _pending, ...committed } = value
+        return { ...committed, lastConnectionEpoch: input.connectionEpoch }
+      })
+      return copyRoute(next)
     })
   }
 }

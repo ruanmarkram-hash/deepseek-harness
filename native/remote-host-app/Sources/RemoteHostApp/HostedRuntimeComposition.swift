@@ -19,7 +19,8 @@ enum HostedRuntimeComposition {
    */
   static func makeCoordinator() throws -> Fd199HandoffCoordinator {
     _ = try RelaySignedHostActivationConfiguration.validateRunningHost()
-    _ = try RemoteHostV3HostedChildPackaging.loadAndValidateBundledArtifacts()
+    let artifacts = try RemoteHostV3HostedChildPackaging.loadAndValidateBundledArtifacts()
+    try PairingStateRepair.requireSettled(home: URL(fileURLWithPath: artifacts.webConfiguration.dshHome, isDirectory: true))
 
     let journalRoot = HostedRuntimePaths.journalDirectory
     try FileManager.default.createDirectory(
@@ -63,6 +64,42 @@ final class HostedRuntimeController: @unchecked Sendable {
     self.agreement = agreement
     self.store = store
     self.connectionCoordinator = connectionCoordinator
+  }
+
+  /** Uses the existing authorized store but never exports or mutates its credential. */
+  func checkPairingState() -> PairingStateReport {
+    PairingStateDiagnostic.check(activeIdentity: {
+      guard let route = try self.store.activeRouteCredential() else { return nil }
+      return PairingStatePublicIdentity(
+        deviceId: route.deviceId, deviceEnrollmentId: route.deviceEnrollmentId,
+        hostEnrollmentId: route.hostEnrollmentId, signingPublicKey: route.deviceSigningPublicKey,
+        agreementPublicKey: route.deviceAgreementPublicKey
+      )
+    }, sealedHome: {
+      _ = try RelaySignedHostActivationConfiguration.validateRunningHost()
+      let artifacts = try RemoteHostV3HostedChildPackaging.loadAndValidateBundledArtifacts()
+      return URL(fileURLWithPath: artifacts.webConfiguration.dshHome, isDirectory: true)
+    })
+  }
+
+  /** Explicit same-phone repair while all Host-owned runtime starts remain reserved off. */
+  func repairMatchingPairingRecords() throws -> PairingRepairResult {
+    guard reserveStart() else { throw PairingRepairError.runtimeRunning }
+    defer { abandonStart() }
+    _ = try RelaySignedHostActivationConfiguration.validateRunningHost()
+    let artifacts = try RemoteHostV3HostedChildPackaging.loadAndValidateBundledArtifacts()
+    let port = try PairingRepairPortReservation(port: artifacts.webConfiguration.port)
+    return try withExtendedLifetime(port) {
+      try RelayPairingRepairEligibility.withEligibleRoute(store: store) { route in
+        let target = PairingRepairTarget(
+          deviceId: route.deviceId, deviceEnrollmentId: route.deviceEnrollmentId,
+          hostEnrollmentId: route.hostEnrollmentId, signingPublicKey: route.deviceSigningPublicKey,
+          agreementPublicKey: route.deviceAgreementPublicKey, routeId: route.routeId,
+          hostDeviceId: route.hostDeviceId, generation: route.generation
+        )
+        return try PairingStateRepair.perform(home: URL(fileURLWithPath: artifacts.webConfiguration.dshHome, isDirectory: true), target: target)
+      }
+    }
   }
 
   /** Starts a new desktop owner or restores the carrier for an active journal. */
@@ -111,6 +148,8 @@ final class HostedRuntimeController: @unchecked Sendable {
  V3 route socket. The active credential never leaves the native Host process.
  */
   func activatePhoneSessions() async throws {
+    let artifacts = try RemoteHostV3HostedChildPackaging.loadAndValidateBundledArtifacts()
+    try PairingStateRepair.requireSettled(home: URL(fileURLWithPath: artifacts.webConfiguration.dshHome, isDirectory: true))
     let coordinator = try coordinatorForActivation()
     guard let credential = try store.activeRouteCredential() else {
       throw Fd199HandoffCoordinator.CoordinatorError.unavailable

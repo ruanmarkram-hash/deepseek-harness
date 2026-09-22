@@ -250,7 +250,7 @@ public final class RelaySealedGatewaySupervisor: @unchecked Sendable {
       return true
     case .hostStopping:
       return record.metadata.isEmpty && record.payload.isEmpty
-    case .runtimeReady, .routeUpsert, .routeRevoked, .epochBegin, .epochBegun, .epochCommit, .epochCommitted, .connectionSend, .connectionClose, .deviceEnroll, .deviceEnrolled, .enrollmentSeed:
+    case .runtimeReady, .routeUpsert, .routeRevoked, .epochBegin, .epochBegun, .epochCommit, .epochCommitted, .connectionSend, .connectionClose, .deviceEnroll, .deviceEnrolled, .enrollmentSeed, .epochSynchronize, .epochSynchronized:
       return false
     }
   }
@@ -393,7 +393,7 @@ public final class RelaySealedGatewaySupervisor: @unchecked Sendable {
     case .connectionClose:
       guard record.payload.isEmpty else { return nil }
       return .close(metadata: record.metadata)
-    case .runtimeReady, .routeUpsert, .routeRevoked, .epochBegin, .epochBegun, .epochCommit, .epochCommitted, .connectionOpen, .connectionFrame, .connectionClosed, .hostStopping, .deviceEnroll, .deviceEnrolled, .enrollmentSeed:
+    case .runtimeReady, .routeUpsert, .routeRevoked, .epochBegin, .epochBegun, .epochCommit, .epochCommitted, .connectionOpen, .connectionFrame, .connectionClosed, .hostStopping, .deviceEnroll, .deviceEnrolled, .enrollmentSeed, .epochSynchronize, .epochSynchronized:
       return nil
     }
   }

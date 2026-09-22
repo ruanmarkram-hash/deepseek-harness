@@ -24,6 +24,8 @@ Malformed UTF-8/JSON, unknown or wrong-direction kinds, metadata or payload over
 
 ## Configuration
 
+Hosted FD199 connections project the signed native transport's finalized epoch with `epoch.synchronize` (kind 17) and wait for durable `epoch.synchronized` (kind 18) before `connection.open`. Both carry exactly `{ routeId, deviceId, deviceEnrollmentId, hostDeviceId, hostEnrollmentId, generation, connectionEpoch }` and an empty payload. Only a native-seeded provider accepts synchronization; the entire route and current device identity must match and no device connection may be open. Epoch rollback, unresolved child reservations above the finalized epoch, missing or revoked identities, and malformed fields fail closed. An identical finalized epoch is idempotent; forward progress reflects native finalization without synthetic intermediate connections. Native pending reservations remain in the native ledger. Ordinary `epoch.begin` and `epoch.commit` semantics remain unchanged. The built-artifact smoke is `node scripts/smoke-native-finalized-epoch.mjs` after building this package and its dependencies; it uses temporary JSON stores, never the live Host profile.
+
 ```ts
 import type * as RemoteHostV3 from '@deepseek-ai/dsh-remote-host-v3'
 

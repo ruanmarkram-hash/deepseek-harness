@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-23-guarded-same-phone-enrollment-repair.md
+2026-09-23-guarded-same-phone-enrollment-repair.md: 42e2837fc19137aefca5c154d8eb182b341f44c1
+2026-09-23-guarded-same-phone-enrollment-repair.zh.md: cace97562ec3227bf57499374b778b2590d2c181

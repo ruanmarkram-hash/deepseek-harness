@@ -27,6 +27,7 @@ final class HostedRelaySession: Fd199RelayBridge.SessionOwner, @unchecked Sendab
     failed: { [weak self] in Task { await self?.stop() } }
   )
   private let enrollmentReceipt = HostedChildEnrollmentReceipt()
+  private let epochSynchronization = HostedChildEpochSynchronization()
 
   init(
     coordinator: Fd199HandoffCoordinator,
@@ -106,7 +107,13 @@ final class HostedRelaySession: Fd199RelayBridge.SessionOwner, @unchecked Sendab
       epoch: epoch
     ) }
     try staged("frame-pump") { try framePump.install(metadata: metadata) }
-    try staged("connection-open") { try bridge.connectionOpened(metadata: metadata) }
+    try staged("epoch-synchronization") {
+      try epochSynchronization.synchronizeThenOpen(
+        request: RelayFinalizedEpochWire.request(credential: credential, epoch: epoch),
+        send: { [coordinator] record in try coordinator.sendPublicRecord(record) },
+        open: { try self.assertNotStopped(); try bridge.connectionOpened(metadata: metadata) }
+      )
+    }
     guard installReceiveTask() else {
       await socket.stop()
       throw Fd199BridgeError.detached
@@ -139,11 +146,14 @@ final class HostedRelaySession: Fd199RelayBridge.SessionOwner, @unchecked Sendab
       bridge.childRecord(RemoteWireRecord(kind: .connectionClose, metadata: metadata))
     case let .deviceEnrolled(metadata):
       enrollmentReceipt.receive(metadata)
+    case let .epochSynchronized(metadata, payload):
+      epochSynchronization.receive(RemoteWireRecord(kind: .epochSynchronized, metadata: metadata, payload: payload))
     }
   }
 
   /** Stops receiver, relay socket, and child forwarding. It is idempotent. */
   func stop() async {
+    epochSynchronization.stop()
     guard let (task, bridge) = detachForStop() else { return }
     task?.cancel()
     bridge?.detachOwner()

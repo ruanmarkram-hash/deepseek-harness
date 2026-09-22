@@ -18,7 +18,15 @@ app 内含已签名原生 child、`DSHRemoteHostKeychain.xpc`、固定版本的 
 
 配对对话框为完整 QR code 及其白色扫描边距预留空间，手动代码完整换行显示而不截断。如果 QR 渲染失败，可选择的手动代码仍然可用。
 
+启动控制项和 Host 菜单中的 **Check pairing state** 会比较现有原生配对与已签名 hosted-Web 配置的 DSH home 下标准 JSON 公开 device 和 Host 目录。它只报告存在性、相等性布尔值或固定的读取/验证失败信息，绝不显示标识符、key、token 或任意错误文本。读取有大小上限，并拒绝符号链接、非普通文件和其他用户可写的路径。检查不能修复 enrollment、改变 Keychain 授权、复制 invitation，也不能启动 runtime 或网络连接；记录匹配不代表连接已建立。**Revoke paired phone…** 仍位于 Host 菜单中。
+
+**Repair matching pairing records…** 是单独的本地操作，需要两次确认；它只适用于唯一已批准手机的两个持久化 enrollment incarnation 均与原生 credential 不一致的情况。必须先停止 Desktop 和 Web service 等所有外部 writer。Host 会拒绝仍保留 runtime ownership、Web 端口已占用、原生 route lease 被持有、provisioning/revocation recovery 未完成，或原生 epoch 已使用、pending、revoking、缺失的情况。现有公开记录必须构成 epoch 为零、public key 和 label 匹配且内部一致的单一同手机 device/Host/route tuple。修复只投影当前原生公开 route 坐标，保留无关元数据、文件权限、credential、invitation 和原生 epoch，绝不放宽正常 enrollment 准入。
+
+私有 `storages/.pairing-repair/journal.json` 会在任何替换前保存精确的原始与目标公开字节及其 hash。每个文件替换都是原子的，并检查 preimage；部分失败只会回滚已知字节。中断的 journal 要求显式恢复，绝不覆盖意外的第三方写入。Hosted 启动和激活拒绝 prepared 或无效 journal。已完成 journal 保留为可恢复备份，但不阻止后续合法 runtime 写入。端口保留只能排除网络 listener，不能排除任意外部文件 writer。
+
 配对后，**Start hosted runtime** 会启动 sealed hosted child，并恢复符合条件的已签名 FD199 journal。hosted child 通过固定 descriptor 198 接收 relay record，通过固定 descriptor 199 接收 authority handoff record；它既不会收到 Host token，也不会收到私有 agreement material。**Activate paired phone** 会先完成已签名 FD199 ownership transition，随后原生 Host 才打开已认证的 V3 relay WebSocket。浏览器和手机由此使用同一个 hosted runtime。
+
+认证后的原生 handshake 完成 epoch 提交后，Host 会等待 child 精确的持久化 epoch 同步确认，随后才转发手机连接。此公开且绑定 route 的同步不会改变原生 ledger 或 mobile handshake。
 
 原生 epoch ledger 只允许一个 live Host route owner，仅在认证 handshake 后提交 epoch，并能在不跳过 next epoch 的情况下协调 lost receipt。手机网络中断后，可以通过保留的 route 按 Host 发出的 next epoch 重新连接。Host 正常重启后，**Start hosted runtime** 会先恢复已验证 journal、active route 和 hosted state，然后才恢复手机 activation。
 

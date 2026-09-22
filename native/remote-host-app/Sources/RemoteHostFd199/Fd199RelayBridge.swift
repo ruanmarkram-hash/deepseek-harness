@@ -112,7 +112,7 @@ public final class Fd199RelayBridge: @unchecked Sendable {
       try send(record)
     case .runtimeReady, .routeUpsert, .routeRevoked, .epochBegin, .epochBegun,
          .epochCommit, .epochCommitted, .connectionSend, .connectionClose,
-         .hostStopping, .deviceEnroll, .deviceEnrolled, .enrollmentSeed:
+         .hostStopping, .deviceEnroll, .deviceEnrolled, .enrollmentSeed, .epochSynchronize, .epochSynchronized:
       throw Fd199BridgeError.invalidPhoneRecord
     }
   }

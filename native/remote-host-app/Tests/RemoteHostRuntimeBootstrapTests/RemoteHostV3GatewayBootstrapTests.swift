@@ -16,14 +16,14 @@ import Testing
 }
 
 @Test func gatewayBootstrapAcceptsOnlyTheFixedDirections() throws {
-  for kind in [RemoteWireKind.routeUpsert, .routeRevoked, .epochBegin, .epochCommit, .connectionOpen, .connectionFrame, .connectionClosed, .hostStopping, .deviceEnroll, .enrollmentSeed] {
+  for kind in [RemoteWireKind.routeUpsert, .routeRevoked, .epochBegin, .epochCommit, .connectionOpen, .connectionFrame, .connectionClosed, .hostStopping, .deviceEnroll, .enrollmentSeed, .epochSynchronize] {
     let record = RemoteWireRecord(kind: kind)
     try RemoteHostV3GatewayBootstrap.validate(record, direction: .hostToGateway)
     #expect(throws: RemoteHostV3GatewayBootstrapError.wrongRecordDirection) {
       try RemoteHostV3GatewayBootstrap.validate(record, direction: .gatewayToHost)
     }
   }
-  for kind in [RemoteWireKind.runtimeReady, .epochBegun, .epochCommitted, .connectionSend, .connectionClose, .deviceEnrolled] {
+  for kind in [RemoteWireKind.runtimeReady, .epochBegun, .epochCommitted, .connectionSend, .connectionClose, .deviceEnrolled, .epochSynchronized] {
     let record = RemoteWireRecord(kind: kind)
     try RemoteHostV3GatewayBootstrap.validate(record, direction: .gatewayToHost)
     #expect(throws: RemoteHostV3GatewayBootstrapError.wrongRecordDirection) {

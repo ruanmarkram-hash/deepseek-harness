@@ -24,6 +24,8 @@ runtime 先发送空的 `runtime.ready`。FD199 托管 child 随后必须先接�
 
 ## 配置
 
+托管 FD199 连接通过 `epoch.synchronize`（kind 17）投影 signed native transport 已完成的 epoch，并在 `connection.open` 前等待持久化的 `epoch.synchronized`（kind 18）。两者的 metadata 必须精确为 `{ routeId, deviceId, deviceEnrollmentId, hostDeviceId, hostEnrollmentId, generation, connectionEpoch }`，payload 为空。只有完成 native seed 的 provider 接受同步；完整 route 和当前设备身份必须匹配，且该设备不能有已打开的连接。Epoch 回退、高于已完成 epoch 的未解决 child reservation、缺失或撤销的身份及非法字段均 fail closed。相同已完成 epoch 的重试是幂等的；向前推进反映 native finalization，不伪造中间连接。Native pending reservation 保留在 native ledger 中。普通 `epoch.begin` 与 `epoch.commit` 语义不变。构建此 package 及其依赖后，可运行 `node scripts/smoke-native-finalized-epoch.mjs` 验证构建产物；它使用临时 JSON store，绝不使用真实 Host profile。
+
 ```ts
 import type * as RemoteHostV3 from '@deepseek-ai/dsh-remote-host-v3'
 

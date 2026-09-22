@@ -7,7 +7,7 @@ import { parseRemoteWireJson, serializeRemoteWireEnvelope } from '@deepseek-ai/d
 import type { RemoteWireEnvelope } from '@deepseek-ai/dsh-remote-wire'
 import type { RemoteGatewayCloseReason, TrustedRemoteConnection, TrustedRemoteSendFence } from '@deepseek-ai/dsh-remote-gateway'
 import { RemoteHostV3Error } from './error.ts'
-import type { RemoteHostV3EnrollmentReceipt, RemoteHostV3Route, RemoteHostV3RuntimePipe } from './types.ts'
+import type { RemoteHostV3EnrollmentReceipt, RemoteHostV3FinalizedEpoch, RemoteHostV3Route, RemoteHostV3RuntimePipe } from './types.ts'
 
 /** The durable route operations consumed by the private-wire provider. */
 interface RemoteHostV3RouteAllocator {
@@ -17,6 +17,7 @@ interface RemoteHostV3RouteAllocator {
   create(input: Omit<RemoteHostV3Route, 'generation' | 'lastConnectionEpoch' | 'pendingConnectionEpoch' | 'createdAt'> & { readonly generation: number }): Promise<RemoteHostV3Route>
   beginConnection(deviceId: RemoteDeviceId): Promise<RemoteHostV3Route>
   commitConnection(deviceId: RemoteDeviceId, epoch: number): Promise<RemoteHostV3Route>
+  synchronizeFinalizedEpoch(input: RemoteHostV3FinalizedEpoch): Promise<RemoteHostV3Route>
   remove(deviceId: RemoteDeviceId): Promise<RemoteHostV3Route | undefined>
 }
 
@@ -71,11 +72,13 @@ type RemoteHostV3WireKind =
   | 'device.enroll'
   | 'device.enrolled'
   | 'enrollment.seed'
+  | 'epoch.synchronize'
+  | 'epoch.synchronized'
 
 const KINDS: readonly RemoteHostV3WireKind[] = [
   'runtime.ready', 'route.upsert', 'route.revoked', 'epoch.begin', 'epoch.begun', 'epoch.commit', 'epoch.committed',
   'connection.open', 'connection.frame', 'connection.closed', 'connection.send', 'connection.close', 'host.stopping',
-  'device.enroll', 'device.enrolled', 'enrollment.seed',
+  'device.enroll', 'device.enrolled', 'enrollment.seed', 'epoch.synchronize', 'epoch.synchronized',
 ]
 const KIND_BY_BYTE = new Map(KINDS.map((kind, index) => [index + 1, kind] as const))
 const BYTE_BY_KIND = new Map(KINDS.map((kind, index) => [kind, index + 1] as const))
@@ -506,6 +509,7 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
   private drainingOutbound = false
   private currentOutbound: PendingWrite | undefined
   private seeded = false
+  private enrollment: EnrollmentSeed | undefined
 
   /**
    * @param channel - Already-inherited connected descriptor, supplied only by the verified runtime bootstrap.
@@ -702,6 +706,7 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
       case 'connection.closed': return this.connectionClosed(record)
       case 'host.stopping': return this.hostStopping(record)
       case 'enrollment.seed': return this.enrollmentSeed(record)
+      case 'epoch.synchronize': return this.epochSynchronize(record)
       case 'device.enroll': return this.deviceEnroll(record)
       case 'runtime.ready':
       case 'epoch.begun':
@@ -709,6 +714,7 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
       case 'connection.send':
       case 'connection.close':
       case 'device.enrolled':
+      case 'epoch.synchronized':
         throw outOfOrder(`Remote Wire kind ${record.kind} has the wrong direction`)
       default:
         record.kind satisfies never
@@ -802,7 +808,35 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
       agreementPublicKey: seed.agreementPublicKey,
     }, seed.deviceEnrollmentId)
     await this.allocator.seedHostEnrollmentId(seed.hostEnrollmentId)
+    this.enrollment = seed
     this.seeded = true
+  }
+
+  /** Accept native finalization only for the seeded device and an inactive exact route. */
+  private async epochSynchronize(record: RemoteHostV3WireRecord): Promise<void> {
+    this.emptyPayload(record)
+    const value = exactObject(metadata(record.metadata), ['routeId', 'deviceId', 'deviceEnrollmentId', 'hostDeviceId', 'hostEnrollmentId', 'generation', 'connectionEpoch'])
+    const input: RemoteHostV3FinalizedEpoch = {
+      routeId: identifier(value.routeId), deviceId: identifier(value.deviceId) as RemoteDeviceId,
+      deviceEnrollmentId: identifier(value.deviceEnrollmentId) as RemoteDeviceIncarnation,
+      hostDeviceId: identifier(value.hostDeviceId), hostEnrollmentId: identifier(value.hostEnrollmentId),
+      generation: positiveSequence(value.generation), connectionEpoch: positiveSequence(value.connectionEpoch),
+    }
+    const authorize = (): void => {
+      const seed = this.enrollment
+      const device = this.devices?.get(input.deviceId)
+      if (!this.requireEnrollmentSeed || !this.seeded || seed === undefined || device === undefined
+        || seed.deviceId !== input.deviceId || seed.deviceEnrollmentId !== input.deviceEnrollmentId
+        || seed.hostEnrollmentId !== input.hostEnrollmentId || device.incarnation !== seed.deviceEnrollmentId
+        || device.signingPublicKey !== seed.signingPublicKey || device.agreementPublicKey !== seed.agreementPublicKey
+        || [...this.connections.values()].some(connection => connection.peer.deviceId === input.deviceId)) {
+        throw outOfOrder('Native epoch synchronization requires an inactive confirmed enrollment')
+      }
+    }
+    authorize()
+    await this.allocator.synchronizeFinalizedEpoch(input)
+    authorize()
+    await this.write('epoch.synchronized', { ...input })
   }
 
   /** Hosted FD199 children require a confirmed identity seed before accepting device or route writes. */
