@@ -115,6 +115,7 @@ sign_hosted_macho_files() {
   print "Developer ID-signed $signed_count hosted native artifacts"
 }
 
+pnpm --dir "$root/../.." run verify:macos-icons
 swift build --package-path "$root" -c release
 host_binary="$root/.build/release/dsh-remote-host-app"
 runtime_binary="$root/.build/release/dsh-remote-host-runtime"
@@ -122,6 +123,7 @@ mkdir -p "$output/Contents/MacOS" "$output/Contents/Resources/Runtime" "$output/
 cp "$host_binary" "$output/Contents/MacOS/dsh-remote-host-app"
 cp "$runtime_binary" "$output/Contents/Resources/Runtime/dsh-remote-host-runtime"
 cp "$root/Resources/Info.plist" "$output/Contents/Info.plist"
+cp "$root/../../apps/desktop/assets/DeepSeek.icns" "$output/Contents/Resources/DeepSeek.icns"
 cp "$root/Resources/RuntimeMetadata.plist" "$output/Contents/Resources/RuntimeMetadata.plist"
 cp "$root/Resources/HostActivationRequirement.plist" "$output/Contents/Resources/HostActivationRequirement.plist"
 cp "$root/Resources/RemoteHostKeychainServiceRequirement.plist" "$output/Contents/Resources/RemoteHostKeychainServiceRequirement.plist"

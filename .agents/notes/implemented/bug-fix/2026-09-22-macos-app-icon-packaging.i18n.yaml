@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-22-macos-app-icon-packaging.md
+2026-09-22-macos-app-icon-packaging.md: 73fd702d867171dbeb5b3d03ffd00b56443d9276
+2026-09-22-macos-app-icon-packaging.zh.md: f3d406cfc6eff480ad1a7e1b2f78cd69a1b3e642

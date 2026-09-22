@@ -10,6 +10,8 @@
 
 原生宿主会在本地页面准备就绪前保持隐藏，仅在上次窗口位置与当前显示器工作区域相交时恢复该位置，并使用 macOS 内嵌式标题栏。它会保留最大化窗口的普通位置以供下次启动使用。它的原生“文件”“编辑”“视图”“窗口”和“移动端”菜单保留标准焦点控制及隔离的移动端配对入口。桌面端拥有的原生界面复用仓库 `website/public/favicon.svg` 中的官方 DeepSeek 标记，不会重绘 logo。
 
+Desktop 和 DSH Host 共用 `assets/DeepSeek.icns`，由规范 SVG 生成，在白色圆角底板上居中显示蓝色标记。`pnpm run build:macos-icons` 会重新生成该文件，并在 `.dsh-build/icons.noindex` 下写入 PNG 预览。两个打包流程都会在签名或打包前运行 `pnpm run verify:macos-icons`；验证覆盖每个标准及 Retina 图像的像素尺寸、可见标记大小、居中位置、留白及其相对源文件的新鲜度。Desktop 的原生 Dock 图标由应用包提供；HTML 配对页面另行使用原始 SVG。
+
 `src/mobile-pairing.ts` 和 `src/mobile-live-transport.ts` 仅在 Electron 主进程运行。它们创建短时 v2 QR rendezvous，仅在内存中保留 relay credential 与 pairing key，使用 role-bound relay WebSocket，验证手机 key proof，并在接受手机前要求明确的 desktop approval。专用的 sandboxed pairing 页面只有狭窄 preload，可使用 session alias、配对码显示、开始、关闭和非秘密状态。普通本地 DSH renderer 没有移动端 IPC 或 Node 权限。
 
 本地 adapter 只会针对已验证的 loopback runtime 使用固定的 `session.list`、`session.history` 与纯文本 queued `session.prompt` path。原生 picker 会把用户明确选定的现有 session 映射成 opaque mobile handle。手机只会看到受限的 user/assistant text snapshot，并且只能请求纯文本 prompt；每个 prompt 都要求 native desktop confirmation。由于 snapshot polling 无法安全地把本地 DSH turn 归因于手机 request，因此它会刻意让手机 composer 保持可用。本前台版本刻意不提供 mobile cancellation：DSH 目前只有 session-wide `session.cancel`，没有可信的 turn identity 或 ownership boundary，因此加密的 `cancel-turn` 会被拒绝，且不会触及本地 DSH。只有本地 runtime 提供该可信 identity 后，才可恢复此能力。不存在 raw event stream、任意 session id/path、attachment、file、tool、workspace、credential、settings 或 computer-use capability。该 transport 仅在前台运行，并会在本地或 relay error、close、expiry、denial 或 revocation 时 fail closed。它需要已部署的 v2 relay；当前已部署的 v1 relay 无法服务该 transport。

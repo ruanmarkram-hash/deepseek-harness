@@ -8,6 +8,8 @@
   <string>dsh-remote-host-app</string>
   <key>CFBundleIdentifier</key>
   <string>com.deepseek.dsh.remote-host</string>
+  <key>CFBundleIconFile</key>
+  <string>DeepSeek.icns</string>
   <key>CFBundleName</key>
   <string>DSH Host</string>
   <key>CFBundlePackageType</key>

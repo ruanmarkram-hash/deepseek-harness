@@ -10,6 +10,8 @@ The release runs only as a canonical, non-symlinked `DSHHost.app` at `/Applicati
 
 The app contains the signed native children, `DSHRemoteHostKeychain.xpc`, the pinned Node executable, the bundled `dsh web` entrypoint, and its complete copied runtime closure. Production never resolves Node from `PATH`, follows a source-checkout path, or executes an external symlink farm. The outer app signature seals the fixed resource-relative layout and install-specific hosted-Web configuration before any hosted code runs.
 
+`CFBundleIconFile` selects the shared `DeepSeek.icns` resource, copied into the Host before signing. The [Desktop icon packaging reference](../../apps/desktop/README.md) owns artwork generation and verification.
+
 ## Pairing and activation
 
 **Pair iPhone from anywhere…** creates a short-lived pairing code and presents it as both a QR code and selectable manual text. The phone submits only its public enrollment offer. The Host displays the complete fingerprint and device label; the person at the Mac must compare that fingerprint with the phone and approve it before provisioning can create a route or return the protected invitation. The file-import action applies the same bounded public-offer parsing and Host confirmation rule.

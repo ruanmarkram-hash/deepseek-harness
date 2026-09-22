@@ -10,7 +10,7 @@
     "check": "pnpm run build",
     "dev": "pnpm run build && electron dist/main.js",
     "stage:runtime": "tsx ../../scripts/build-desktop-runtime.ts",
-    "package:macos:staged": "electron-builder --config electron-builder.yml --mac --arm64 --publish never",
+    "package:macos:staged": "pnpm --dir ../.. run verify:macos-icons && electron-builder --config electron-builder.yml --mac --arm64 --publish never",
     "package:macos": "pnpm run build && pnpm run stage:runtime && pnpm run package:macos:staged",
     "test": "vitest run --config vitest.config.ts"
   },

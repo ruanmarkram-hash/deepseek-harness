@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, screen, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, screen, shell } from 'electron'
 import { desktopMenuTemplate } from './application-menu.js'
 import { LocalSessionApi } from './local-session-api.js'
 import { DesktopMobileTransport, type DesktopMobileTransportState } from './mobile-live-transport.js'
@@ -42,10 +42,6 @@ function desktopMarkPath(): string {
   return app.isPackaged
     ? join(process.resourcesPath, 'dsh-icon.svg')
     : join(SOURCE_ROOT, 'website/public/favicon.svg')
-}
-
-function desktopMark(): Electron.NativeImage {
-  return nativeImage.createFromPath(desktopMarkPath())
 }
 
 function desktopMarkDataUrl(): string {
@@ -242,7 +238,6 @@ async function openHarnessWindow(): Promise<void> {
   const trustedOrigin = runtimeUrl.origin
   window = new BrowserWindow({
     ...desktopWindowOptions(persistedWindowState, process.platform),
-    icon: desktopMark(),
     webPreferences: desktopWebPreferences,
   })
   if (persistedWindowState?.isMaximized) window.maximize()
@@ -330,7 +325,6 @@ function showStartupFailure(error: unknown): void {
 
 void app.whenReady().then(() => {
   app.setName(APPLICATION_NAME)
-  if (process.platform === 'darwin') app.dock?.setIcon(desktopMark())
   persistedWindowState = visibleDesktopWindowState(readDesktopWindowState(app.getPath('userData')), screen.getAllDisplays().map(({ workArea }) => workArea))
   Menu.setApplicationMenu(Menu.buildFromTemplate(
     desktopMenuTemplate(APPLICATION_NAME, process.platform, () => { void openMobilePairing() }),

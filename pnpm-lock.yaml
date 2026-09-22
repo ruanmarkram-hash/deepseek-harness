@@ -114,6 +114,9 @@ importers:
       react-dom:
         specifier: ^18.2.0
         version: 18.3.1(react@18.3.1)
+      sharp:
+        specifier: 0.35.3
+        version: 0.35.3(@types/node@22.20.0)
       smol-toml:
         specifier: ^1.7.1
         version: 1.7.1

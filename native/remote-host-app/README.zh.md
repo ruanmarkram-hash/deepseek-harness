@@ -10,6 +10,8 @@
 
 app 内含已签名原生 child、`DSHRemoteHostKeychain.xpc`、固定版本的 Node executable、已捆绑的 `dsh web` entrypoint 及其完整复制的 runtime closure。Production 不会从 `PATH` 解析 Node，不会跟随 source-checkout path，也不会执行外部 symlink farm。任何托管代码运行前，outer app signature 会封存固定的 resource-relative layout 和 install-specific hosted-Web configuration。
 
+`CFBundleIconFile` 指定共用的 `DeepSeek.icns` 资源，该文件在签名前复制到 Host 中。[Desktop 图标打包参考](../../apps/desktop/README.md) 负责说明图稿生成和验证流程。
+
 ## 配对与激活
 
 **Pair iPhone from anywhere…** 会创建短期 pairing code，并同时显示 QR code 和可选择的手动文本。手机只提交公开 enrollment offer。Host 会显示完整 fingerprint 和 device label；Mac 前的用户必须与手机比对 fingerprint 并批准，之后 provisioning 才能创建 route 或返回受保护 invitation。文件导入 action 使用相同的有界公开 offer 解析和 Host 确认规则。
