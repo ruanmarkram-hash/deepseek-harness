@@ -28,11 +28,11 @@ app 内含已签名原生 child、`DSHRemoteHostKeychain.xpc`、固定版本的 
 
 只有未改变的原生 credential 指向当前受保护 Host identity 时，才允许修复陈旧的公开 route Host device ID。修复在同一原生 route lease 和 transaction 内，将该 ID 与缓存且固定的 XPC identity 比较，并验证其 agreement public key 与受保护 agreement provider 一致。原生与受保护 Host 不匹配会被拒绝；此检查不会创建或替换任何 identity。
 
-配对后，**Start hosted runtime** 会启动 sealed hosted child，并恢复符合条件的已签名 FD199 journal。hosted child 通过固定 descriptor 198 接收 relay record，通过固定 descriptor 199 接收 authority handoff record；它既不会收到 Host token，也不会收到私有 agreement material。**Activate paired phone** 会先完成已签名 FD199 ownership transition，随后原生 Host 才打开已认证的 V3 relay WebSocket。浏览器和手机由此使用同一个 hosted runtime。
+配对后，**Start hosted runtime** 会启动 sealed hosted child，并恢复符合条件的已签名 FD199 journal，但不会构造手机 session 或打开 relay socket。hosted child 通过固定 descriptor 198 接收 relay record，通过固定 descriptor 199 接收 authority handoff record；它既不会收到 Host token，也不会收到私有 agreement material。**Activate paired phone** 会先完成新的已签名 FD199 ownership，或恢复已经激活的 ownership，随后原生 Host 才打开已认证的 V3 relay WebSocket。浏览器和手机由此使用同一个 hosted runtime。
 
 认证后的原生 handshake 完成 epoch 提交后，Host 会等待 child 精确的持久化 epoch 同步确认，随后才转发手机连接。此公开且绑定 route 的同步不会改变原生 ledger 或 mobile handshake。
 
-原生 epoch ledger 只允许一个 live Host route owner，仅在认证 handshake 后提交 epoch，并能在不跳过 next epoch 的情况下协调 lost receipt。手机网络中断后，可以通过保留的 route 按 Host 发出的 next epoch 重新连接。Host 正常重启后，**Start hosted runtime** 会先恢复已验证 journal、active route 和 hosted state，然后才恢复手机 activation。
+原生 epoch ledger 只允许一个 live Host route owner，仅在认证 handshake 后提交 epoch，并能在不跳过 next epoch 的情况下协调 lost receipt。手机网络中断后，可以通过保留的 route 按 Host 发出的 next epoch 重新连接。Host 正常重启后，启动本地 runtime 仍要求显式激活手机。激活失败会退役已经 seeded 的 child；请先执行 **Start hosted runtime**，再执行 **Activate paired phone** 来重试。配对 credential、已签名 journal 和原生 epoch 保持不变。Stop 会取消 pending activation，并等待进行中的生命周期清理完成，随后才允许另一个 owner。
 
 **Revoke paired phone…** 要求 Host 再次确认。它会退役 hosted child 的公开 route state，安装 durable native revocation fence，停止保留的 relay，执行幂等 remote deletion 和本地 Keychain cleanup，清除 hosted owner，并允许之后重新配对。含糊的 remote 或本地 cleanup 结果保持可恢复，且绝不会恢复可用 invitation。
 

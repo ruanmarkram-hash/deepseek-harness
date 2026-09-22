@@ -52,13 +52,10 @@ enum HostedRuntimeComposition {
  the journal activation gate.
  */
 final class HostedRuntimeController: @unchecked Sendable {
-  private let lock = NSLock()
   private let agreement: any RelayProtectedAgreement & RelayHostPublicIdentityProvider
   private let store: RelaySecretStore
   private let connectionCoordinator: RelayHostRouteConnectionCoordinator
-  private var coordinator: Fd199HandoffCoordinator?
-  private var relay: HostedRelaySession?
-  private var starting = false
+  private let lifecycle = HostedRuntimeLifecycle<Fd199HandoffCoordinator, AuthorizedHostedPhoneSession>()
 
   init(agreement: any RelayProtectedAgreement & RelayHostPublicIdentityProvider, store: RelaySecretStore, connectionCoordinator: RelayHostRouteConnectionCoordinator) {
     self.agreement = agreement
@@ -84,107 +81,60 @@ final class HostedRuntimeController: @unchecked Sendable {
 
   /** Explicit same-phone repair while all Host-owned runtime starts remain reserved off. */
   func repairMatchingPairingRecords() throws -> PairingRepairResult {
-    guard reserveStart() else { throw PairingRepairError.runtimeRunning }
-    defer { abandonStart() }
-    _ = try RelaySignedHostActivationConfiguration.validateRunningHost()
-    let artifacts = try RemoteHostV3HostedChildPackaging.loadAndValidateBundledArtifacts()
-    let port = try PairingRepairPortReservation(port: artifacts.webConfiguration.port)
-    return try withExtendedLifetime(port) {
-      try RelayPairingRepairEligibility.withEligibleRoute(store: store, host: agreement) { route in
-        let target = PairingRepairTarget(
-          deviceId: route.deviceId, deviceEnrollmentId: route.deviceEnrollmentId,
-          hostEnrollmentId: route.hostEnrollmentId, signingPublicKey: route.deviceSigningPublicKey,
-          agreementPublicKey: route.deviceAgreementPublicKey, routeId: route.routeId,
-          hostDeviceId: route.hostDeviceId, generation: route.generation
-        )
-        return try PairingStateRepair.perform(home: URL(fileURLWithPath: artifacts.webConfiguration.dshHome, isDirectory: true), target: target)
+    do {
+      return try lifecycle.whileIdle {
+        _ = try RelaySignedHostActivationConfiguration.validateRunningHost()
+        let artifacts = try RemoteHostV3HostedChildPackaging.loadAndValidateBundledArtifacts()
+        let port = try PairingRepairPortReservation(port: artifacts.webConfiguration.port)
+        return try withExtendedLifetime(port) {
+          try RelayPairingRepairEligibility.withEligibleRoute(store: store, host: agreement) { route in
+            let target = PairingRepairTarget(
+              deviceId: route.deviceId, deviceEnrollmentId: route.deviceEnrollmentId,
+              hostEnrollmentId: route.hostEnrollmentId, signingPublicKey: route.deviceSigningPublicKey,
+              agreementPublicKey: route.deviceAgreementPublicKey, routeId: route.routeId,
+              hostDeviceId: route.hostDeviceId, generation: route.generation
+            )
+            return try PairingStateRepair.perform(home: URL(fileURLWithPath: artifacts.webConfiguration.dshHome, isDirectory: true), target: target)
+          }
+        }
       }
+    } catch Fd199HandoffCoordinator.CoordinatorError.invalidState {
+      throw PairingRepairError.runtimeRunning
     }
   }
 
-  /** Starts a new desktop owner or restores the carrier for an active journal. */
+  /** Starts or restores only the local child; phone activation remains explicit. */
   func start() async throws {
-    guard reserveStart() else { throw Fd199HandoffCoordinator.CoordinatorError.invalidState }
-    do {
-      let coordinator = try HostedRuntimeComposition.makeCoordinator()
-      try coordinator.start()
-      var resumedSession: HostedRelaySession?
-      if coordinator.phase == .servingPhoneSessions {
-        guard let credential = try store.activeRouteCredential() else {
-          coordinator.stop()
-          throw Fd199HandoffCoordinator.CoordinatorError.unavailable
-        }
-        try RelayConnectionEpochLedger.initializeMissingState(for: credential, store: store)
-        let session = HostedRelaySession(
-          coordinator: coordinator,
-          credential: credential,
-          agreement: agreement,
-          epochLedger: RelayConnectionEpochLedger(store: store),
-          connectionCoordinator: connectionCoordinator
-        )
-        coordinator.setChildOutputHandler { [weak session] output in session?.childOutput(output) }
-        do {
-          try await session.resume(credential: credential)
-        } catch {
-          await session.stop()
-          coordinator.stop()
-          throw error
-        }
-        resumedSession = session
-      }
-      guard commitStart(coordinator: coordinator, relay: resumedSession) else {
-        await resumedSession?.stop()
-        coordinator.stop()
-        throw Fd199HandoffCoordinator.CoordinatorError.invalidState
-      }
-    } catch {
-      abandonStart()
-      throw error
-    }
+    try lifecycle.start(makeCarrier: HostedRuntimeComposition.makeCoordinator)
   }
 
   /**
- Consumes the signed FD199 activation and only then starts the one authenticated
- V3 route socket. The active credential never leaves the native Host process.
+ Activates fresh ownership or resumes already-activated ownership before
+ starting the authenticated socket. Credentials stay in the native Host.
  */
   func activatePhoneSessions() async throws {
-    let artifacts = try RemoteHostV3HostedChildPackaging.loadAndValidateBundledArtifacts()
-    try PairingStateRepair.requireSettled(home: URL(fileURLWithPath: artifacts.webConfiguration.dshHome, isDirectory: true))
-    let coordinator = try coordinatorForActivation()
-    guard let credential = try store.activeRouteCredential() else {
-      throw Fd199HandoffCoordinator.CoordinatorError.unavailable
-    }
-    try RelayConnectionEpochLedger.initializeMissingState(for: credential, store: store)
-    let session = HostedRelaySession(
-      coordinator: coordinator,
-      credential: credential,
-      agreement: agreement,
-      epochLedger: RelayConnectionEpochLedger(store: store),
-      connectionCoordinator: connectionCoordinator
-    )
-    coordinator.setChildOutputHandler { [weak session] output in session?.childOutput(output) }
-    do {
-      try await session.activate(credential: credential)
-    } catch {
-      await session.stop()
-      // A receipt mismatch means the consuming child has no trustworthy route
-      // to serve. Tear down its activated FD199 generation as well, so a later
-      // explicit Start action begins from a fresh, inert desktop generation.
-      coordinator.stop()
-      removeCoordinator(coordinator)
-      throw error
-    }
-    guard installRelay(session) else {
-      await session.stop()
-      throw Fd199HandoffCoordinator.CoordinatorError.invalidState
+    try await lifecycle.activate { coordinator in
+      let artifacts = try RemoteHostV3HostedChildPackaging.loadAndValidateBundledArtifacts()
+      try PairingStateRepair.requireSettled(home: URL(fileURLWithPath: artifacts.webConfiguration.dshHome, isDirectory: true))
+      guard let credential = try store.activeRouteCredential() else {
+        throw Fd199HandoffCoordinator.CoordinatorError.unavailable
+      }
+      try RelayConnectionEpochLedger.initializeMissingState(for: credential, store: store)
+      let session = HostedRelaySession(
+        coordinator: coordinator,
+        credential: credential,
+        agreement: agreement,
+        epochLedger: RelayConnectionEpochLedger(store: store),
+        connectionCoordinator: connectionCoordinator
+      )
+      coordinator.setChildOutputHandler { [weak session] output in session?.childOutput(output) }
+      return AuthorizedHostedPhoneSession(session: session, credential: credential)
     }
   }
 
   /** Stops relay delivery and both hosted-child channels. */
   func stop() async {
-    let (relay, coordinator) = takeForStop()
-    await relay?.stop()
-    coordinator?.stop()
+    await lifecycle.stop()
   }
 
   /** Revokes the native route, retires the child's copy, and clears all retained runtime owners. */
@@ -193,7 +143,7 @@ final class HostedRuntimeController: @unchecked Sendable {
       throw Fd199HandoffCoordinator.CoordinatorError.unavailable
     }
     do {
-      let activeCoordinator = currentCoordinator()
+      let activeCoordinator = lifecycle.currentCarrier
       if activeCoordinator?.phase == .servingPhoneSessions {
         try activeCoordinator?.sendPublicRecord(RelayWireCodec.revoked(credential))
       }
@@ -207,70 +157,23 @@ final class HostedRuntimeController: @unchecked Sendable {
 
   /** A revoke attempt is fail-closed even when remote or local cleanup must be retried. */
   private func stopRetainedRuntime() async {
-    let (relay, coordinator) = takeForStop()
-    await relay?.stop()
-    coordinator?.stop()
+    await lifecycle.stop()
+  }
+}
+
+/** Keeps credential-dependent activation bound to its constructed session. */
+private final class AuthorizedHostedPhoneSession: HostedRuntimePhoneSession, @unchecked Sendable {
+  private let session: HostedRelaySession
+  private let credential: RelayRouteCredential
+
+  init(session: HostedRelaySession, credential: RelayRouteCredential) {
+    self.session = session
+    self.credential = credential
   }
 
-  private func currentCoordinator() -> Fd199HandoffCoordinator? {
-    lock.lock()
-    defer { lock.unlock() }
-    return coordinator
-  }
-
-  private func coordinatorForActivation() throws -> Fd199HandoffCoordinator {
-    lock.lock()
-    defer { lock.unlock() }
-    guard let coordinator, relay == nil else { throw Fd199HandoffCoordinator.CoordinatorError.invalidState }
-    return coordinator
-  }
-
-  private func installRelay(_ session: HostedRelaySession) -> Bool {
-    lock.lock()
-    defer { lock.unlock() }
-    guard relay == nil else { return false }
-    relay = session
-    return true
-  }
-
-  private func reserveStart() -> Bool {
-    lock.lock()
-    defer { lock.unlock() }
-    guard coordinator == nil, relay == nil, !starting else { return false }
-    starting = true
-    return true
-  }
-
-  private func commitStart(coordinator: Fd199HandoffCoordinator, relay: HostedRelaySession?) -> Bool {
-    lock.lock()
-    defer { lock.unlock() }
-    guard starting, self.coordinator == nil, self.relay == nil else { return false }
-    starting = false
-    self.coordinator = coordinator
-    self.relay = relay
-    return true
-  }
-
-  private func abandonStart() {
-    lock.lock()
-    starting = false
-    lock.unlock()
-  }
-
-  private func takeForStop() -> (HostedRelaySession?, Fd199HandoffCoordinator?) {
-    lock.lock()
-    defer { lock.unlock() }
-    let result = (relay, coordinator)
-    relay = nil
-    coordinator = nil
-    return result
-  }
-
-  private func removeCoordinator(_ candidate: Fd199HandoffCoordinator) {
-    lock.lock()
-    defer { lock.unlock() }
-    if coordinator === candidate { coordinator = nil }
-  }
+  func activate() async throws { try await session.activate(credential: credential) }
+  func resume() async throws { try await session.resume(credential: credential) }
+  func stop() async { await session.stop() }
 }
 
 /** Fixed per-installation paths derived from the sealed container. */
