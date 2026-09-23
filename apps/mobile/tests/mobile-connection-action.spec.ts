@@ -35,6 +35,44 @@ async function pairedStore(native: MemoryNativeStore): Promise<NativeMobileRemot
 }
 
 describe('connectStoredHost', () => {
+  it('queues an explicit replacement behind a cancelled native read without letting the old action release its lock', async () => {
+    const native = new MemoryNativeStore()
+    await pairedStore(native)
+    let releaseRead: ((record: string | null) => void) | undefined
+    native.loadRemoteState = async () => new Promise<string | null>((resolve) => { releaseRead = resolve })
+    const persisted = store(native)
+    let releaseConnect: (() => void) | undefined
+    const client = { connect: vi.fn(async () => new Promise<void>((resolve) => { releaseConnect = resolve })), reconnect: vi.fn() }
+    const controller = new AbortController()
+    const first = connectStoredHost(client as never, { kind: 'disconnected' }, persisted, vi.fn(), controller.signal)
+    await vi.waitFor(() => { expect(releaseRead).toBeDefined() })
+    controller.abort()
+    const replacement = connectStoredHost(client as never, { kind: 'disconnected' }, persisted, vi.fn(), new AbortController().signal)
+    releaseRead?.(native.record)
+    await first
+    await vi.waitFor(() => { expect(client.connect).toHaveBeenCalledOnce() })
+    await connectStoredHost(client as never, { kind: 'disconnected' }, persisted, vi.fn())
+    expect(client.connect).toHaveBeenCalledOnce()
+    releaseConnect?.()
+    await replacement
+  })
+  it('does not authenticate or open pairing when backgrounding cancels a pending native read', async () => {
+    let release: ((value: null) => void) | undefined
+    const native = new MemoryNativeStore()
+    native.loadRemoteState = async () => new Promise<null>((resolve) => { release = resolve })
+    const persisted = store(native)
+    const client = { connect: vi.fn(), reconnect: vi.fn() }
+    const openPairing = vi.fn()
+    const controller = new AbortController()
+    const pending = connectStoredHost(client as never, { kind: 'disconnected' }, persisted, openPairing, controller.signal)
+    await vi.waitFor(() => { expect(release).toBeDefined() })
+    controller.abort()
+    release?.(null)
+    await pending
+    expect(client.connect).not.toHaveBeenCalled()
+    expect(client.reconnect).not.toHaveBeenCalled()
+    expect(openPairing).not.toHaveBeenCalled()
+  })
   it('serializes duplicate taps even before React publishes connecting, then permits explicit retry', async () => {
     let release: (() => void) | undefined
     let entered: (() => void) | undefined

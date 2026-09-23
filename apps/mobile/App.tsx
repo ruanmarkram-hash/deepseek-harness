@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar'
 import { CameraView, useCameraPermissions } from 'expo-camera'
-import { useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { AppState, Image, KeyboardAvoidingView, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native'
 import * as Crypto from 'expo-crypto'
 import { createMobileEnrollmentOffer, fingerprintMobileEnrollmentOffer, importMobileHostInvitation, type MobileEnrollmentOffer } from './enrollment'
@@ -8,7 +8,7 @@ import { completeAnywherePairing } from './anywhere-pairing'
 import { MobilePairingActions, pairingError } from './mobile-pairing-actions'
 import { disconnectRemoteWhenBackgrounded } from './mobile-app-state'
 import { connectStoredHost } from './mobile-connection-action'
-import { mobileConnectionView } from './mobile-connection-view'
+import { mobileConnectionView, MobileConnectionNotices, type MobileConnectionNotice, type MobileConnectionNoticeEvent } from './mobile-connection-view'
 import { nativeMobileIdentityProvider, nativeMobileRemoteStateStore } from './native-identity'
 import { mobileRemoteSocketFactory } from './mobile-remote-socket'
 import { EMPTY_OWNER_WORKSPACE, applyOwnerEvent, applyOwnerSessionList, replaceOwnerWorkspaceSnapshot, type OwnerSession, type OwnerWorkspace } from './owner-workspace'
@@ -23,6 +23,10 @@ interface PairingSummary {
 
 const deepSeekMark = require('./assets/deepseek-mark.png') as number
 
+// Survives a screen remount only within this process; never persisted or used to select a transport.
+const connectionNotices = new MobileConnectionNotices()
+const ConnectionNoticeContext = createContext<MobileConnectionNotice | undefined>(undefined)
+
 /** Chat-first DSH owner client. Route creation and revocation remain signed-Host actions. */
 export default function App(): React.JSX.Element {
   const [panel, setPanel] = useState<Panel>('conversation')
@@ -31,6 +35,14 @@ export default function App(): React.JSX.Element {
   const [remoteState, setRemoteState] = useState<MobileRemoteState>({ kind: 'unconfigured' })
   const [pairing, setPairing] = useState<PairingSummary | undefined>()
   const [draft, setDraft] = useState('')
+  const [notice, setNotice] = useState(connectionNotices.current)
+  const mounted = useRef(true)
+  const noticeLease = useRef<ReturnType<MobileConnectionNotices['claim']> | undefined>(undefined)
+  const connectAction = useRef<AbortController | undefined>(undefined)
+  const updateNotice = (event: MobileConnectionNoticeEvent) => {
+    noticeLease.current?.update(event)
+    if (mounted.current) setNotice(connectionNotices.current)
+  }
   const client = useRef<MobileRemoteClient | undefined>(undefined)
   if (client.current === undefined) {
     client.current = new MobileRemoteClient({
@@ -38,7 +50,13 @@ export default function App(): React.JSX.Element {
       onEvent: event => setWorkspace(current => applyOwnerEvent(current, event)),
       onSnapshot: value => setWorkspace(current => applyOwnerSessionList(current, value)),
       onBaselineSnapshot: value => setWorkspace(() => replaceOwnerWorkspaceSnapshot(value)),
-      onState: (state) => { setRemoteState(state); if (state.kind === 'connected') setSheet('none') },
+      onState: (state) => {
+        if (!mounted.current) return
+        setRemoteState(state)
+        updateNotice({ kind: 'state', state })
+        if (state.kind === 'connected') setSheet('none')
+      },
+      onDisconnect: notice => updateNotice({ kind: 'disconnect', notice }),
       randomBytes: length => new Uint8Array(Crypto.getRandomValues(new Uint8Array(length))),
       cursorStore: nativeMobileRemoteStateStore,
       epochProvider: nativeMobileRemoteStateStore,
@@ -46,8 +64,22 @@ export default function App(): React.JSX.Element {
     })
   }
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', next => disconnectRemoteWhenBackgrounded(next, () => client.current?.disconnect()))
-    return () => { subscription.remove(); client.current?.disconnect() }
+    mounted.current = true
+    const lease = connectionNotices.claim()
+    noticeLease.current = lease
+    setNotice(connectionNotices.current)
+    const subscription = AppState.addEventListener('change', next => disconnectRemoteWhenBackgrounded(next, (reason) => {
+      connectAction.current?.abort()
+      client.current?.disconnect(reason)
+    }))
+    return () => {
+      mounted.current = false
+      connectAction.current?.abort()
+      subscription.remove()
+      client.current?.disconnect('unmount')
+      lease.release()
+      noticeLease.current = undefined
+    }
   }, [])
   useEffect(() => {
     let active = true
@@ -96,20 +128,33 @@ export default function App(): React.JSX.Element {
     return summary
   }
   const connectHost = async () => {
+    if (connectAction.current !== undefined && !connectAction.current.signal.aborted) return
+    const action = new AbortController()
+    connectAction.current = action
+    setSheet('connection')
+    updateNotice({ kind: 'clear' })
     try {
-      if (client.current !== undefined) await connectStoredHost(client.current, remoteState, nativeMobileRemoteStateStore, () => setSheet('pairing'))
+      if (client.current !== undefined) await connectStoredHost(client.current, remoteState, nativeMobileRemoteStateStore, () => setSheet('pairing'), action.signal)
     } catch {
-      setRemoteState({ kind: 'error', message: 'Could not access the local DSH Host connection.' })
+      if (!mounted.current || action.signal.aborted) return
+      const state = { kind: 'error', message: 'Could not access the local DSH Host connection.' } as const
+      setRemoteState(state)
+      updateNotice({ kind: 'state', state })
+    } finally {
+      if (connectAction.current === action) connectAction.current = undefined
     }
   }
   const forget = async () => {
+    connectAction.current?.abort()
     client.current?.disconnect()
+    updateNotice({ kind: 'clear' })
     await nativeMobileRemoteStateStore.clear()
+    if (!mounted.current) return
     setPairing(undefined)
     setSheet('connection')
   }
 
-  return <SafeAreaView style={styles.page}>
+  return <ConnectionNoticeContext.Provider value={notice}><SafeAreaView style={styles.page}>
     <StatusBar style="light" />
     <WorkspacePager draft={draft} onChangeDraft={setDraft} onConnect={() => void connectHost()} onCreateSession={() => void createSession()} onOpenConnection={() => setSheet('connection')} onOpenDetails={() => setSheet('details')} onOpenPairing={() => setSheet('pairing')} onRefresh={() => void refreshSessions()} onSelectSession={id => setWorkspace(current => ({ ...current, selectedSessionId: id }))} onSend={() => void send()} pairing={pairing} panel={panel} remoteState={remoteState} selected={selected} setPanel={setPanel} workspace={workspace} />
     {sheet !== 'none' && <ModalSheet onClose={() => setSheet('none')}>
@@ -118,7 +163,7 @@ export default function App(): React.JSX.Element {
       {sheet === 'pairing' && <PairingSheet existing={pairing} state={remoteState} onConnect={() => void connectHost()} onImport={importInvitation} onRemotePair={completeRemotePairing} onOpenForget={() => setSheet('forget')} />}
       {sheet === 'forget' && <ForgetSheet onCancel={() => setSheet('connection')} onForget={() => void forget()} />}
     </ModalSheet>}
-  </SafeAreaView>
+  </SafeAreaView></ConnectionNoticeContext.Provider>
 }
 
 function WorkspacePager({
@@ -194,6 +239,7 @@ function Conversation({
     <View style={styles.header}><Pressable accessibilityLabel="Open sessions" accessibilityRole="button" onPress={onOpenSessions} style={styles.iconButton}><Text style={styles.iconText}>☰</Text></Pressable><View style={styles.headerTitle}><Text numberOfLines={1} style={styles.sessionTitle}>{session?.title ?? 'New session'}</Text><Text style={styles.status}>{connected ? session?.running ? 'RESPONDING' : 'LIVE HOST' : stateLabel(remoteState)}</Text></View><Pressable accessibilityLabel="Open session details" accessibilityRole="button" onPress={onOpenDetails} style={styles.iconButton}><Text style={styles.iconText}>•••</Text></Pressable></View>
     <ScrollView contentContainerStyle={styles.conversation} keyboardShouldPersistTaps="handled">{session === undefined ? <EmptyConversation onConnect={onConnect} onPair={onOpenPairing} paired={pairing !== undefined} state={remoteState} /> : <><Text style={styles.liveLabel}>LIVE HOST SESSION</Text>{session.messages.length === 0 && <Text style={styles.emptyThread}>The Host has not streamed conversation content yet.</Text>}{session.messages.map(message => <View key={message.id} style={message.role === 'user' ? styles.userBubble : styles.assistantBubble}><Text style={styles.messageText}>{message.text}</Text></View>)}{session.running && <Text style={styles.runningText}>DSH is working on the Host…</Text>}</>}</ScrollView>
     <View style={styles.composerShell}><View style={[styles.composer, (!connected || session === undefined) && styles.composerDisabled]}><TextInput accessibilityLabel="Message DSH" editable={connected && session !== undefined && !session.running} multiline onChangeText={onChangeDraft} placeholder={connected ? 'Message DSH' : 'Connect DSH Host to message'} placeholderTextColor={colors.muted} style={styles.input} value={draft} /><Pressable accessibilityLabel="Send message" accessibilityRole="button" disabled={!connected || session === undefined || session.running || draft.trim() === ''} onPress={onSend} style={[styles.send, (!connected || session === undefined || session.running || draft.trim() === '') && styles.sendDisabled]}><Text style={styles.sendText}>↑</Text></Pressable></View><Text style={styles.composerNote}>{connected ? 'Messages are sent to the selected live Host session.' : 'No local or cached conversation is created while disconnected.'}</Text></View>
+    {session !== undefined && !connected && <ConnectionAction onConnect={remoteState.kind === 're-pair-required' ? onOpenPairing : onConnect} state={remoteState} />}
   </KeyboardAvoidingView>
 }
 
@@ -203,7 +249,7 @@ function EmptyConversation({ onConnect, onPair, paired, state }: {
   readonly paired: boolean
   readonly state: MobileRemoteState
 }): React.JSX.Element {
-  return <View style={styles.empty}><Image accessibilityIgnoresInvertColors source={deepSeekMark} style={styles.mark} /><Text style={styles.emptyTitle}>{paired ? 'Host invitation verified' : 'Your DSH Host'}</Text><Text style={styles.emptyCopy}>{paired ? 'Connect this protected phone to its signed DSH Host.' : state.kind === 'unconfigured' ? 'Pair this phone locally with your signed DSH Host. No desktop bridge or preview history is used.' : 'The encrypted connection is not currently live.'}</Text><Pressable accessibilityRole="button" onPress={paired ? onConnect : onPair} style={styles.pairAction}><Text style={styles.pairActionText}>{paired ? 'Connect to Host' : 'Pair this phone'}</Text></Pressable></View>
+  return <View style={styles.empty}><Image accessibilityIgnoresInvertColors source={deepSeekMark} style={styles.mark} /><Text style={styles.emptyTitle}>{paired ? 'Host invitation verified' : 'Your DSH Host'}</Text><Text style={styles.emptyCopy}>{paired ? 'Connect this protected phone to its signed DSH Host.' : state.kind === 'unconfigured' ? 'Pair this phone locally with your signed DSH Host. No desktop bridge or preview history is used.' : 'The encrypted connection is not currently live.'}</Text>{paired ? <ConnectionAction onConnect={state.kind === 're-pair-required' ? onPair : onConnect} state={state} /> : <Pressable accessibilityRole="button" onPress={onPair} style={styles.pairAction}><Text style={styles.pairActionText}>Pair this phone</Text></Pressable>}</View>
 }
 
 function SessionDrawer({ onClose, onCreateSession, onOpenConnection, onOpenPairing, onRefresh, onSelectSession, remoteState, workspace }: {
@@ -232,7 +278,7 @@ function ConnectionSheet({ onConnect, onForget, onPair, pairing, state }: {
 }
 
 function ConnectionAction({ onConnect, state }: { readonly onConnect: () => void; readonly state: MobileRemoteState }): React.JSX.Element {
-  const view = mobileConnectionView(state)
+  const view = mobileConnectionView(state, useContext(ConnectionNoticeContext))
   return <><Pressable accessibilityRole="button" disabled={view.disabled} onPress={onConnect} style={[styles.primaryButton, view.disabled && styles.buttonDisabled]}><Text style={styles.primaryButtonText}>{view.label}</Text></Pressable>{view.message !== undefined && <Text accessibilityLiveRegion="polite" style={styles.safeNote}>{view.message}</Text>}</>
 }
 

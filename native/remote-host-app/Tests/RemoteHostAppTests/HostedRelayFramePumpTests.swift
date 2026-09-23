@@ -22,6 +22,18 @@ private actor FrameSink {
   func snapshot() -> [Data] { values }
 }
 
+private actor SuspendedFrameWrite {
+  private var release: CheckedContinuation<Void, Never>?
+  private(set) var entered = false
+  private(set) var completed = false
+  func send() async {
+    entered = true
+    await withCheckedContinuation { release = $0 }
+    completed = true
+  }
+  func finish() { release?.resume(); release = nil }
+}
+
 private final class FailureFlag: @unchecked Sendable {
   private let lock = NSLock()
   private var value = false
@@ -57,6 +69,31 @@ func hostedFramePumpPreservesDirectJSONAndFIFO() async throws {
   pump.childPlaintext(metadata: Data(#"{ "\u0063onnectionId" : "remote_connection0001" }"#.utf8), payload: two)
   #expect(await eventually { await sink.snapshot().count == 2 })
   #expect(await sink.snapshot() == [one, two])
+}
+
+@Test("cleared frame pump joins the in-flight write and discards queued frames")
+func hostedFramePumpStopWaitsForDrain() async throws {
+  let write = SuspendedFrameWrite()
+  let completed = FailureFlag()
+  let sink = FrameSink()
+  let pump = HostedRelayFramePump(sendToPhone: { payload in
+    await write.send()
+    await sink.append(payload)
+  }, failed: { Issue.record("Unexpected write failure") })
+  try pump.install(metadata: openMetadata())
+  let first = Data(#"{"id":1}"#.utf8)
+  pump.childPlaintext(metadata: referenceMetadata, payload: first)
+  #expect(await eventually { await write.entered })
+  pump.childPlaintext(metadata: referenceMetadata, payload: Data(#"{"id":2}"#.utf8))
+  pump.clear()
+  let waiting = Task { await pump.waitForDrain(); completed.mark() }
+  #expect(!completed.isMarked())
+  #expect(await write.completed == false)
+  await write.finish()
+  await waiting.value
+  #expect(await write.completed)
+  #expect(await sink.snapshot() == [first])
+  await pump.waitForDrain()
 }
 
 @Test("hosted frame pump rejects malformed phone JSON and non-current child metadata")

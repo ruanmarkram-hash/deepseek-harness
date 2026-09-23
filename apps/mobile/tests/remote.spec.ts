@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { acceptRemoteRelayDevice, type RemoteRelaySocket } from '@deepseek-ai/dsh-remote-relay-protocol'
 import type { RemoteWireEnvelope, RemoteWireEventEnvelope, RemoteWireId, RemoteWireJson } from '@deepseek-ai/dsh-remote-wire'
 import { MobileRemoteClient, type MobileDeviceIdentity, type MobileRemoteConnectionConfig, type MobileRemoteState } from '../remote'
-import { mobileConnectionView } from '../mobile-connection-view'
+import { mobileConnectionView, MobileConnectionNotices } from '../mobile-connection-view'
+import { disconnectRemoteWhenBackgrounded } from '../mobile-app-state'
+import { connectStoredHost } from '../mobile-connection-action'
+import { NativeMobileRemoteStateStore } from '../mobile-remote-state'
 
 const route = { routeId: 'remote_route_identifier_123', generation: 3, connectionEpoch: 2 }
 const hostDeviceId = 'host_device_identifier_123'
@@ -185,6 +188,124 @@ function client(socket: RemoteRelaySocket, identity: MobileDeviceIdentity, state
 }
 
 describe('MobileRemoteClient', () => {
+  it('retains a safe failure across backgrounding, then restores a cleared client for an explicit encrypted retry', async () => {
+    const host = identity(hostDeviceId, 7)
+    const device = identity(deviceId, 9)
+    const [hostSocket, deviceSocket] = sockets()
+    let record: string | null = null
+    const persisted = new NativeMobileRemoteStateStore({
+      loadRemoteState: async () => record,
+      saveRemoteState: async (value) => { record = value },
+      clearRemoteState: async () => { record = null },
+    })
+    let failPresence = true
+    const identityProvider = {
+      deviceIdentity: async () => device,
+      requireUserPresence: vi.fn(async () => { if (failPresence) throw new Error('SECRET_NATIVE_ERROR') }),
+      clearUserPresence: vi.fn(),
+    }
+    await persisted.saveInvitation({ config: { ...config(host), clientAuthToken: 'a'.repeat(32) }, expiresAt: '2026-09-01T00:00:00.000Z', identityProvider })
+    const notices = new MobileConnectionNotices()
+    const lease = notices.claim()
+    const states: MobileRemoteState[] = []
+    const current = (): MobileRemoteState => states.at(-1) ?? { kind: 'unconfigured' }
+    const view = () => mobileConnectionView(current(), notices.current)
+    const socketFactory = { create: vi.fn(async () => deviceSocket) }
+    const remote = new MobileRemoteClient({
+      identityProvider, epochProvider: persisted, socketFactory, randomBytes: random(9),
+      onEvent: () => undefined, onSnapshot: () => undefined,
+      onState: (state) => { states.push(state); lease.update({ kind: 'state', state }) },
+      onDisconnect: (notice) => { lease.update({ kind: 'disconnect', notice }) },
+    })
+    const reconnect = vi.spyOn(remote, 'reconnect')
+    try {
+      await connectStoredHost(remote, current(), persisted, vi.fn())
+      const failed = view()
+      disconnectRemoteWhenBackgrounded('background', (reason) => { remote.disconnect(reason) })
+      const backgrounded = view()
+      expect(current().kind).toBe('disconnected')
+      await expect(remote.request('session.list', {})).rejects.toThrow('not connected')
+      disconnectRemoteWhenBackgrounded('active', (reason) => { remote.disconnect(reason) })
+      expect(view()).toEqual(backgrounded)
+      expect(socketFactory.create).not.toHaveBeenCalled()
+      expect(identityProvider.requireUserPresence).toHaveBeenCalledOnce()
+      failPresence = false
+      const accepting = hostAcceptance(hostSocket, host, device, route.connectionEpoch)
+      await Promise.all([accepting, connectStoredHost(remote, current(), persisted, vi.fn())])
+      expect(reconnect).not.toHaveBeenCalled()
+      expect(current().kind).toBe('connected')
+      expect(notices.current).toBeUndefined()
+      expect(identityProvider.requireUserPresence).toHaveBeenCalledTimes(2)
+      expect((await persisted.restore())?.nextConnectionEpoch).toBe(route.connectionEpoch + 1)
+      expect({ failed, backgrounded, connected: view() }).toMatchInlineSnapshot(`
+        {
+          "backgrounded": {
+            "disabled": false,
+            "label": "Connect to Host",
+            "message": "Connection stopped at owner-presence. Owner authentication did not complete. You can retry. The app reported background. The connection and authentication were cleared. Connect again to authenticate.",
+          },
+          "connected": {
+            "disabled": true,
+            "label": "Host connected",
+            "message": "The live Host workspace is ready.",
+          },
+          "failed": {
+            "disabled": false,
+            "label": "Retry connection",
+            "message": "Connection stopped at owner-presence. Owner authentication did not complete. You can retry.",
+          },
+        }
+      `)
+      remote.disconnect()
+      await persisted.clear()
+      lease.update({ kind: 'clear' })
+      expect(view().message).toBeUndefined()
+      expect(await persisted.restore()).toBeUndefined()
+    } finally { remote.disconnect(); lease.release() }
+  })
+
+  it('records cancellation at owner presence and ignores late authentication even when observers throw', async () => {
+    const host = identity(hostDeviceId, 7)
+    let release: (() => void) | undefined
+    let presence = false
+    const clearUserPresence = vi.fn(() => { presence = false })
+    const socketFactory = { create: vi.fn(async () => { throw new Error('No socket after cancellation') }) }
+    const notices = new MobileConnectionNotices()
+    const lease = notices.claim()
+    const states: MobileRemoteState[] = []
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const remote = new MobileRemoteClient({
+      identityProvider: {
+        deviceIdentity: async () => identity(deviceId, 9), clearUserPresence,
+        requireUserPresence: async () => { await new Promise<void>((resolve) => { release = resolve }); presence = true },
+      },
+      onEvent: () => undefined, onSnapshot: () => undefined,
+      onState: (state) => { states.push(state); lease.update({ kind: 'state', state }); throw new Error('SECRET_OBSERVER') },
+      onDisconnect: (notice) => { lease.update({ kind: 'disconnect', notice }); throw new Error('SECRET_OBSERVER') },
+      randomBytes: random(9), socketFactory,
+      epochProvider: { nextConnectionEpoch: async (_config, epoch) => epoch, recordAuthenticatedConnection: async () => undefined },
+    })
+    try {
+      const pending = remote.connect(config(host))
+      await vi.waitFor(() => { expect(release).toBeDefined() })
+      disconnectRemoteWhenBackgrounded('inactive', (reason) => { remote.disconnect(reason) })
+      expect(states.map(state => state.kind)).toEqual(['connecting'])
+      remote.disconnect('background')
+      release?.()
+      await pending
+      await vi.waitFor(() => { expect(presence).toBe(false) })
+      expect(socketFactory.create).not.toHaveBeenCalled()
+      expect(states.map(state => state.kind)).toEqual(['connecting', 'disconnected'])
+      expect(mobileConnectionView({ kind: 'disconnected' }, notices.current)).toMatchInlineSnapshot(`
+        {
+          "disabled": false,
+          "label": "Connect to Host",
+          "message": "The app reported background. The connection and authentication were cleared. Interrupted at owner-presence. Connect again to authenticate.",
+        }
+      `)
+      expect(warn.mock.calls.flat().join(' ')).not.toContain('SECRET')
+    } finally { remote.disconnect(); lease.release(); warn.mockRestore() }
+  })
   it.each([
     ['owner-presence', 'presence'],
     ['identity', 'identity'],
@@ -527,11 +648,12 @@ describe('MobileRemoteClient', () => {
     expect(states).toEqual(['connecting', 'connected', 'reconnecting', 'connecting', 'connected'])
   })
 
-  it('aborts and physically closes a pending handshake on disconnect', async () => {
+  it.each(['background', 'unmount', 'manual'] as const)('aborts and physically closes a pending handshake on %s', async (reason) => {
     const host = identity(hostDeviceId, 7)
     const device = identity(deviceId, 9)
     const [, deviceSocket] = sockets()
     const states: string[] = []
+    const onDisconnect = vi.fn()
     let abortSignal: AbortSignal | undefined
     let closed = false
     const remote = new MobileRemoteClient({
@@ -542,6 +664,7 @@ describe('MobileRemoteClient', () => {
       onEvent: () => undefined,
       onSnapshot: () => undefined,
       onState: state => states.push(state.kind),
+      onDisconnect,
       randomBytes: random(9),
       epochProvider: {
         nextConnectionEpoch: async (_config, expectedEpoch) => expectedEpoch,
@@ -558,11 +681,12 @@ describe('MobileRemoteClient', () => {
     })
     const pending = remote.connect(config(host))
     await new Promise(resolve => setTimeout(resolve, 0))
-    remote.disconnect()
+    remote.disconnect(reason)
     await pending
     expect(abortSignal?.aborted).toBe(true)
     expect(closed).toBe(true)
     expect(states).toEqual(['connecting', 'disconnected'])
+    expect(onDisconnect).toHaveBeenCalledExactlyOnceWith({ reason, stage: 'host-handshake' })
   })
 
   it('clears owner presence and creates no socket when disconnect wins a pending owner-presence request', async () => {

@@ -14,6 +14,8 @@ extension Fd199HandoffCoordinator: HostedRuntimeCarrier {
 
 /** An inert phone session bound to one child owner and authorized credential. */
 protocol HostedRuntimePhoneSession: AnyObject, Sendable {
+  /** Monotonic terminal state; stop still awaits all owned transport cleanup. */
+  var isEnded: Bool { get }
   func activate() async throws
   func resume() async throws
   func stop() async
@@ -63,9 +65,15 @@ final class HostedRuntimeLifecycle<Carrier: HostedRuntimeCarrier, Session: Hoste
     }
   }
 
-  func activate(makeSession: (Carrier) throws -> Session) async throws {
-    let (token, owner) = try reserveActivation()
+  func activate(makeCarrier: () throws -> Carrier, makeSession: (Carrier) throws -> Session) async throws {
+    let (token, retainedOwner, endedSession) = try reserveActivation()
     defer { finish(token) }
+    let owner: Carrier
+    if let endedSession {
+      owner = try await replaceEndedOwner(token, retainedOwner, endedSession, makeCarrier: makeCarrier)
+    } else {
+      owner = retainedOwner
+    }
     // Validation or credential lookup failure before construction leaves the
     // unseeded local child available for a later explicit activation.
     let candidate = try makeSession(owner)
@@ -136,14 +144,48 @@ final class HostedRuntimeLifecycle<Carrier: HostedRuntimeCarrier, Session: Hoste
     }
   }
 
-  private func reserveActivation() throws -> (UUID, Carrier) {
+  private func reserveActivation() throws -> (UUID, Carrier, Session?) {
     try lock.withLock {
-      guard let carrier, session == nil, operation == nil, !stopping,
+      guard let carrier, session == nil || session?.isEnded == true, operation == nil, !stopping,
             carrier.phase == .desktopAdmitted || carrier.phase == .servingPhoneSessions else { throw invalidState }
       let token = UUID()
       operation = token
       canceled = false
-      return (token, carrier)
+      return (token, carrier, session)
+    }
+  }
+
+  /** An explicit retry replaces the seeded child only after its old transport is quiescent. */
+  private func replaceEndedOwner(
+    _ token: UUID, _ previous: Carrier, _ endedSession: Session,
+    makeCarrier: () throws -> Carrier
+  ) async throws -> Carrier {
+    await endedSession.stop()
+    previous.stop()
+    defer {
+      lock.withLock {
+        if session === endedSession { session = nil }
+        if carrier === previous { carrier = nil }
+      }
+    }
+    try lock.withLock {
+      guard operation == token, !canceled, !stopping else { throw invalidState }
+    }
+    let replacement = try makeCarrier()
+    do {
+      try lock.withLock {
+        guard operation == token, !canceled, !stopping else { throw invalidState }
+        carrier = replacement
+      }
+      try replacement.startHostedRuntime()
+      try lock.withLock {
+        guard operation == token, !canceled, carrier === replacement else { throw invalidState }
+      }
+      return replacement
+    } catch {
+      replacement.stop()
+      lock.withLock { if carrier === replacement { carrier = nil } }
+      throw error
     }
   }
 

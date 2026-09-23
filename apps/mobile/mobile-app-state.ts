@@ -6,6 +6,6 @@ import type { AppStateStatus } from 'react-native'
  * @param next - App state reported by React Native.
  * @param disconnect - Remote-client teardown owned by the app.
  */
-export function disconnectRemoteWhenBackgrounded(next: AppStateStatus, disconnect: () => void): void {
-  if (next === 'background') disconnect()
+export function disconnectRemoteWhenBackgrounded(next: AppStateStatus, disconnect: (reason: 'background') => void): void {
+  if (next === 'background') disconnect('background')
 }

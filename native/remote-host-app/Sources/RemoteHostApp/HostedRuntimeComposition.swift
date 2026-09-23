@@ -110,10 +110,11 @@ final class HostedRuntimeController: @unchecked Sendable {
 
   /**
  Activates fresh ownership or resumes already-activated ownership before
- starting the authenticated socket. Credentials stay in the native Host.
+ starting the authenticated socket. An ended phone session requires replacing
+ its seeded child first. Credentials stay in the native Host.
  */
   func activatePhoneSessions() async throws {
-    try await lifecycle.activate { coordinator in
+    try await lifecycle.activate(makeCarrier: HostedRuntimeComposition.makeCoordinator) { coordinator in
       let artifacts = try RemoteHostV3HostedChildPackaging.loadAndValidateBundledArtifacts()
       try PairingStateRepair.requireSettled(home: URL(fileURLWithPath: artifacts.webConfiguration.dshHome, isDirectory: true))
       guard let credential = try store.activeRouteCredential() else {
@@ -172,6 +173,7 @@ private final class AuthorizedHostedPhoneSession: HostedRuntimePhoneSession, @un
   }
 
   func activate() async throws { try await session.activate(credential: credential) }
+  var isEnded: Bool { session.isEnded }
   func resume() async throws { try await session.resume(credential: credential) }
   func stop() async { await session.stop() }
 }

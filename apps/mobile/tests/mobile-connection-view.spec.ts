@@ -1,7 +1,29 @@
 import { describe, expect, it } from 'vitest'
-import { mobileConnectionView } from '../mobile-connection-view'
+import { mobileConnectionView, MobileConnectionNotices } from '../mobile-connection-view'
 
 describe('mobile connection action presentation', () => {
+  it('keeps notices across remounts but rejects released and replaced screen callbacks', () => {
+    const notices = new MobileConnectionNotices()
+    const first = notices.claim()
+    first.update({ kind: 'state', state: { kind: 'error', message: 'Safe failure' } })
+    first.update({ kind: 'disconnect', notice: { reason: 'unmount', stage: 'identity' } })
+    first.release()
+    first.update({ kind: 'clear' })
+    expect(notices.current?.failure).toBe('Safe failure')
+    const second = notices.claim()
+    second.update({ kind: 'clear' })
+    first.update({ kind: 'disconnect', notice: { reason: 'unmount', stage: undefined } })
+    first.release()
+    second.update({ kind: 'state', state: { kind: 'error', message: 'New failure' } })
+    expect(notices.current).toEqual({ failure: 'New failure', interruption: undefined })
+    const third = notices.claim()
+    second.update({ kind: 'clear' })
+    second.release()
+    expect(notices.current?.failure).toBe('New failure')
+    third.update({ kind: 'state', state: { kind: 'connected', connectionEpoch: 2 } })
+    expect(notices.current).toBeUndefined()
+    third.release()
+  })
   it('keeps connection progress, failures and retries visible in both sheets', () => {
     expect(mobileConnectionView({ kind: 'connecting' }).disabled).toBe(true)
     expect(mobileConnectionView({ kind: 'connected', connectionEpoch: 1 }).disabled).toBe(true)

@@ -18,6 +18,7 @@ final class HostedRelayFramePump: @unchecked Sendable {
   private var queue: [Data] = []
   private var queuedBytes = 0
   private var draining = false
+  private var drainTask: Task<Void, Never>?
 
   init(
     sendToPhone: @escaping @Sendable (Data) async throws -> Void,
@@ -42,6 +43,12 @@ final class HostedRelayFramePump: @unchecked Sendable {
     queue.removeAll(keepingCapacity: false)
     queuedBytes = 0
     lock.unlock()
+  }
+
+  /** After clear, waits for the last in-flight phone write and its failure callback. */
+  func waitForDrain() async {
+    let task = lock.withLock { drainTask }
+    await task?.value
   }
 
   func isCurrentClose(metadata candidate: Data) -> Bool {
@@ -74,9 +81,11 @@ final class HostedRelayFramePump: @unchecked Sendable {
     queue.append(payload)
     queuedBytes += payload.count
     startDrain = !draining
-    if startDrain { draining = true }
+    if startDrain {
+      draining = true
+      drainTask = Task { [weak self] in await self?.drain() }
+    }
     lock.unlock()
-    if startDrain { Task { [weak self] in await self?.drain() } }
   }
 
   private func drain() async {

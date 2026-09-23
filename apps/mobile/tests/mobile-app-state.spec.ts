@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { disconnectRemoteWhenBackgrounded } from '../mobile-app-state'
 
 describe('mobile app state', () => {
-  it('preserves the remote client during an iOS inactive interruption', () => {
+  it.each(['inactive', 'active'] as const)('leaves the remote client inert on %s', (state) => {
     const disconnect = vi.fn()
 
-    disconnectRemoteWhenBackgrounded('inactive', disconnect)
+    disconnectRemoteWhenBackgrounded(state, disconnect)
 
     expect(disconnect).not.toHaveBeenCalled()
   })
@@ -16,5 +16,6 @@ describe('mobile app state', () => {
     disconnectRemoteWhenBackgrounded('background', disconnect)
 
     expect(disconnect).toHaveBeenCalledOnce()
+    expect(disconnect).toHaveBeenCalledWith('background')
   })
 })

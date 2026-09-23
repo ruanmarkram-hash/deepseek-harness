@@ -22,6 +22,9 @@ final class HostedRelaySession: Fd199RelayBridge.SessionOwner, @unchecked Sendab
   private var bridge: Fd199RelayBridge?
   private var receiveTask: Task<Void, Never>?
   private var stopped = false
+  private var stopCompleted = false
+  private var stopWaiters: [CheckedContinuation<Void, Never>] = []
+  var isEnded: Bool { lock.withLock { stopped } }
   private lazy var framePump = HostedRelayFramePump(
     sendToPhone: { [socket] payload in try await socket.sendCiphertext(payload) },
     failed: { [weak self] in Task { await self?.stop() } }
@@ -151,13 +154,36 @@ final class HostedRelaySession: Fd199RelayBridge.SessionOwner, @unchecked Sendab
     }
   }
 
-  /** Stops receiver, relay socket, and child forwarding. It is idempotent. */
+  /** Stops forwarding and waits for the receiver, socket, and outbound writer. Concurrent callers join cleanup. */
   func stop() async {
     epochSynchronization.stop()
-    guard let (task, bridge) = detachForStop() else { return }
+    guard let (task, bridge) = detachForStop() else {
+      await waitForStop()
+      return
+    }
     task?.cancel()
     bridge?.detachOwner()
     await socket.stop()
+    await task?.value
+    await framePump.waitForDrain()
+    let waiters = lock.withLock {
+      stopCompleted = true
+      let waiters = stopWaiters
+      stopWaiters = []
+      return waiters
+    }
+    for waiter in waiters { waiter.resume() }
+  }
+
+  private func waitForStop() async {
+    await withCheckedContinuation { continuation in
+      let complete = lock.withLock {
+        if stopCompleted { return true }
+        stopWaiters.append(continuation)
+        return false
+      }
+      if complete { continuation.resume() }
+    }
   }
 
   // MARK: - Child egress
@@ -185,7 +211,8 @@ final class HostedRelaySession: Fd199RelayBridge.SessionOwner, @unchecked Sendab
         let plaintext = try await socket.receiveCiphertext()
         try acceptPhonePlaintext(plaintext)
       } catch {
-        await stop()
+        // Cleanup joins this receive task, so EOF must request it from a separate task.
+        Task { [weak self] in await self?.stop() }
         return
       }
     }

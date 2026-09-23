@@ -118,6 +118,15 @@ export type MobileRemoteState =
   | { readonly kind: 'disconnected' }
   | { readonly kind: 'error'; readonly message: string }
 
+/** Fixed local teardown reason; it never changes authentication or disconnect behavior. */
+export type MobileRemoteDisconnectReason = 'background' | 'unmount' | 'manual'
+
+/** Non-sensitive cancellation facts captured before the live attempt is cleared. */
+export interface MobileRemoteDisconnectNotice {
+  readonly reason: MobileRemoteDisconnectReason
+  readonly stage: ConnectionStage | undefined
+}
+
 /** Callbacks for owner-client state. Event payloads remain Host-owned JSON. */
 export interface MobileRemoteClientOptions {
   readonly cursorStore?: RemoteEventCursorStore
@@ -130,6 +139,8 @@ export interface MobileRemoteClientOptions {
   readonly onBaselineSnapshot?: (value: RemoteWireJson) => Promise<void> | void
   readonly onEvent: (event: RemoteWireEventEnvelope) => void
   readonly onState: (state: MobileRemoteState) => void
+  /** Presentation-only local teardown facts. Never persist them as connection authority. */
+  readonly onDisconnect?: (notice: MobileRemoteDisconnectNotice) => void
   readonly randomBytes: (length: number) => Uint8Array
   readonly epochProvider: MobileRemoteEpochProvider
   readonly socketFactory: MobileRemoteSocketFactory
@@ -163,7 +174,8 @@ interface ConnectingAttempt {
   timeout: ReturnType<typeof setTimeout> | undefined
 }
 
-type ConnectionStage = 'owner-presence' | 'identity' | 'relay-open' | 'hello-send' | 'host-handshake' | 'host-bootstrap'
+/** Closed, value-free stages of a foreground mobile connection attempt. */
+export type ConnectionStage = 'owner-presence' | 'identity' | 'relay-open' | 'hello-send' | 'host-handshake' | 'host-bootstrap'
 
 const CONNECTION_STAGE_HELP: Record<ConnectionStage, string> = {
   'owner-presence': 'Owner authentication did not complete.',
@@ -221,6 +233,7 @@ export class MobileRemoteClient {
   private readonly onSnapshot: (value: RemoteWireJson) => Promise<void> | void
   private readonly onBaselineSnapshot: ((value: RemoteWireJson) => Promise<void> | void) | undefined
   private readonly onState: (state: MobileRemoteState) => void
+  private readonly onDisconnect: ((notice: MobileRemoteDisconnectNotice) => void) | undefined
   private readonly randomBytes: (length: number) => Uint8Array
   private config: MobileRemoteConnectionConfig | undefined
   private activeEpoch: number | undefined
@@ -245,6 +258,7 @@ export class MobileRemoteClient {
     this.onSnapshot = options.onSnapshot
     this.onBaselineSnapshot = options.onBaselineSnapshot
     this.onState = options.onState
+    this.onDisconnect = options.onDisconnect
     this.randomBytes = options.randomBytes
     this.epochProvider = options.epochProvider
     this.socketFactory = options.socketFactory
@@ -416,8 +430,12 @@ export class MobileRemoteClient {
     }
   }
 
-  /** Clear live relay state. Durable pairing credentials remain owned by the identity/pairing provider. */
-  disconnect(): void {
+  /**
+   * Clear live relay state without modifying durable pairing credentials.
+   * @param reason - Fixed presentation-only cause; all causes perform the same complete teardown.
+   */
+  disconnect(reason: MobileRemoteDisconnectReason = 'manual'): void {
+    const notice = { reason, stage: this.connecting?.stage }
     this.config = undefined
     this.expectedEpoch = undefined
     this.activeEpoch = undefined
@@ -428,6 +446,7 @@ export class MobileRemoteClient {
     this.identityProvider.clearUserPresence()
     this.disconnectPending(new Error('Remote connection closed'))
     this.publish({ kind: 'disconnected' })
+    try { this.onDisconnect?.(notice) } catch { console.warn('Mobile disconnect observer failed') }
   }
 
   /** Invoke one public Host API method through the encrypted remote gateway. */
@@ -739,6 +758,6 @@ export class MobileRemoteClient {
 
   private publish(state: MobileRemoteState): void {
     this.state = state
-    this.onState(state)
+    try { this.onState(state) } catch { console.warn('Mobile state observer failed') }
   }
 }
