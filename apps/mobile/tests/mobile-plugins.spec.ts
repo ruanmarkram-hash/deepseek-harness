@@ -38,7 +38,7 @@ describe('mobile plugin controls', () => {
     expect(request).toHaveBeenCalledTimes(1)
     finishToggle?.({ ok: true, value: { plugin: { ...optional, enabled: false } } })
     expect(await refresh).toEqual([{ ...optional, enabled: false }])
-    expect(request.mock.calls.map(call => call[0])).toEqual(['plugins.setEnabled', 'plugins.list'])
+    expect(request.mock.calls.map((call: unknown[]) => call[0])).toEqual(['plugins.setEnabled', 'plugins.list'])
   })
 
   it('re-reads Host state after a toggle fails', async () => {

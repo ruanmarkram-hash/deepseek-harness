@@ -134,9 +134,9 @@ describe('ui-plugin-manager browser plugin', () => {
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     const entry = b.slots.entries('main')[0]!
-    const face = (entry.inject as unknown as () => PluginManagerFace)()
-    face.ensure()
-    await vi.waitFor(() => { expect(face.hooks.pluginManager.getSnapshot()).toMatchObject({ hosted: true, status: 'ready' }) })
+    const face = entry.inject?.() as Partial<PluginManagerFace>
+    face.ensure?.()
+    await vi.waitFor(() => { expect(face.hooks?.pluginManager.getSnapshot()).toMatchObject({ hosted: true, status: 'ready' }) })
     expect(b.hostList).toHaveBeenCalledTimes(1)
     b.ctx.emit('connection/reset')
     await vi.waitFor(() => { expect(b.hostList).toHaveBeenCalledTimes(2) })

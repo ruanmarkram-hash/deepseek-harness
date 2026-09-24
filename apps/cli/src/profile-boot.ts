@@ -76,7 +76,8 @@ export function loadApprovedHostedPlugins(rootConfig = hostedRootConfig()): Appr
   }
   const plugins: ApprovedHostedPlugin[] = []
   const ids = new Set<string>()
-  for (const value of parsed.plugins) {
+  const approvedRows: unknown[] = parsed.plugins
+  for (const value of approvedRows) {
     if (typeof value !== 'object' || value === null || Array.isArray(value)
       || Object.keys(value).length !== 4 || !('id' in value) || typeof value.id !== 'string'
       || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(value.id) || ids.has(value.id)

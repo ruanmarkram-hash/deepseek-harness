@@ -81,6 +81,41 @@ async getLinked(url: string): Promise<string[]>
 
 Source: [`packages/boot/hmr/src/index.ts`](../../packages/boot/hmr/src/index.ts)
 
+<a id="ctxhostedpluginstate--hostedpluginstate"></a>
+
+### `ctx.hostedPluginState` — `HostedPluginState`
+
+Persistent desired state for reviewed bundled Host rows.
+
+```ts cordis-catalog
+/** Connect plugin edits to the shared settings composition after both owners exist.
+ * @param compose - map enablement patches through the signed settings composition.
+ */
+setComposer(compose: (overrides: PatchOptions[]) => PatchOptions[]): void
+
+/** Data-only overrides over the native-attested snapshot.
+ * @param disabled - desired disabled IDs, defaulting to persisted Host state.
+ * @returns patches for every selectable signed plugin row.
+ */
+overrides(disabled: ReadonlySet<string> = this.disabled): PatchOptions[]
+
+/** Read signed rows, including fixed required rows and current enablement.
+ * @param ctx - running Host context with Loader entries.
+ * @returns fixed and selectable plugin rows with live enablement.
+ */
+list(ctx: Context): PluginList
+
+/**
+ * Apply one exact optional row and persist only after Loader reconciliation succeeds.
+ * @param ctx - running signed Host context.
+ * @param request - signed row ID and desired enablement.
+ * @returns the row after its live change and atomic commit.
+ */
+async setEnabled(ctx: Context, request: PluginEnablementRequest): Promise<PluginEnablementResult>
+```
+
+Source: [`packages/host/hosted-plugin-controls/src/index.ts`](../../packages/host/hosted-plugin-controls/src/index.ts)
+
 <a id="ctxpluginmanager--pluginmanager"></a>
 
 ### `ctx.pluginManager` — `PluginManager`

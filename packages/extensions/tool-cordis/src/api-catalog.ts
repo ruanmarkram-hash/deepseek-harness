@@ -1240,6 +1240,46 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'hostedPluginState',
+    summary: 'Persistent desired state for reviewed bundled Host rows.',
+    description: 'Persistent desired state for reviewed bundled Host rows.',
+    methods: [
+      {
+        signature: 'readonly documentPath: string',
+        description: 'Owner-only persisted Host plugin selection.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly compositionLockPath: string',
+        description: 'Shared lock for plugin and settings reconciliation.',
+        parameters: [],
+      },
+      {
+        signature: 'setComposer(compose: (overrides: PatchOptions[]) => PatchOptions[]): void',
+        description: 'Connect plugin edits to the shared settings composition after both owners exist.',
+        parameters: [{ name: 'compose', description: 'map enablement patches through the signed settings composition.' }],
+      },
+      {
+        signature: 'overrides(disabled: ReadonlySet<string> = this.disabled): PatchOptions[]',
+        description: 'Data-only overrides over the native-attested snapshot.',
+        parameters: [{ name: 'disabled', description: 'desired disabled IDs, defaulting to persisted Host state.' }],
+        returns: 'patches for every selectable signed plugin row.',
+      },
+      {
+        signature: 'list(ctx: Context): PluginList',
+        description: 'Read signed rows, including fixed required rows and current enablement.',
+        parameters: [{ name: 'ctx', description: 'running Host context with Loader entries.' }],
+        returns: 'fixed and selectable plugin rows with live enablement.',
+      },
+      {
+        signature: 'async setEnabled(ctx: Context, request: PluginEnablementRequest): Promise<PluginEnablementResult>',
+        description: 'Apply one exact optional row and persist only after Loader reconciliation succeeds.',
+        parameters: [{ name: 'ctx', description: 'running signed Host context.' }, { name: 'request', description: 'signed row ID and desired enablement.' }],
+        returns: 'the row after its live change and atomic commit.',
+      },
+    ],
+  },
+  {
     key: 'inspector',
     summary: 'Shared Host/Client service façade over the realm\'s source publisher.',
     description: 'Shared Host/Client service façade over the realm\'s source publisher.',
@@ -4568,7 +4608,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ApiProxy',
-    declaration: 'export interface ApiProxy {\n    sessions: SessionsApi;\n    subagents: SubagentsApi;\n    host: HostApi;\n    workspace: WorkspaceApi;\n    skills: SkillsApi;\n    agentPresets: AgentPresetsApi;\n    events: EventsApi;\n    goals: GoalsApi;\n    settings: SettingsApi;\n    credentials: CredentialsApi;\n    llm: LlmApi;\n    downloads: DownloadsApi;\n    respond(message: ClientResponse): Promise<RpcReceipt>;\n}',
+    declaration: 'export interface ApiProxy {\n    sessions: SessionsApi;\n    subagents: SubagentsApi;\n    host: HostApi;\n    workspace: WorkspaceApi;\n    skills: SkillsApi;\n    plugins: PluginsApi;\n    agentPresets: AgentPresetsApi;\n    events: EventsApi;\n    goals: GoalsApi;\n    settings: SettingsApi;\n    credentials: CredentialsApi;\n    llm: LlmApi;\n    downloads: DownloadsApi;\n    respond(message: ClientResponse): Promise<RpcReceipt>;\n}',
   },
   {
     name: 'ApiSessionAgentError',
@@ -5903,6 +5943,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PluginChange {\n    readonly reason: \'plugin\' | \'bundle\' | \'install\' | \'remove\';\n}',
   },
   {
+    name: 'PluginEnablementRequest',
+    declaration: 'export interface PluginEnablementRequest {\n    readonly id: string;\n    readonly enabled: boolean;\n}',
+  },
+  {
+    name: 'PluginEnablementResult',
+    declaration: 'export interface PluginEnablementResult {\n    readonly plugin: PluginView;\n}',
+  },
+  {
     name: 'PluginEntryId',
     declaration: 'export type PluginEntryId = Branded<\'PluginEntryId\'>;',
   },
@@ -5943,12 +5991,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PluginInventoryEntry {\n    readonly entryId: PluginEntryId;\n    readonly moduleName: string;\n    readonly meta?: PluginLocalizedMeta;\n    readonly enabled: boolean;\n    readonly fiberPhase: PluginFiberPhase;\n}',
   },
   {
+    name: 'PluginList',
+    declaration: 'export interface PluginList {\n    readonly plugins: PluginView[];\n}',
+  },
+  {
     name: 'PluginLocalizedMeta',
     declaration: 'export interface PluginLocalizedMeta {\n    readonly title?: LocalizedText;\n    readonly description?: LocalizedText;\n    readonly icon?: string;\n    readonly error?: string;\n}',
   },
   {
     name: 'PluginRegistries',
     declaration: 'export interface PluginRegistries {\n    readonly registry: Registry;\n    readonly fallbackRegistries: readonly string[];\n    readonly resolved: string | null;\n}',
+  },
+  {
+    name: 'PluginsApi',
+    declaration: 'export interface PluginsApi {\n    list(request: RpcRequest<{}>): Promise<RpcResponse<{\n        plugins: PluginView[];\n    }>>;\n    setEnabled(request: RpcRequest<{\n        id: string;\n        enabled: boolean;\n    }>): Promise<RpcResponse<{\n        plugin: PluginView;\n    }>>;\n}',
   },
   {
     name: 'PluginSpecInspection',
@@ -6388,7 +6444,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RpcMethodMap',
-    declaration: 'export interface RpcMethodMap {\n    \'session.list\': SessionsApi[\'list\'];\n    \'session.search\': SessionsApi[\'search\'];\n    \'session.create\': SessionsApi[\'create\'];\n    \'session.history\': SessionsApi[\'history\'];\n    \'session.models\': SessionsApi[\'models\'];\n    \'session.selectModel\': SessionsApi[\'selectModel\'];\n    \'session.rename\': SessionsApi[\'rename\'];\n    \'session.fork\': SessionsApi[\'fork\'];\n    \'session.prompt\': SessionsApi[\'prompt\'];\n    \'session.attachment\': SessionsApi[\'attachment\'];\n    \'session.updateQueue\': SessionsApi[\'updateQueue\'];\n    \'session.cancel\': SessionsApi[\'cancel\'];\n    \'subagent.list\': SubagentsApi[\'list\'];\n    \'subagent.history\': SubagentsApi[\'history\'];\n    \'subagent.prompt\': SubagentsApi[\'prompt\'];\n    \'subagent.interrupt\': SubagentsApi[\'interrupt\'];\n    \'host.describe\': HostApi[\'describe\'];\n    \'host.pickDirectory\': HostApi[\'pickDirectory\'];\n    \'host.listDirectory\': HostApi[\'listDirectory\'];\n    \'host.createDirectory\': HostApi[\'createDirectory\'];\n    \'host.openPath\': HostApi[\'openPath\'];\n    \'workspace.list\': WorkspaceApi[\'list\'];\n    \'workspace.create\': WorkspaceApi[\'create\'];\n    \'workspace.rename\': WorkspaceApi[\'rename\'];\n    \'workspace.delete\': WorkspaceApi[\'delete\'];\n    \'workspace.insertBefore\': WorkspaceApi[\'insertBefore\'];\n    \'workspace.insertSessionBefore\': WorkspaceApi[\'insertSessionBefore\'];\n    \'workspace.archiveSession\': WorkspaceApi[\'archiveSession\'];\n    \'skill.list\': SkillsApi[\'list\'];\n    \'agentPreset.list\': AgentPresetsApi[\'list\'] /* …truncated — full shape in source */',
+    declaration: 'export interface RpcMethodMap {\n    \'session.list\': SessionsApi[\'list\'];\n    \'session.search\': SessionsApi[\'search\'];\n    \'session.create\': SessionsApi[\'create\'];\n    \'session.history\': SessionsApi[\'history\'];\n    \'session.models\': SessionsApi[\'models\'];\n    \'session.selectModel\': SessionsApi[\'selectModel\'];\n    \'session.rename\': SessionsApi[\'rename\'];\n    \'session.fork\': SessionsApi[\'fork\'];\n    \'session.prompt\': SessionsApi[\'prompt\'];\n    \'session.attachment\': SessionsApi[\'attachment\'];\n    \'session.updateQueue\': SessionsApi[\'updateQueue\'];\n    \'session.cancel\': SessionsApi[\'cancel\'];\n    \'subagent.list\': SubagentsApi[\'list\'];\n    \'subagent.history\': SubagentsApi[\'history\'];\n    \'subagent.prompt\': SubagentsApi[\'prompt\'];\n    \'subagent.interrupt\': SubagentsApi[\'interrupt\'];\n    \'host.describe\': HostApi[\'describe\'];\n    \'host.pickDirectory\': HostApi[\'pickDirectory\'];\n    \'host.listDirectory\': HostApi[\'listDirectory\'];\n    \'host.createDirectory\': HostApi[\'createDirectory\'];\n    \'host.openPath\': HostApi[\'openPath\'];\n    \'workspace.list\': WorkspaceApi[\'list\'];\n    \'workspace.create\': WorkspaceApi[\'create\'];\n    \'workspace.rename\': WorkspaceApi[\'rename\'];\n    \'workspace.delete\': WorkspaceApi[\'delete\'];\n    \'workspace.insertBefore\': WorkspaceApi[\'insertBefore\'];\n    \'workspace.insertSessionBefore\': WorkspaceApi[\'insertSessionBefore\'];\n    \'workspace.archiveSession\': WorkspaceApi[\'archiveSession\'];\n    \'skill.list\': SkillsApi[\'list\'];\n    \'plugins.list\': PluginsApi[\'list\'];\n    \'pl /* …truncated — full shape in source */',
   },
   {
     name: 'RpcReceipt',

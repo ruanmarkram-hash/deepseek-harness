@@ -270,7 +270,7 @@ describe('PluginManagerController', () => {
     await vi.waitFor(() => { expect(hosted.setEnabled).toHaveBeenCalledWith({ id: 'computer-use', enabled: false }) })
     await vi.waitFor(() => { expect(state().busy).toEqual([]) })
     expect(hosted.list).toHaveBeenCalledTimes(2)
-    hosted.setEnabled.mockResolvedValueOnce(refused('host/blocked', 'Host refused change') as never)
+    hosted.setEnabled.mockResolvedValueOnce(refused('host/blocked', 'Host refused change'))
     face.setEnabled('computer-use', true)
     await vi.waitFor(() => { expect(state().notice).toMatchObject({ kind: 'failed', reason: 'Host refused change' }) })
     await vi.waitFor(() => { expect(hosted.list).toHaveBeenCalledTimes(3) })

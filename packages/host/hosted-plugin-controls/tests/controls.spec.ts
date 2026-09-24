@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Context } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -40,7 +40,8 @@ function fixture(): {
     { options: { id: 'progress-narration' }, disabled: false },
     { options: { id: 'remote-gateway' }, disabled: false },
   ]
-  const context = { root: {}, loader: { entries: () => entries } } as unknown as Context
+  const context = new Context()
+  Object.defineProperty(context, 'loader', { value: { entries: () => entries } })
   return { home, patches, context, entries }
 }
 

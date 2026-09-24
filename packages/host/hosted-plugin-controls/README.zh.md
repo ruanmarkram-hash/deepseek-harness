@@ -43,7 +43,7 @@ Host 只在仅所有者可读写的 `hosted-plugins.json` 中保存版本和已�
 <details>
 <summary>实现细节——点击展开</summary>
 
-启动器向 `HostedPluginState` 提供固定的补丁列表；该状态对象用预期的已签名模块名称检查每个可选 ID。状态变化只在固定 bundle 和设置补丁之后添加 `{ id, disabled: true }` 补丁。`HostedPluginControls` 发布受限的 Typert Remote；其目录读取 Loader 状态，不从可写的 Harness home 加载包。不发布 invariant 配套项，因为目录直接投影自 Loader 和已保存的 ID 集合。
+启动器向 `HostedPluginState` 提供固定的补丁列表；该状态对象用预期的已签名模块名称检查每个可选 ID。状态变化只在固定 bundle 和设置补丁之后添加 `{ id, disabled: true }` 补丁。`HostedPluginControls` 发布受限的 Typert Remote；其目录读取 Loader 状态，不从可写的 Harness home 加载包。不发布运行时 invariant 配套项：目录直接投影自 Loader 和已保存的 ID 集合。
 
 | 文件 | 职责 |
 |---|---|

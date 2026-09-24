@@ -43,7 +43,7 @@ The Host stores only a version and disabled row IDs in its owner-only `hosted-pl
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The launcher supplies its sealed patch list to `HostedPluginState`, which checks each optional ID against the expected signed module name. State changes add only `{ id, disabled: true }` patches after the fixed bundle and settings patches. `HostedPluginControls` publishes a narrow Typert Remote; its catalog reads Loader state rather than loading packages from the writable Harness home. There is no invariant companion because the catalog is projected directly from the Loader and the saved ID set.
+The launcher supplies its sealed patch list to `HostedPluginState`, which checks each optional ID against the expected signed module name. State changes add only `{ id, disabled: true }` patches after the fixed bundle and settings patches. `HostedPluginControls` publishes a narrow Typert Remote; its catalog reads Loader state rather than loading packages from the writable Harness home. No runtime invariant companion is published: the catalog is projected directly from the Loader and the saved ID set.
 
 | File | Role |
 |---|---|

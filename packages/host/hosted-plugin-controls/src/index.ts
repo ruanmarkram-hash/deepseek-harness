@@ -49,19 +49,31 @@ function parseDocument(bytes: string): Document {
     throw new Error('Hosted plugin controls contain an unapproved plugin selection')
   }
   if (record.version === 1) return { version: 1, disabled: record.disabled, enabledApproved: [] }
-  if (!Array.isArray(record.enabledApproved)
-    || record.enabledApproved.some(row => typeof row !== 'object' || row === null || Array.isArray(row)
-      || Object.keys(row).length !== 2 || typeof row.id !== 'string' || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(row.id)
-      || typeof row.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(row.sha256))
-    || new Set(record.enabledApproved.map(row => row.id)).size !== record.enabledApproved.length) {
+  if (!Array.isArray(record.enabledApproved)) {
     throw new Error('Hosted plugin controls contain an unapproved plugin selection')
   }
-  return { version: VERSION, disabled: record.disabled, enabledApproved: record.enabledApproved }
+  const approvedRows: unknown[] = record.enabledApproved
+  const enabledApproved: { id: string; sha256: string }[] = []
+  for (const row of approvedRows) {
+    if (typeof row !== 'object' || row === null || Array.isArray(row)
+      || Object.keys(row).length !== 2 || !('id' in row) || typeof row.id !== 'string'
+      || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(row.id)
+      || !('sha256' in row) || typeof row.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(row.sha256)) {
+      throw new Error('Hosted plugin controls contain an unapproved plugin selection')
+    }
+    enabledApproved.push({ id: row.id, sha256: row.sha256 })
+  }
+  if (new Set(enabledApproved.map(row => row.id)).size !== enabledApproved.length) {
+    throw new Error('Hosted plugin controls contain an unapproved plugin selection')
+  }
+  return { version: VERSION, disabled: record.disabled, enabledApproved }
 }
 
 /** Persistent desired state for reviewed bundled Host rows. */
 export class HostedPluginState {
+  /** Owner-only persisted Host plugin selection. */
   readonly documentPath: string
+  /** Shared lock for plugin and settings reconciliation. */
   readonly compositionLockPath: string
   private diskBytes: string | undefined
   private disabled: Set<string>
@@ -116,17 +128,25 @@ export class HostedPluginState {
     }
   }
 
-  /** Connect plugin edits to the shared settings composition after both owners exist. */
+  /** Connect plugin edits to the shared settings composition after both owners exist.
+   * @param compose - map enablement patches through the signed settings composition.
+   */
   setComposer(compose: (overrides: PatchOptions[]) => PatchOptions[]): void {
     this.compose = compose
   }
 
-  /** Data-only overrides over the native-attested snapshot. */
+  /** Data-only overrides over the native-attested snapshot.
+   * @param disabled - desired disabled IDs, defaulting to persisted Host state.
+   * @returns patches for every selectable signed plugin row.
+   */
   overrides(disabled: ReadonlySet<string> = this.disabled): PatchOptions[] {
     return [...new Set([...disabled, ...this.approved.keys()])].sort().map(id => ({ id, disabled: disabled.has(id) }))
   }
 
-  /** Read signed rows, including fixed required rows and current enablement. */
+  /** Read signed rows, including fixed required rows and current enablement.
+   * @param ctx - running Host context with Loader entries.
+   * @returns fixed and selectable plugin rows with live enablement.
+   */
   list(ctx: Context): PluginList {
     this.assertDiskUnchanged()
     const live = new Map([...ctx.loader.entries()].map(entry => [entry.options.id, !entry.disabled]))
@@ -243,7 +263,9 @@ export class HostedPluginControls extends TypertRemoteService {
   /** @param ctx - signed Host context carrying plugin state. */
   constructor(ctx: Context) { super(ctx, 'hostedPluginControls', { namespace: 'hostPlugins' }) }
 
-  /** @returns current bundled plugin rows, including locked rows. */
+  /** List the signed Host's plugin rows, including locked entries.
+   * @returns current bundled and approved plugin rows.
+   */
   @Remote
   list(): Promise<PluginList> { return Promise.resolve(this.ctx.hostedPluginState.list(this.ctx)) }
 

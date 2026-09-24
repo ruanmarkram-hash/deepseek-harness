@@ -43,7 +43,7 @@ it('lists and switches sealed Host rows through the generated Typert namespace',
   ctx.baseUrl = hostedBootConfiguration().bareModuleBaseUrl
   await ctx.plugin(Loader)
   const entries = rows.map(row => ({ options: row, disabled: row.disabled === true }))
-  vi.spyOn(ctx.loader, 'entries').mockImplementation(function* () { yield* entries as unknown as Entry[] })
+  vi.spyOn(ctx.loader, 'entries').mockImplementation(function* () { yield* entries as Entry[] })
   reconcile.mockImplementation(async (_root: Context, candidate: PatchOptions[]) => {
     const row = entries.find(entry => entry.options.id === 'progress-narration')
     if (row === undefined) throw new Error('progress narration row is absent')
