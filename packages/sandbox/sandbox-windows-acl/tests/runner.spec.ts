@@ -451,29 +451,44 @@ describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
     const otherTemp = join(scratchRoot, 'other-temp')
     mkdirSync(otherWorkspace)
     mkdirSync(otherTemp)
+    // Existing descendants can retain explicit allows ahead of the inherited
+    // parent-delete deny. Exercise both inheritance histories with the real
+    // restricted token, not the ordinary Host token's FullControl probe.
+    for (const root of [otherWorkspace, otherTemp]) mkdirSync(join(root, 'before-grant'))
     const otherWorkspaceSid = workspaceWriteSid(otherWorkspace)
     const otherTempSid = tempWriteSid(otherTemp)
     const otherWorkspaceGrant = AclWriteGrant.create(otherWorkspaceSid)
     const otherTempGrant = AclWriteGrant.create(otherTempSid)
     otherWorkspaceGrant.add(otherWorkspace, true)
     otherTempGrant.add(otherTemp)
+    for (const root of [otherWorkspace, otherTemp]) mkdirSync(join(root, 'after-grant'))
     // Session A's own roots, granted the same way, run through the runner.
     const ownWorkspace = join(scratchRoot, 'own-workspace')
     const ownTemp = join(scratchRoot, 'own-temp')
     mkdirSync(ownWorkspace)
     mkdirSync(ownTemp)
+    for (const root of [ownWorkspace, ownTemp]) mkdirSync(join(root, 'before-grant'))
     const ownWorkspaceSid = workspaceWriteSid(ownWorkspace)
     const ownTempSid = tempWriteSid(ownTemp)
     const ownWorkspaceGrant = AclWriteGrant.create(ownWorkspaceSid)
     const ownTempGrant = AclWriteGrant.create(ownTempSid)
     ownWorkspaceGrant.add(ownWorkspace, true)
     ownTempGrant.add(ownTemp)
+    for (const root of [ownWorkspace, ownTemp]) mkdirSync(join(root, 'after-grant'))
     try {
       const victims = {
         ownWork: join(ownWorkspace, 'victim.txt'),
         otherWork: join(otherWorkspace, 'victim.txt'),
         ownTemp: join(ownTemp, 'victim.txt'),
         otherTemp: join(otherTemp, 'victim.txt'),
+        ownWorkBefore: join(ownWorkspace, 'before-grant', 'victim.txt'),
+        otherWorkBefore: join(otherWorkspace, 'before-grant', 'victim.txt'),
+        ownTempBefore: join(ownTemp, 'before-grant', 'victim.txt'),
+        otherTempBefore: join(otherTemp, 'before-grant', 'victim.txt'),
+        ownWorkAfter: join(ownWorkspace, 'after-grant', 'victim.txt'),
+        otherWorkAfter: join(otherWorkspace, 'after-grant', 'victim.txt'),
+        ownTempAfter: join(ownTemp, 'after-grant', 'victim.txt'),
+        otherTempAfter: join(otherTemp, 'after-grant', 'victim.txt'),
       }
       for (const path of Object.values(victims)) writeFileSync(path, 'delete me')
       const probe = [
@@ -486,7 +501,10 @@ describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
         '--write-sid', ownWorkspaceSid, '--temp-write-sid', ownTempSid,
         '--', 'pwsh', '/NoLogo', '/NonInteractive', '/NoProfile', '/Command', probe,
       ])
-      expect(result.status, `stderr: ${result.stderr}`).toBe(0)
+      const diagnostic = `status=${String(result.status)} signal=${String(result.signal)} error=${String(result.error)}\n${result.stdout}\n${result.stderr}`
+      expect(result.error, diagnostic).toBeUndefined()
+      expect(result.signal, diagnostic).toBeNull()
+      expect(result.status, diagnostic).toBe(0)
       expect(result.stdout).toContain('ownWork: DELETED')
       expect(result.stdout).toContain('ownTemp: DELETED')
       expect(result.stdout).toContain('otherWork: DENIED')
@@ -495,6 +513,11 @@ describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
       expect(existsSync(victims.otherTemp)).toBe(true)
       expect(existsSync(victims.ownWork)).toBe(false)
       expect(existsSync(victims.ownTemp)).toBe(false)
+      for (const [name, path] of Object.entries(victims)) {
+        const permitted = name.startsWith('own')
+        expect(result.stdout, diagnostic).toContain(`${name}: ${permitted ? 'DELETED' : 'DENIED'}`)
+        expect(existsSync(path), `${name}\n${diagnostic}`).toBe(!permitted)
+      }
     } finally {
       ownWorkspaceGrant.dispose()
       ownTempGrant.dispose()
