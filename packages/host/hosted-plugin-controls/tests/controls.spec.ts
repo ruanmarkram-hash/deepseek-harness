@@ -10,15 +10,28 @@ const reconcile = vi.hoisted(() => vi.fn(async (
 ): Promise<string[]> => []))
 const changedOpenedFile = vi.hoisted(() => ({ value: false }))
 const blockedDiskRead = vi.hoisted(() => ({ value: false }))
+const simulatedOwnerMode = vi.hoisted(() => ({ value: 0o600 }))
 vi.mock('node:fs', async (importOriginal) => {
   const fs = await importOriginal<typeof import('node:fs')>()
-  return { ...fs, lstatSync: (path: string) => {
+  return { ...fs, chmodSync: (path: string, mode: number) => {
+    if (process.platform === 'win32' && path.endsWith('hosted-plugins.json')) simulatedOwnerMode.value = mode
+    fs.chmodSync(path, mode)
+  }, lstatSync: (path: string) => {
     if (blockedDiskRead.value && path.endsWith('hosted-plugins.json')) {
       throw Object.assign(new Error('blocked'), { code: 'EACCES' })
     }
-    return fs.lstatSync(path)
+    const stat = fs.lstatSync(path)
+    // Windows does not expose owner-only ACLs as POSIX mode bits. Model the
+    // signed macOS Host file here; the production owner-only check is unchanged.
+    if (process.platform === 'win32' && path.endsWith('hosted-plugins.json') && stat.isFile()) {
+      stat.mode = (stat.mode & ~0o777) | simulatedOwnerMode.value
+    }
+    return stat
   }, fstatSync: (fd: number) => {
     const stat = fs.fstatSync(fd)
+    if (process.platform === 'win32' && stat.isFile()) {
+      stat.mode = (stat.mode & ~0o777) | simulatedOwnerMode.value
+    }
     return changedOpenedFile.value ? Object.assign(stat, { ino: stat.ino + 1 }) : stat
   } }
 })
@@ -33,6 +46,7 @@ const homes: string[] = []
 afterEach(() => {
   changedOpenedFile.value = false
   blockedDiskRead.value = false
+  simulatedOwnerMode.value = 0o600
   reconcile.mockReset()
   reconcile.mockResolvedValue([])
   for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true })

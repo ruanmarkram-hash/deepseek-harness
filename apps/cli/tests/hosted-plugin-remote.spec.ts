@@ -10,6 +10,22 @@ import { applyEntryPatches } from '@deepseek-ai/cordis-plugin-include'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 
 const reconcile = vi.hoisted(() => vi.fn())
+vi.mock('node:fs', async (importOriginal) => {
+  const fs = await importOriginal<typeof import('node:fs')>()
+  return { ...fs, lstatSync: (path: string) => {
+    const stat = fs.lstatSync(path)
+    // This is a Mac Host integration test. Windows mode bits cannot express
+    // its owner-only ACL, so model that metadata without changing production.
+    if (process.platform === 'win32' && path.endsWith('hosted-plugins.json') && stat.isFile()) {
+      stat.mode = (stat.mode & ~0o777) | 0o600
+    }
+    return stat
+  }, fstatSync: (fd: number) => {
+    const stat = fs.fstatSync(fd)
+    if (process.platform === 'win32' && stat.isFile()) stat.mode = (stat.mode & ~0o777) | 0o600
+    return stat
+  } }
+})
 vi.mock('@deepseek-ai/dsh-app-boot', async importOriginal => ({
   ...await importOriginal<typeof import('@deepseek-ai/dsh-app-boot')>(),
   reconcileProfilePatches: reconcile,
