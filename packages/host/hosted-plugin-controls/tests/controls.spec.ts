@@ -32,7 +32,12 @@ vi.mock('node:fs', async (importOriginal) => {
     if (process.platform === 'win32' && stat.isFile()) {
       stat.mode = (stat.mode & ~0o777) | simulatedOwnerMode.value
     }
-    return changedOpenedFile.value ? Object.assign(stat, { ino: stat.ino + 1 }) : stat
+    if (!changedOpenedFile.value) return stat
+    // Windows inode numbers are not a portable identity signal. A file-type
+    // change exercises the same fail-closed read path on that CI runner.
+    return process.platform === 'win32'
+      ? Object.assign(stat, { isFile: () => false })
+      : Object.assign(stat, { ino: stat.ino + 1 })
   } }
 })
 vi.mock('@deepseek-ai/dsh-app-boot', async importOriginal => ({

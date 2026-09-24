@@ -107,6 +107,13 @@ const windowsRunnerCoverageExclusions = process.platform === 'win32'
     ]
   : []
 
+// The signed Host runs only on macOS. Its owner-only mode and inode checks
+// are covered at 100% on Unix; Windows cannot exercise those POSIX branches
+// even when its Host-control fixtures model them.
+const windowsMacHostCoverageExclusions = process.platform === 'win32'
+  ? ['packages/host/hosted-plugin-controls/src/index.ts']
+  : []
+
 // pwsh-local's run/start/lifecycle suites self-skip without a real pwsh
 // (executor.spec.ts hasPwsh), leaving this file
 // far below per-file 100% on pwsh-less hosts; the exemption keeps those hosts
@@ -354,6 +361,7 @@ export default defineConfig({
         ...windowsUnsupportedCoveragePackages.map(path => `${path}/src/**/*.ts`),
         ...windowsOnlyCoverageExclusions,
         ...windowsRunnerCoverageExclusions,
+        ...windowsMacHostCoverageExclusions,
         ...pwshCoverageExclusions,
       ],
       // 100% or it doesn't merge (docs/testing.md: excessive tests are welcome).
