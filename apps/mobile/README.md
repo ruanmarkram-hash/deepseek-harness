@@ -24,6 +24,8 @@ After owner authentication, public identity lookup projects public fields from t
 
 ## Mobile scope
 
+EAS post-install and local export preparation compile the protocol projects, bundle their shared value helpers into the declared runtime entry, then bundle the wire and relay packages before Metro runs. Compiler output under `lib/types` alone does not satisfy those packages' runtime imports. The preparation does not change pairing identities or wire formats.
+
 After Host acceptance, the app receives a Host snapshot and ordered events, lists and creates sessions, selects a Host session, and sends text prompts through the fixed remote-wire API. It acknowledges an event cursor only after the native store durably applies it. A fresh app projection resets its cursor to request replay instead of presenting absent local content as current.
 
 Camera scanning is limited to the short-lived Host pairing code. The app never persists rendered conversation content and does not provide macOS computer-use capture or control. **Forget invitation** disconnects and removes the phone's local route state; it does not revoke the Host route. Revocation remains an explicit action on the signed Host and requires fresh pairing before that phone can connect again.

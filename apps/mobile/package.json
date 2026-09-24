@@ -6,8 +6,9 @@
   "main": "expo/AppEntry",
   "scripts": {
     "check": "pnpm --filter @deepseek-ai/dsh-remote-wire exec tsc -b && pnpm --filter @deepseek-ai/dsh-remote-relay-protocol exec tsc -b && tsc --noEmit",
-    "eas-build-post-install": "pnpm --filter @deepseek-ai/dsh-remote-wire exec tsc -b && pnpm --filter @deepseek-ai/dsh-remote-relay-protocol exec tsc -b && pnpm --filter @deepseek-ai/dsh-remote-wire run bundle && pnpm --filter @deepseek-ai/dsh-remote-relay-protocol run bundle",
-    "preexport": "pnpm --filter @deepseek-ai/dsh-remote-wire exec tsc -b && pnpm --filter @deepseek-ai/dsh-remote-relay-protocol exec tsc -b",
+    "eas-build-post-install": "pnpm --filter @deepseek-ai/dsh-remote-wire exec tsc -b && pnpm --filter @deepseek-ai/dsh-remote-relay-protocol exec tsc -b && pnpm run bundle:values && pnpm --filter @deepseek-ai/dsh-remote-wire run bundle && pnpm --filter @deepseek-ai/dsh-remote-relay-protocol run bundle",
+    "bundle:values": "pnpm --filter @deepseek-ai/dsh-util-values exec tsdown lib/types/index.js --no-config --out-dir lib --format esm --platform neutral --target es2022 --no-dts --no-clean",
+    "preexport": "pnpm run eas-build-post-install",
     "start": "expo start",
     "ios": "expo run:ios",
     "android": "expo run:android",
