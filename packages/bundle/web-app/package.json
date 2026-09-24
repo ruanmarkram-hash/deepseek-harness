@@ -172,10 +172,7 @@
     "commander": "^15.0.0",
     "open": "^11.0.0",
     "@deepseek-ai/dsh-api-account-controller": "workspace:*",
-    "@deepseek-ai/dsh-client-ui-settings-account": "workspace:*",
-    "@deepseek-ai/dsh-remote-devices": "workspace:*",
-    "@deepseek-ai/dsh-remote-gateway": "workspace:*",
-    "@deepseek-ai/dsh-remote-host-v3": "workspace:*"
+    "@deepseek-ai/dsh-client-ui-settings-account": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",

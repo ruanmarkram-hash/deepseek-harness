@@ -583,7 +583,8 @@ describe('headless stream-json snapshots', () => {
     `)
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
-  it('keeps provider comments alive and sends DeepSeek defaults through the one-shot app', async () => {
+  // llm-deepseek/tests/runtime.spec.ts verifies comment-driven idle deadlines with fake timers.
+  it('consumes provider comments and sends DeepSeek defaults through the one-shot app', async () => {
     const server = await deepseekDefaultsServer()
     try {
       const result = await runLoaderSmoke({

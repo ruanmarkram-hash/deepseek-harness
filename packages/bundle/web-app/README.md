@@ -77,6 +77,8 @@ The bundle is one patch layer of five files plus one runtime glue plugin: `cordi
 
 ### Patch semantics
 
+The ordinary Web bundle does not mount mobile relay services. The [signed Host launcher](../../../native/remote-host-app/README.md) adds the mobile API, device directory, gateway, and FD199 handoff to its sealed Web composition.
+
 A patch replaces the targeted row's whole `config`, so each web row restates every key it owns: the persona prefix and suffix templates, the `DSH_TOOLS_MODE` PTC mode opt-in, and the `session-query-sqlite` values on the base rows, then `insert` adds the web host rows, transport, and browser roster. The per-agent tool rows the base mounts process-wide are disabled here and the preset roster takes over; the reasoning for each host-plane versus preset-plane decision is inline in the patch.
 
 ### Readiness

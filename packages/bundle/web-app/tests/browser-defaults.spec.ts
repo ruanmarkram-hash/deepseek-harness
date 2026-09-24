@@ -7,6 +7,14 @@ import { loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
 import * as Browser from '@deepseek-ai/dsh-client-ui-sidebar-browser'
 import { expect, it, onTestFinished } from 'vitest'
 
+it('leaves native mobile services out of the ordinary Web bundle', () => {
+  const rows = loadOverlayPatches('web-host-ownership', fileURLToPath(new URL('../cordis.patch.yml', import.meta.url)))
+    .flatMap(patch => patch.insert ?? [])
+  expect(rows.some(row => row.id === 'session-controller')).toBe(true)
+  expect(rows.some(row => row.id === 'workspace-controller')).toBe(true)
+  expect(rows.filter(row => typeof row.name === 'string' && row.name.startsWith('@deepseek-ai/dsh-remote-'))).toEqual([])
+})
+
 it.each([
   { profile: 'web', override: undefined, disabled: true },
   { profile: 'custom-web', override: undefined, disabled: true },

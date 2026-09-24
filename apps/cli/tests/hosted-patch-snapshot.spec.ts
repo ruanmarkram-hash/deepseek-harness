@@ -4,8 +4,10 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { applyEntryPatches } from '@deepseek-ai/cordis-plugin-include'
 import {
   hostedBootConfiguration, hostedProfilePatches, hostedRuntimeResolution, loadHostedPatchSnapshot, parseHostedPatchSnapshotBytes,
+  sealedHostedProfile,
 } from '../src/profile-boot.ts'
 
 const originalHash = process.env.DSH_HOSTED_PATCH_SHA256
@@ -32,6 +34,35 @@ async function snapshot(body: string): Promise<{ home: string; patch: string }> 
 }
 
 describe('signed hosted patch snapshot', () => {
+  it('adds one complete native mobile stack only after the sealed Web profile layers', () => {
+    const profile = sealedHostedProfile()
+    const fail = (message: string): never => { throw new Error(message) }
+    const ordinary = applyEntryPatches([], profile.layers.flatMap(layer => layer.patches), fail)
+    expect(ordinary.filter(row => typeof row.name === 'string' && row.name.startsWith('@deepseek-ai/dsh-remote-'))).toEqual([])
+    const hosted = applyEntryPatches([], hostedProfilePatches(profile, []), fail)
+    const names = [
+      '@deepseek-ai/dsh-computer-use',
+      '@deepseek-ai/dsh-progress-narration',
+      '@deepseek-ai/dsh-experimental-computer-use-policy',
+      '@deepseek-ai/dsh-remote-devices',
+      '@deepseek-ai/dsh-remote-api',
+      '@deepseek-ai/dsh-remote-gateway',
+      '@deepseek-ai/dsh-remote-host-v3',
+      '@deepseek-ai/dsh-remote-host-fd199',
+      '@deepseek-ai/dsh-remote-host-fd199/web-owner',
+    ]
+    for (const name of names) {
+      const rows = hosted.filter(row => row.name === name)
+      expect(rows).toHaveLength(1)
+      expect(rows[0]?.disabled).not.toBe(true)
+    }
+    expect(hosted.find(row => row.id === 'remote-host-v3')?.config).toEqual({ enabled: true, hostAppPath: '' })
+    expect(hosted.find(row => row.id === 'remote-gateway')?.config).toEqual({
+      maxIdempotencyEntriesPerDevice: 2048, maxEventEntriesPerDevice: 4096,
+    })
+    expect(hosted.some(row => row.name === '@deepseek-ai/dsh-experimental-computer-use-cua-driver-native')).toBe(false)
+  })
+
   it.each(['- null\n', '- false\n', '- []\n'])('rejects non-object overlay entries: %s', (body) => {
     expect(() => parseHostedPatchSnapshotBytes(body, createHash('sha256').update(body).digest('hex')))
       .toThrow('permits only disabled built-in rows')

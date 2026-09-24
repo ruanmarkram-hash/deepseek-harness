@@ -47,11 +47,6 @@
     - id: subagent-model-selection-settings
       name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
 
-    # Durable public metadata for devices that a future Host-owned remote
-    # transport may authenticate. This row creates no listener or authority.
-    - id: remote-devices
-      name: '@deepseek-ai/dsh-remote-devices'
-
     - id: message-feedback
       name: '@deepseek-ai/dsh-message-feedback'
       config:
@@ -132,24 +127,6 @@
     # Workspace commands and reconnect-safe projection over Typert Remote.
     - id: workspace-controller
       name: '@deepseek-ai/dsh-api-workspace-controller'
-
-    # Host-owned remote dispatch is deliberately transportless. A future
-    # mutually-authenticated relay provider attaches its decrypted connection
-    # to this service; this row adds no HTTP route or outbound connection.
-    - id: remote-gateway
-      name: '@deepseek-ai/dsh-remote-gateway'
-      config:
-        maxIdempotencyEntriesPerDevice: 2048
-        maxEventEntriesPerDevice: 4096
-
-    # Durable V3 Host route records and the generic gateway adapter. This stays
-    # disabled until a signed Host app starts a verified runtime child with its
-    # inherited private relay pipe; it creates no listener or XPC client.
-    - id: remote-host-v3
-      name: '@deepseek-ai/dsh-remote-host-v3'
-      config:
-        enabled: false
-        hostAppPath: ''
 
     - id: cordis-host-runner
       name: '@deepseek-ai/dsh-cordis-host-runner'
