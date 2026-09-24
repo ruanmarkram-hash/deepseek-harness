@@ -28,4 +28,4 @@ Host 接受连接后，应用接收 Host snapshot 和有序事件，列出并创
 
 相机扫描仅用于短期 Host 配对代码。应用从不持久化已渲染对话内容，也不提供 macOS computer-use 捕获或控制。**Forget invitation** 会断开连接并删除手机本地路由状态，但不会撤销 Host 路由。撤销仍是已签名 Host 上的显式操作，该手机必须重新配对才能再次连接。
 
-应用在自身图标和产品内图标表面使用来自 [`website/public/favicon.svg`](../../website/public/favicon.svg) 的 DeepSeek 官方标记，同时保留独立的 DSH 产品名称。生产发布和不同网络设备矩阵见[远程配对发布指南](../../docs/cookbook/releasing-dsh-remote-pairing.zh.md)。
+应用使用来自 [`website/public/favicon.svg`](../../website/public/favicon.svg) 的 DeepSeek 官方标记，同时保留独立的 DSH 产品名称。不透明的 1024 像素应用图标通过[共用图标生成器](../desktop/README.zh.md)在鲸鱼下方添加小号 `MOBILE` 标签；产品内标记保持不变。生产发布和不同网络设备矩阵见[远程配对发布指南](../../docs/cookbook/releasing-dsh-remote-pairing.zh.md)。

@@ -12,7 +12,7 @@ app 内含已签名原生 child、`DSHRemoteHostKeychain.xpc`、固定版本的 
 
 闭包组装器从每个声明生产依赖的已安装包解析该依赖，在普通嵌套 `node_modules` 中保留并存的第三方版本，并让第一方包保持签名根目录中的单一身份。缺少必需依赖、第一方身份冲突、依赖边改变或可选依赖意外获得提供者都会使组装失败。离线执行 `npm pack --dry-run --ignore-scripts --json --workspaces=false` 会在不运行包生命周期脚本的情况下选择发布文件，保留声明的运行时资源及隐式入口文件，并由 npm 排除未发布文件。依赖图负责依赖放置，每个复制文件必须是包目录内的常规文件，且封存目录树不含符号链接。
 
-`CFBundleIconFile` 指定共用的 `DeepSeek.icns` 资源，该文件在签名前复制到 Host 中。[Desktop 图标打包参考](../../apps/desktop/README.zh.md) 负责说明图稿生成和验证流程。
+`CFBundleIconFile` 指定 `DeepSeek.icns` 资源，该文件在签名前从 `DeepSeek-HOST.icns` 变体复制到 Host 中。启动器尺寸的鲸鱼下方带有小号 `HOST` 标签。[Desktop 图标打包参考](../../apps/desktop/README.zh.md) 负责说明图稿生成和验证流程。
 
 ## 配对与激活
 

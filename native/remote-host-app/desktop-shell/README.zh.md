@@ -30,13 +30,13 @@
 node --test native/remote-host-app/desktop-shell/tests/*.test.mjs
 ```
 
-私有[打包配置](electron-builder.cjs)使用已安装的 `apps/desktop` Electron、electron-builder 工具和共用的 DeepSeek 图标。它仅包含此外壳的运行时文件，不包含 Node 或 DSH 运行时。发布负责人在安装依赖后运行以下打包命令，并在安装前验证构建的应用能连接签名 Host：
+私有[打包配置](electron-builder.cjs)使用已安装的 `apps/desktop` Electron、electron-builder 工具和 `DeepSeek-DESKTOP.icns` 图标变体。它仅包含此外壳的运行时文件，不包含 Node 或 DSH 运行时。发布负责人在安装依赖后运行以下打包命令，并在安装前验证构建的应用能连接签名 Host：
 
 ```sh
 apps/desktop/node_modules/.bin/electron-builder --config native/remote-host-app/desktop-shell/electron-builder.cjs --mac --arm64 --dir
 ```
 
-打包会在本目录下写入 `release/mac-arm64/DSH Desktop.app`。此命令禁用签名；签名、公证、安装和实际启动仍由发布负责人分别执行。打包和实际认证需要发布验证；单元测试不能证明这些结果。
+配置的输出位置是本目录下的 `release.noindex/mac-arm64/DSH Desktop.app`。`.noindex` 目录使构建产物不被 Spotlight 索引；发布负责人还必须从 LaunchServices 注销未安装的 app 包，并在测试后以可恢复方式归档。此命令禁用签名；签名、公证、安装和实际启动仍由发布负责人分别执行。打包和实际认证需要发布验证；单元测试不能证明这些结果。
 
 <a id="limitations"></a>
 

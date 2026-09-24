@@ -30,13 +30,13 @@ From the repository root, the focused tests exercise the actual plain-Node reade
 node --test native/remote-host-app/desktop-shell/tests/*.test.mjs
 ```
 
-The private [builder configuration](electron-builder.cjs) uses the installed `apps/desktop` Electron and electron-builder tools and the shared DeepSeek icon. It includes only this shell's runtime files, not a Node or DSH runtime. The release owner runs this packaging command after dependency installation, then verifies the built app against the signed Host before installation:
+The private [builder configuration](electron-builder.cjs) uses the installed `apps/desktop` Electron and electron-builder tools and the `DeepSeek-DESKTOP.icns` icon variant. It includes only this shell's runtime files, not a Node or DSH runtime. The release owner runs this packaging command after dependency installation, then verifies the built app against the signed Host before installation:
 
 ```sh
 apps/desktop/node_modules/.bin/electron-builder --config native/remote-host-app/desktop-shell/electron-builder.cjs --mac --arm64 --dir
 ```
 
-Packaging writes `release/mac-arm64/DSH Desktop.app` below this directory. This command disables signing; signing, notarization, installation, and live launch remain separate release-owner operations. Packaging and live authentication require release verification; the unit tests do not establish those results.
+The configured output is `release.noindex/mac-arm64/DSH Desktop.app` below this directory. The `.noindex` directory excludes build artifacts from Spotlight; release owners must also unregister noninstalled app bundles from LaunchServices and archive them recoverably after testing. This command disables signing; signing, notarization, installation, and live launch remain separate release-owner operations. Packaging and live authentication require release verification; the unit tests do not establish those results.
 
 <a id="limitations"></a>
 
