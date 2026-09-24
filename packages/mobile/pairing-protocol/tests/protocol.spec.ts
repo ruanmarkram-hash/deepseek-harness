@@ -10,6 +10,11 @@ import {
   MAX_BOOTSTRAP_TTL_MS,
   MAX_RELAY_SEQUENCE,
   PairingProtocolError,
+  isPairingProtocolError,
+  encodePairingEphemeralPublicKey,
+  encodePairingEncryptedProof,
+  decodePairingEncryptedProof,
+  MAX_MOBILE_SESSION_SHORT_TEXT_BYTES,
   parseDesktopPairingAccept,
   parseMobilePairingInit,
   parseMobileToDesktopSessionMessage,
@@ -99,6 +104,28 @@ function code(fn: () => unknown): string {
 }
 
 describe('parsePairingBootstrap', () => {
+  it('rejects invalid bootstrap scalars, routes, ids, and key encodings', () => {
+    expect(isPairingProtocolError(new PairingProtocolError('PAIRING_KEY_INVALID'))).toBe(true)
+    expect(isPairingProtocolError(new Error('safe'))).toBe(false)
+    for (const fields of [
+      { relayUrl: 1 }, { relayUrl: 'x'.repeat(513) }, { relayUrl: 'not a URL' },
+      { relayUrl: 'wss://user:password@relay.example.test/' }, { relayUrl: 'wss://relay.example.test/#fragment' },
+      { pairingId: 'short' }, { desktopDeviceId: 'short' }, { relayToken: 'short' }, { expiresAt: 1.5 },
+    ]) expect(code(() => parsePairingBootstrap(qr({ ...bootstrap(), ...fields }), NOW))).toBe('PAIRING_QR_MALFORMED')
+    expect(code(() => encodePairingEphemeralPublicKey(new Uint8Array(31)))).toBe('PAIRING_KEY_INVALID')
+    for (const value of [new Uint8Array(1), new Uint8Array(100_000)]) expect(code(() => encodePairingEncryptedProof(value))).toBe('PAIRING_PROOF_INVALID')
+    expect(code(() => decodePairingEncryptedProof('A'.repeat(100_000)))).toBe('PAIRING_PROOF_INVALID')
+    for (const raw of ['null', '{', '[]']) expect(code(() => parsePairingBootstrap('dsh-pairing:v2:' + Buffer.from(raw).toString('base64url'), NOW))).toBe('PAIRING_QR_MALFORMED')
+    expect(code(() => parsePairingBootstrap(qr(bootstrap()), NaN))).toBe('PAIRING_QR_MALFORMED')
+    const proof = 'A'.repeat(40)
+    const init = { type: 'mobile-init', version: 2, pairingId: PAIRING_ID, mobileDeviceId: MOBILE_ID, mobileEphemeralPublicKey: desktopPublicKey, capabilities: ['session:read'], encryptedProof: proof }
+    const accepted = { type: 'desktop-accept', version: 2, pairingId: PAIRING_ID, mobileDeviceId: MOBILE_ID, encryptedProof: proof }
+    for (const value of [null, { ...init, extra: true }, { ...init, type: 'wrong' }]) expect(code(() => parseMobilePairingInit(value))).toBe('PAIRING_CONTROL_MALFORMED')
+    expect(code(() => parseMobilePairingInit({ ...init, version: 1 }))).toBe('PAIRING_CONTROL_UNSUPPORTED_VERSION')
+    for (const value of [null, { ...accepted, extra: true }, { ...accepted, type: 'wrong' }]) expect(code(() => parseDesktopPairingAccept(value))).toBe('PAIRING_CONTROL_MALFORMED')
+    expect(code(() => parseDesktopPairingAccept({ ...accepted, version: 1 }))).toBe('PAIRING_CONTROL_UNSUPPORTED_VERSION')
+    for (const last of [-1, NaN, MAX_RELAY_SEQUENCE + 1]) expect(code(() => acceptRelayFrame(last, parseRelayFrame(frame())))).toBe('RELAY_FRAME_SEQUENCE_INVALID')
+  })
   it('accepts a current desktop-issued QR bootstrap with an exact X25519 key', () => {
     const parsed = parsePairingBootstrap(qr(bootstrap()), NOW)
 
@@ -390,6 +417,37 @@ describe('closed encrypted mobile session envelope', () => {
   const SESSION = 'session_handle_123'
   const REQUEST = 'request_identifier_123'
   const TURN = 'turn_identifier_123'
+
+  it('admits every closed desktop event and rejects malformed members and plaintext sizes', () => {
+    const common = { sessionHandle: SESSION, requestId: REQUEST }
+    const snapshot = { type: 'session-snapshot', ...common, title: '', messages: [], activeTurn: null }
+    const messages = [snapshot, { type: 'text-delta', ...common, turnId: TURN, delta: '' },
+      ...['idle', 'running', 'completed', 'cancelled', 'failed'].map(state => ({ type: 'turn-state', ...common, turnId: TURN, state })),
+      ...['SESSION_UNAVAILABLE', 'TURN_REJECTED', 'TURN_FAILED', 'PAIRING_REVOKED'].map(value => ({ type: 'error', ...common, code: value, message: 'safe' })),
+    ]
+    for (const message of messages) {
+      expect(parseDesktopToMobileSessionMessage(message)).toEqual(message)
+      expect(code(() => parseDesktopToMobileSessionMessage({ ...message, extra: true }))).toBe('MOBILE_SESSION_MESSAGE_MALFORMED')
+    }
+    for (const value of [null, [], {}, { type: 'future' },
+      { ...snapshot, messages: null }, { ...snapshot, messages: [null] }, { ...snapshot, messages: [{ id: REQUEST, role: 'system', text: '' }] },
+      { ...snapshot, activeTurn: {} }, { ...snapshot, activeTurn: { id: TURN, state: 'future' } },
+      { ...snapshot, sessionHandle: 'short' }, { ...snapshot, title: 3 }, { ...snapshot, title: 'x'.repeat(MAX_MOBILE_SESSION_SHORT_TEXT_BYTES * 2 + 1) },
+      { ...snapshot, title: '界'.repeat(MAX_MOBILE_SESSION_SHORT_TEXT_BYTES) },
+      { type: 'error', ...common, code: 'future', message: '' },
+    ]) expect(code(() => parseDesktopToMobileSessionMessage(value))).toBe('MOBILE_SESSION_MESSAGE_MALFORMED')
+    for (const value of [null, {}, { type: 'future' }, { type: 'cancel-turn', ...common, turnId: TURN, extra: true }]) {
+      expect(code(() => parseMobileToDesktopSessionMessage(value))).toBe('MOBILE_SESSION_MESSAGE_MALFORMED')
+    }
+    const { desktop, mobile } = sessionCiphers()
+    const encrypted = mobile.seal({ type: 'cancel-turn', ...common, turnId: TURN })
+    expect(code(() => desktop.open({ ...encrypted, pairingId: 'different_pairing_123' }))).toBe('MOBILE_SESSION_FRAME_INVALID')
+    expect(code(() => desktop.open({ ...encrypted, ciphertext: 'AA' }))).toBe('MOBILE_SESSION_FRAME_INVALID')
+    expect(code(() => desktop.open({ ...encrypted, sequence: 2 }))).toBe('RELAY_FRAME_SEQUENCE_GAP')
+    desktop.erase()
+    desktop.erase()
+    expect(code(() => desktop.open(encrypted))).toBe('MOBILE_SESSION_KEY_ERASED')
+  })
 
   it('round-trips only text session frames with a nonce-prefixed canonical ciphertext', () => {
     const { desktop, mobile } = sessionCiphers()

@@ -372,7 +372,6 @@ function decryptCipher(key: Uint8Array, nonce: string, aad: Uint8Array, cipherte
   const nonceBytes = base64Bytes(nonce, 'REMOTE_RELAY_CIPHERTEXT_INVALID', REMOTE_RELAY_NONCE_BYTES)
   const cipherBytes = base64Bytes(ciphertext, 'REMOTE_RELAY_CIPHERTEXT_INVALID', MAX_REMOTE_RELAY_CIPHERTEXT_BYTES)
   try {
-    if (nonceBytes.byteLength !== REMOTE_RELAY_NONCE_BYTES) return failure('REMOTE_RELAY_CIPHERTEXT_INVALID')
     return chacha20poly1305(key, nonceBytes, aad).decrypt(cipherBytes)
   } catch {
     return failure('REMOTE_RELAY_DECRYPT_FAILED')

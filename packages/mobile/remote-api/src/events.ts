@@ -170,18 +170,15 @@ export class MobileEvents {
 
 /** Build32 consumes flattened text fields; retain the current event and add that presentation. */
 function mobileEvent(event: SessionEvent): SessionEvent {
-  const message = event.type === 'user/message' ? event.data : event.type === 'assistant/message' ? event.data.message : undefined
-  if (message === undefined) return event
+  if (event.type !== 'user/message' && event.type !== 'assistant/message') return event
+  const message = event.type === 'user/message' ? event.data : event.data.message
   const text = message.content.flatMap(part => part.type === 'text' ? [part.text] : []).join('')
   if (event.type === 'user/message') {
     const data = { ...event.data, text, role: 'user' as const }
     return { ...event, data }
   }
-  if (event.type === 'assistant/message') {
-    const data = { ...event.data, text, role: 'assistant' }
-    return { ...event, data }
-  }
-  return event
+  const data = { ...event.data, text, role: 'assistant' }
+  return { ...event, data }
 }
 
 function record(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value) }

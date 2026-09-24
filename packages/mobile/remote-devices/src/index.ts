@@ -120,21 +120,14 @@ function isCanonicalInstant(value: string): boolean {
 }
 
 function error(code: RemoteDeviceDirectoryErrorCode): never {
-  switch (code) {
-    case 'REMOTE_DEVICE_INVALID':
-      throw new RemoteDeviceDirectoryError(code, 'remote device enrollment is invalid')
-    case 'REMOTE_DEVICE_ALREADY_ENROLLED':
-      throw new RemoteDeviceDirectoryError(code, 'remote device id is already enrolled')
-    case 'REMOTE_DEVICE_KEY_ALREADY_ENROLLED':
-      throw new RemoteDeviceDirectoryError(code, 'remote device public key is already enrolled')
-    case 'REMOTE_DEVICE_NOT_FOUND':
-      throw new RemoteDeviceDirectoryError(code, 'remote device is not enrolled')
-    case 'REMOTE_DEVICE_TIME_INVALID':
-      throw new RemoteDeviceDirectoryError(code, 'remote device timestamp is invalid')
-    default:
-      code satisfies never
-      throw new Error('unreachable remote device directory error code')
+  const messages: Record<RemoteDeviceDirectoryErrorCode, string> = {
+    REMOTE_DEVICE_INVALID: 'remote device enrollment is invalid',
+    REMOTE_DEVICE_ALREADY_ENROLLED: 'remote device id is already enrolled',
+    REMOTE_DEVICE_KEY_ALREADY_ENROLLED: 'remote device public key is already enrolled',
+    REMOTE_DEVICE_NOT_FOUND: 'remote device is not enrolled',
+    REMOTE_DEVICE_TIME_INVALID: 'remote device timestamp is invalid',
   }
+  throw new RemoteDeviceDirectoryError(code, messages[code])
 }
 
 /** Convert durable storage data into an immutable caller-owned public record. */

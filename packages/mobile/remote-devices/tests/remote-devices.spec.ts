@@ -11,6 +11,9 @@ import {
 } from '@deepseek-ai/dsh-remote-devices'
 import { MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import * as RemoteDevicesPlugin from '../src/index.ts'
+import { memoryTable } from './fixture.ts'
+import Invariants, { InvariantError } from '@deepseek-ai/dsh-invariants'
+import * as DeviceInvariants from '../src/invariant.ts'
 
 const FIRST = '2026-08-20T10:00:00.000Z'
 const SECOND = '2026-08-20T10:01:00.000Z'
@@ -53,6 +56,62 @@ afterEach(async () => {
 })
 
 describe('RemoteDeviceDirectory', () => {
+  it('rejects corrupt persisted timestamps and accepts only canonical chronological records', () => {
+    const schema = REMOTE_DEVICE_DOMAIN.tables.devices.valueSchema
+    const record = { ...enrollment(), incarnation: 'host_incarnation_0001', enrolledAt: FIRST }
+    for (const fields of [
+      { enrolledAt: 'invalid' }, { enrolledAt: '2026-08-20' }, { lastSeenAt: 'invalid' },
+      { lastSeenAt: '2026-08-20T09:00:00.000Z' },
+    ]) expect(schema.safeParse({ ...record, ...fields }).success).toBe(false)
+    expect(schema.safeParse({ ...record, lastSeenAt: SECOND }).success).toBe(true)
+    expect(RemoteDevicesPlugin.isRemoteDeviceDirectoryError(new RemoteDeviceDirectoryError('REMOTE_DEVICE_INVALID', 'safe'))).toBe(true)
+    expect(RemoteDevicesPlugin.isRemoteDeviceDirectoryError(new Error('safe'))).toBe(false)
+  })
+
+  it('sorts multiple records and rejects repeated agreement keys for enrollment and seed', async () => {
+    let timestamp = FIRST
+    const { directory, dispose } = await harness(() => timestamp)
+    disposers.push(dispose)
+    const first = await directory.enroll(enrollment())
+    const secondInput = enrollment({ id: 'remote_device_0002', signingPublicKey: Buffer.alloc(32, 4).toString('base64url'), agreementPublicKey: OTHER_AGREEMENT })
+    await expect(directory.enroll({ ...secondInput, agreementPublicKey: AGREEMENT })).rejects.toMatchObject({ code: 'REMOTE_DEVICE_KEY_ALREADY_ENROLLED' })
+    const second = await directory.seed(secondInput, 'host_incarnation_0002')
+    timestamp = SECOND
+    const third = await directory.enroll(enrollment({ id: 'remote_device_0003', signingPublicKey: Buffer.alloc(32, 5).toString('base64url'), agreementPublicKey: Buffer.alloc(32, 6).toString('base64url') }))
+    expect(directory.list().map(record => record.id)).toEqual([first.id, second.id, third.id])
+    for (const fields of [{ signingPublicKey: KEY }, { agreementPublicKey: AGREEMENT }]) {
+      await expect(directory.seed({ ...secondInput, id: 'remote_device_0004', ...fields }, 'host_incarnation_0004')).rejects.toMatchObject({ code: 'REMOTE_DEVICE_KEY_ALREADY_ENROLLED' })
+    }
+    await expect(directory.markSeen(first.id, 'invalid')).rejects.toMatchObject({ code: 'REMOTE_DEVICE_TIME_INVALID' })
+    timestamp = 'invalid'
+    await expect(directory.seed({ ...secondInput, id: 'remote_device_0005' }, 'host_incarnation_0005')).rejects.toMatchObject({ code: 'REMOTE_DEVICE_TIME_INVALID' })
+  })
+
+  it('does not report a durable write as failed when an observer throws', async () => {
+    const { ctx, directory, dispose } = await harness()
+    disposers.push(dispose)
+    const warning = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    const remove = ctx.on('remote-devices/changed', () => { throw new Error('observer failed') })
+    try {
+      await expect(directory.enroll(enrollment())).resolves.toMatchObject({ id: ID })
+      expect(warning).toHaveBeenCalledOnce()
+    } finally { remove(); warning.mockRestore() }
+  })
+
+  it('checks event state against the independent durable directory', async () => {
+    const ctx = new Context()
+    const registry = await ctx.plugin(Invariants)
+    const directory = new RemoteDeviceDirectory(ctx, memoryTable())
+    ctx.provide('remoteDevices', directory)
+    const companion = await ctx.plugin(DeviceInvariants)
+    try {
+      const record = await directory.enroll(enrollment())
+      expect(() =>{  ctx.emit('remote-devices/changed', { type: 'seen', device: { ...record, label: 'wrong' } }) }).toThrow(InvariantError)
+      expect(() =>{  ctx.emit('remote-devices/changed', { type: 'revoked', deviceId: record.id }) }).toThrow(InvariantError)
+      await directory.revoke(record.id)
+      expect(() =>{  ctx.emit('remote-devices/changed', { type: 'enrolled', device: record }) }).toThrow(InvariantError)
+    } finally { await companion.dispose(); await registry.dispose() }
+  })
   it('mounts through the storage-domain route and releases the Host service on disposal', async () => {
     const ctx = new Context()
     await ctx.plugin(Storage)

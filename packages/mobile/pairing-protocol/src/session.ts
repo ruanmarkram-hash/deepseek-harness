@@ -40,11 +40,11 @@ import type {
   RelayFrame,
 } from './types.ts'
 import type { PairingKeyConfirmation, PairingRandomSource } from './crypto.ts'
+import { nextSessionSequence } from './sequence.ts'
 
 const TEXT = new TextEncoder()
 const UTF8 = new TextDecoder('utf-8', { fatal: true })
 const OPAQUE_ID = /^[A-Za-z0-9_-]{16,96}$/
-const BASE64URL = /^[A-Za-z0-9_-]+$/
 const DESKTOP_TO_MOBILE_LABEL = 'dsh-pairing/v2/session/desktop-to-mobile'
 const MOBILE_TO_DESKTOP_LABEL = 'dsh-pairing/v2/session/mobile-to-desktop'
 const MIN_CIPHERTEXT_BYTES = PAIRING_PROOF_NONCE_BYTES + PAIRING_PROOF_TAG_BYTES + 1
@@ -241,19 +241,12 @@ function encodeBase64Url(value: Uint8Array): string {
 }
 
 function decodeBase64Url(value: string): Uint8Array {
-  if (!BASE64URL.test(value) || value.length % 4 === 1) {
-    return failure('MOBILE_SESSION_FRAME_INVALID')
-  }
+  // Only called with the immutable ciphertext returned by parseRelayFrame.
   try {
     const binary = atob(
       value.replaceAll('-', '+').replaceAll('_', '/')
       + '='.repeat((4 - value.length % 4) % 4),
     )
-    const canonical = btoa(binary)
-      .replaceAll('+', '-')
-      .replaceAll('/', '_')
-      .replace(/=+$/, '')
-    if (canonical !== value) return failure('MOBILE_SESSION_FRAME_INVALID')
     return Uint8Array.from(binary, byte => byte.charCodeAt(0))
   } catch {
     return failure('MOBILE_SESSION_FRAME_INVALID')
@@ -395,10 +388,7 @@ export function createMobileSessionCipher(
     seal(message: unknown): RelayFrame {
       requireActive()
       const parsedMessage = localMessage(message)
-      if (outboundSequence >= 2_147_483_647) {
-        return failure('MOBILE_SESSION_FRAME_INVALID')
-      }
-      const sequence = outboundSequence + 1
+      const sequence = nextSessionSequence(outboundSequence)
       const frame: RelayFrame = {
         version: input.bootstrap.version,
         pairingId: input.bootstrap.pairingId,

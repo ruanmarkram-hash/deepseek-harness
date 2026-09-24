@@ -14,7 +14,7 @@ export const inject = ['invariants']
 
 /** Check that every post-durability event agrees with current directory state. */
 const install: InvariantInstaller = Object.assign((ctx: Context, fail: InvariantFailure) => {
-  ctx.on('remote-devices/changed', (change: RemoteDeviceChange) => {
+  const checkChange = (change: RemoteDeviceChange): true => {
     switch (change.type) {
       case 'enrolled':
       case 'seen': {
@@ -22,16 +22,17 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Invariant
         if (current === undefined || JSON.stringify(current) !== JSON.stringify(change.device)) {
           fail(`remote device '${change.device.id}' change disagrees with durable directory state`)
         }
-        return
+        return true
       }
       case 'revoked':
         if (ctx.remoteDevices.get(change.deviceId) !== undefined) {
           fail(`revoked remote device '${change.deviceId}' remains in the durable directory`)
         }
-        return
-      default:
-        change satisfies never
+        return true
     }
+  }
+  ctx.on('remote-devices/changed', (change: RemoteDeviceChange) => {
+    checkChange(change)
   })
 }, { inject: ['remoteDevices'] })
 

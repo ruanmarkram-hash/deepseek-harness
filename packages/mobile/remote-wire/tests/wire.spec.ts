@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   MAX_REMOTE_WIRE_PAYLOAD_BYTES,
+  MAX_REMOTE_WIRE_STRING_BYTES,
+  MAX_REMOTE_WIRE_JSON_ITEMS,
   RemoteWireError,
+  isRemoteWireError,
+  parseRemoteWireId,
   parseRemoteWireEnvelope,
   parseRemoteWireJson,
   serializeRemoteWireEnvelope,
@@ -9,6 +13,19 @@ import {
 
 const ID = 'remote_identifier_123'
 const IDEM = 'idempotency_key_123'
+
+it('checks final serialized bytes even when an unknown JS payload changes its JSON representation', () => {
+  let calls = 0
+  const payload: unknown[] = []
+  Object.defineProperty(payload, 'map', { value: () => ({
+    toJSON(): string {
+      calls += 1
+      return calls >= 3 ? 'x'.repeat(MAX_REMOTE_WIRE_PAYLOAD_BYTES + 1) : 'x'
+    },
+  }) })
+  expect(() => serializeRemoteWireEnvelope(request({ payload }))).toThrow('REMOTE_WIRE_PAYLOAD_TOO_LARGE')
+  expect(calls).toBe(3)
+})
 
 function request(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -34,6 +51,45 @@ function code(fn: () => unknown): string {
 }
 
 describe('trusted remote v3 envelopes', () => {
+  it('keeps error identity and rejects invalid scalars and non-JSON values', () => {
+    expect(isRemoteWireError(new RemoteWireError('REMOTE_WIRE_MALFORMED'))).toBe(true)
+    expect(isRemoteWireError(new Error('REMOTE_WIRE_MALFORMED'))).toBe(false)
+    for (const id of [undefined, 1, 'x'.repeat(MAX_REMOTE_WIRE_STRING_BYTES * 2 + 1), '界'.repeat(MAX_REMOTE_WIRE_STRING_BYTES)]) {
+      expect(code(() => parseRemoteWireId(id))).toBe('REMOTE_WIRE_ID_INVALID')
+    }
+    for (const value of [NaN, Infinity, undefined, () => {}, Symbol('invalid'), Array(MAX_REMOTE_WIRE_JSON_ITEMS + 1).fill(null), Object.fromEntries(Array.from({ length: MAX_REMOTE_WIRE_JSON_ITEMS + 1 }, (_, index) => [String(index), null]))]) {
+      expect(code(() => parseRemoteWireEnvelope(request({ payload: value })))).toBe('REMOTE_WIRE_PAYLOAD_INVALID')
+    }
+    expect(parseRemoteWireEnvelope(request({ payload: [null, true, false, 1, 'value'] }))).toMatchObject({ payload: [null, true, false, 1, 'value'] })
+    expect(code(() => parseRemoteWireEnvelope(request({ payload: Array(9).fill('x'.repeat(MAX_REMOTE_WIRE_STRING_BYTES)) })))).toBe('REMOTE_WIRE_PAYLOAD_TOO_LARGE')
+    for (const value of [null, [], { version: 3 }, { version: 3, type: 'future' }]) {
+      expect(code(() => parseRemoteWireEnvelope(value))).toBe(value && !Array.isArray(value) && 'type' in value ? 'REMOTE_WIRE_UNKNOWN_TYPE' : 'REMOTE_WIRE_MALFORMED')
+    }
+    for (const value of [undefined, 'x'.repeat(MAX_REMOTE_WIRE_PAYLOAD_BYTES * 2 + 1)]) {
+      expect(code(() => parseRemoteWireJson(value))).toBe('REMOTE_WIRE_PAYLOAD_INVALID')
+    }
+    expect(code(() => parseRemoteWireJson('{'))).toBe('REMOTE_WIRE_MALFORMED')
+    expect(code(() => parseRemoteWireJson('{}'))).toBe('REMOTE_WIRE_MALFORMED')
+    expect(code(() => parseRemoteWireEnvelope(request({ connectionEpoch: -1 })))).toBe('REMOTE_WIRE_EPOCH_INVALID')
+  })
+
+  it('rejects extra fields on every envelope and invalid response union members', () => {
+    const base = { version: 3, connectionEpoch: 7, requestId: ID }
+    const envelopes = [
+      { ...base, type: 'response', result: { ok: true, value: null } },
+      { ...base, type: 'event', cursor: 0, eventId: ID, event: 'session/event', payload: null },
+      { version: 3, type: 'stream-ack', connectionEpoch: 7, cursor: 0 },
+      { ...base, type: 'approval', idempotencyKey: IDEM, sessionId: ID, approvalId: ID, outcome: 'rejected' },
+      { ...base, type: 'client-response', idempotencyKey: IDEM, result: { ok: true, value: null } },
+      { ...base, type: 'device-control', idempotencyKey: IDEM, deviceId: ID, action: 'device.describe', payload: null },
+    ]
+    for (const envelope of envelopes) expect(code(() => parseRemoteWireEnvelope({ ...envelope, extra: true }))).toBe('REMOTE_WIRE_MALFORMED')
+    for (const result of [null, { ok: 'true' }, { ok: true }, { ok: false }, { ok: false, error: null }, { ok: false, error: {} }]) {
+      expect(code(() => parseRemoteWireEnvelope({ ...base, type: 'response', result }))).toBe('REMOTE_WIRE_RESPONSE_INVALID')
+    }
+    expect(parseRemoteWireEnvelope({ ...base, type: 'response', result: { ok: false, error: { code: 'failure', message: 'safe', details: {} } } })).toMatchObject({ result: { ok: false } })
+    expect(code(() => parseRemoteWireEnvelope({ ...base, type: 'device-control', idempotencyKey: IDEM, deviceId: ID, action: 'future', payload: {} }))).toBe('REMOTE_WIRE_UNKNOWN_DEVICE_CONTROL')
+  })
   it('round-trips every fixed envelope form', () => {
     const envelopes = [
       request(),
@@ -80,6 +136,7 @@ describe('trusted remote v3 envelopes', () => {
       } },
     }
     expect(code(() => parseRemoteWireEnvelope(oversizedResult))).toBe('REMOTE_WIRE_PAYLOAD_TOO_LARGE')
+    expect(code(() => serializeRemoteWireEnvelope(oversizedResult))).toBe('REMOTE_WIRE_PAYLOAD_TOO_LARGE')
   })
 
   it('requires exact host approval outcomes and monotonic-syntax cursor values', () => {

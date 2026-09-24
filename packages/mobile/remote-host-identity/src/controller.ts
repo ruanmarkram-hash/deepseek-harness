@@ -34,8 +34,10 @@ export class RemoteEnrollmentController implements RemoteEnrollmentControllerApi
   issueRoute(): Promise<RemoteEnrollmentRoute> {
     this.dropExpiredRoutes()
     if (this.pendingRoutes.size >= MAX_PENDING_ROUTES) {
-      const oldest = this.pendingRoutes.keys().next()
-      if (!oldest.done) this.pendingRoutes.delete(oldest.value)
+      for (const id of this.pendingRoutes.keys()) {
+        this.pendingRoutes.delete(id)
+        break
+      }
     }
     const issuedAt = this.now()
     const invitation = {
