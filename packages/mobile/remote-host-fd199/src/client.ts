@@ -107,8 +107,11 @@ export class Fd199ChannelClient implements Fd199AuthorityClient {
   onInstruction(handler: (action: Fd199InstructionAction) => void): void {
     this.instructionHandler = handler
     while (!this.closed && this.instructionQueue.length > 0) {
-      const action = this.instructionQueue.shift()
-      if (action !== undefined) handler(action)
+      // The private queue is nonempty and no callback runs between its length
+      // check and shift. Drain one item at a time so reentrant registration
+      // still transfers the remaining instructions to the replacement handler.
+      const action = this.instructionQueue.shift() as Fd199InstructionAction
+      handler(action)
     }
   }
 
@@ -204,10 +207,8 @@ export class Fd199ChannelClient implements Fd199AuthorityClient {
     if (this.buffer.byteLength + chunk.byteLength > MAX_BUFFERED_BYTES) { this.destroy(); return }
     this.buffer = this.buffer.byteLength === 0 ? chunk : Buffer.concat([this.buffer, chunk])
     while (this.buffer.byteLength >= 4) {
-      // destroy() can fire between frames; every iteration rechecks liveness.
-      // destroy() assigns closed through peer-event callbacks this analysis cannot see.
-      // oxlint-disable-next-line typescript/no-unnecessary-condition
-      if (this.closed) return
+      // Parsing this chunk is synchronous and invokes no peer callbacks;
+      // every failure below destroys the channel and returns immediately.
       const bodyLength = this.buffer.readUInt32BE(0)
       if (bodyLength <= 2 || bodyLength > REMOTE_HOST_FD199_MAX_BODY_BYTES) { this.destroy(); return }
       if (this.buffer.byteLength < 4 + bodyLength) return

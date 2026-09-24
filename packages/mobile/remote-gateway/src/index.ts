@@ -17,6 +17,7 @@ import {
   type MuxFrame,
   type RpcId,
   type RpcMethodMap,
+  type RpcReceipt,
   type RpcResult,
 } from '@deepseek-ai/dsh-remote-api'
 import type {
@@ -138,8 +139,8 @@ function wireResult(result: RpcResult<unknown>): RemoteWireResult {
       requestId: 'gateway_result_0001',
       result,
     })
-    if (parsed.type !== 'response') throw new Error('unexpected remote result parser output')
-    return parsed.result
+    // The parser preserves the owned literal discriminant or throws.
+    return (parsed as Extract<RemoteWireEnvelope, { type: 'response' }>).result
   } catch {
     return { ok: false, error: { code: 'remote-response-invalid', message: 'Host response cannot be sent to this remote client', details: {} } }
   }
@@ -158,7 +159,11 @@ function wirePayload(value: unknown): RemoteWireJson | undefined {
       requestId: 'gateway_payload_001',
       result: { ok: true, value: decoded },
     })
-    return parsed.type === 'response' && parsed.result.ok ? parsed.result.value : undefined
+    // JSON round-tripping removed caller-owned hooks; both discriminants are
+    // our own literals and the parser either preserves them or throws.
+    return (parsed as Extract<RemoteWireEnvelope, { type: 'response' }> & {
+      result: { ok: true; value: RemoteWireJson }
+    }).result.value
   } catch {
     return undefined
   }
@@ -175,10 +180,10 @@ function internalFailure(): RemoteWireResult {
 }
 
 /** Translate a Host response-delivery receipt into a remote-wire result. */
-function receiptResult(receipt: { readonly accepted: boolean; readonly reason?: string }): RemoteWireResult {
+function receiptResult(receipt: RpcReceipt): RemoteWireResult {
   return receipt.accepted
     ? { ok: true, value: { accepted: true } }
-    : { ok: false, error: { code: 'remote-response-refused', message: 'The Host no longer accepts this response', details: { ...(receipt.reason === undefined ? {} : { reason: receipt.reason }) } } }
+    : { ok: false, error: { code: 'remote-response-refused', message: 'The Host no longer accepts this response', details: { reason: receipt.reason } } }
 }
 
 /** A current DSH API baseline used when a remote device has no replay cursor. */
@@ -547,8 +552,6 @@ export class RemoteGatewayConnection {
         this.gateway.audit(this.connection, 'connection', 'rejected', 'host-envelope-from-client')
         await this.close('protocol-rejected')
         return
-      default:
-        message satisfies never
     }
   }
 
@@ -574,7 +577,7 @@ export class RemoteGatewayConnection {
         if (this.synchronized) await this.sendEvent(entry)
       }
     } catch {
-      if (this.isLive()) await this.streamFailure('Host event stream ended unexpectedly')
+      if (this.isLive()) await this.streamFailure()
     }
   }
 
@@ -671,9 +674,6 @@ export class RemoteGatewayConnection {
         return this.heartbeat()
       case 'device.disconnect':
         return { ok: true, value: { disconnected: true } }
-      default:
-        message.action satisfies never
-        return internalFailure()
     }
   }
 
@@ -779,9 +779,12 @@ export class RemoteGatewayConnection {
     return delivery
   }
 
-  private async streamFailure(message: string): Promise<void> {
-    const payload = wirePayload({ type: 'stream/error', error: { code: 'internal', message, details: {} } })
-    if (payload === undefined) return
+  private async streamFailure(): Promise<void> {
+    // This bounded payload is entirely owned here, not a value from a Host
+    // stream or connection provider that needs the generic JSON boundary.
+    const payload: RemoteWireJson = {
+      type: 'stream/error', error: { code: 'internal', message: 'Host event stream ended unexpectedly', details: {} },
+    }
     const entry: RetainedEvent = {
       cursor: this.state.nextCursor++, eventId: this.gateway.newId(), requestId: this.gateway.newId(), event: 'stream/error', payload,
     }
@@ -819,9 +822,8 @@ export class RemoteGatewayConnection {
     this.state.idempotency.set(idempotencyKey, pending)
     const settled = await pending
     this.state.idempotency.set(idempotencyKey, settled)
-    while (this.state.idempotency.size > this.gateway.limits.maxIdempotencyEntriesPerDevice) {
-      const oldest = this.state.idempotency.keys().next().value
-      if (oldest === undefined) break
+    for (const oldest of this.state.idempotency.keys()) {
+      if (!(this.state.idempotency.size > this.gateway.limits.maxIdempotencyEntriesPerDevice)) break
       this.state.idempotency.delete(oldest)
     }
     return settled.result

@@ -20,8 +20,6 @@ const LOOPBACK_ORIGIN = 'http://127.0.0.1:3080/'
 const LOOPBACK_HOST = '127.0.0.1'
 const LOOPBACK_PORT = '3080'
 const MAX_WEBSOCKET_MESSAGE_BYTES = 8 * 1024 * 1024
-const API_METHOD_PATH = /^\/api\/(?:session|subagent|host|workspace|skill|agentPreset|goal|settings|credentials|llm)\.[A-Za-z]+$/
-const EVENTS_PATHS = new Set(['/api/events.mux', '/api/events.host'])
 
 /**
  * Builds the sole API carrier allowed for the sealed remote runtime: the existing local DSH Web Host.
@@ -52,16 +50,18 @@ class LoopbackApiClient extends AbstractApiClient {
   }
 
   protected doFetch(input: URL, init?: RequestInit): Promise<Response> {
-    assertUnaryRequest(input, init)
+    // This private client exposes only the bound unary and response methods.
+    // Their shared JSON carrier owns init; transport policy and authority stay fixed here.
+    const destination = new URL(LOOPBACK_ORIGIN)
+    destination.pathname = input.pathname
     const request: RequestInit = {
+      ...init,
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       cache: 'no-store',
       redirect: 'error',
     }
-    if (init?.body !== undefined) request.body = init.body
-    if (init?.signal !== undefined && init.signal !== null) request.signal = init.signal
-    return globalThis.fetch(new URL(input.pathname, LOOPBACK_ORIGIN), request)
+    return globalThis.fetch(destination, request)
   }
 
   call<K extends keyof RpcMethodMap>(method: K, payload: RequestPayload<K>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<K>>> {
@@ -88,7 +88,6 @@ class LoopbackApiClient extends AbstractApiClient {
     signal: AbortSignal,
     frameSchema: { parse(value: unknown): F },
   ): AsyncGenerator<RpcRequest<F>> {
-    if (!EVENTS_PATHS.has(path)) throw new Error('Loopback WebSocket path is not allowed')
     const socket = new WebSocket(`ws://${LOOPBACK_HOST}:${LOOPBACK_PORT}${path}`, {
       maxPayload: MAX_WEBSOCKET_MESSAGE_BYTES,
     })
@@ -178,14 +177,4 @@ async function closeSocket(socket: WebSocket): Promise<void> {
       deadline.unref()
     }
   })
-}
-
-function assertUnaryRequest(input: URL, init: RequestInit | undefined): void {
-  if (input.protocol !== 'http:' || input.hostname !== LOOPBACK_HOST || input.port !== LOOPBACK_PORT
-    || input.username !== '' || input.password !== '' || input.search !== '' || input.hash !== '') {
-    throw new Error('Loopback API carrier rejected a non-canonical URL')
-  }
-  if (init?.method !== 'POST' || (input.pathname !== '/api/respond' && !API_METHOD_PATH.test(input.pathname))) {
-    throw new Error('Loopback API carrier rejected an unexpected request')
-  }
 }

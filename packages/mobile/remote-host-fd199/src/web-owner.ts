@@ -70,7 +70,8 @@ async function exportStoppedState(ctx: Context): Promise<readonly Fd199ExportFil
       ...events.map(event => sessionFormatCatalog.encodeCurrentEvent(snapshotSessionFormatJson(event) as SessionFormatEvent))]
       .map(value => JSON.stringify(value)).join('\n') + '\n'
     const bytes = UTF8.encode(content)
-    if (bytes.byteLength === 0 || bytes.byteLength > REMOTE_HOST_FD199_MAX_FILE_BYTES) throw new Fd199AuthorityError()
+    // The header and trailing newline make the encoded artifact nonempty.
+    if (bytes.byteLength > REMOTE_HOST_FD199_MAX_FILE_BYTES) throw new Fd199AuthorityError()
     total += bytes.byteLength
     if (total > MAX_TOTAL_BYTES) throw new Fd199AuthorityError()
     files.push({

@@ -86,6 +86,23 @@ describe('FD199 frame codec', () => {
 })
 
 describe('strictJsonParse', () => {
+  it('preserves every JSON escape and whitespace separator', () => {
+    const value = '"\\\"\\\\\\/\\b\\f\\n\\r\\t\\u0041"'
+    expect(strictJsonParse(` \t\r\n${value} \t\r\n`)).toBe(JSON.parse(value))
+    expect(strictJsonParse('{}')).toEqual({})
+    expect(strictJsonParse('[{},[],1,-2.5e+3]')).toEqual([{}, [], 1, -2500])
+  })
+
+  it.each(['"unterminated', '"\\x"', '"\\u123"', '{"x" 1}', '[1;2]', '{}{}'])('rejects invalid JSON %s', (text) => {
+    expect(() => strictJsonParse(text)).toThrow(Fd199AuthorityError)
+  })
+
+  it('rejects absent frame kinds and invalid or oversized authority values', () => {
+    expect(() => decodeFrame('client', new TextEncoder().encode('{}'))).toThrow(Fd199AuthorityError)
+    expect(() => encodeAuthorityFrame({ kind: 'activated', generation: 0 })).toThrow(Fd199AuthorityError)
+    expect(() => encodeAuthorityFrame({ kind: 'ready', protocolVersion: 1, hostAppPath: '/' + 'a'.repeat(REMOTE_HOST_FD199_MAX_BODY_BYTES) })).toThrow(Fd199AuthorityError)
+  })
+
   it('parses standard documents and rejects duplicate keys and trailing content', () => {
     expect(strictJsonParse('{"a":1,"b":{"c":[true,false,null,"x\\u0041"]}}')).toEqual({ a: 1, b: { c: [true, false, null, 'xA'] } })
     expect(() => strictJsonParse('{"a":1,"a":2}')).toThrow(Fd199AuthorityError)

@@ -66,6 +66,145 @@ async function until(condition: () => boolean): Promise<void> {
 }
 
 describe('Fd199ChannelClient', () => {
+  it('safely drains a frame synchronously received by an instruction handler', async () => {
+    const channel = new TestChannel()
+    const client = new Fd199ChannelClient(channel)
+    const actions: string[] = []
+    client.onInstruction((action) => {
+      actions.push(action)
+      if (action === 'prepare') channel.emit('data', Buffer.from(frameBytes(encodeAuthorityFrame({ kind: 'instruct', action: 'activate' }))))
+    })
+    channel.emit('data', Buffer.from(frameBytes(encodeAuthorityFrame({ kind: 'instruct', action: 'prepare' }))))
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(actions).toEqual(['prepare', 'activate'])
+    expect(channel.destroyed).toBe(false)
+    await client.close()
+  })
+
+  it('lets a reentrant registration drain the remaining startup instructions', async () => {
+    const channel = new TestChannel()
+    const client = new Fd199ChannelClient(channel)
+    const prepare = Buffer.from(frameBytes(encodeAuthorityFrame({ kind: 'instruct', action: 'prepare' })))
+    const activate = Buffer.from(frameBytes(encodeAuthorityFrame({ kind: 'instruct', action: 'activate' })))
+    channel.emit('data', Buffer.concat([prepare, activate]))
+    await Promise.resolve()
+    await Promise.resolve()
+    const actions: string[] = []
+    client.onInstruction((action) => {
+      actions.push(`first:${action}`)
+      client.onInstruction((next) => { actions.push(`replacement:${next}`) })
+    })
+    expect(actions).toEqual(['first:prepare', 'replacement:activate'])
+    await client.close()
+  })
+
+  it('does not dispatch a queued frame after the channel closes', async () => {
+    const channel = new TestChannel()
+    const client = new Fd199ChannelClient(channel)
+    const handler = vi.fn()
+    client.onInstruction(handler)
+    channel.emit('data', Buffer.from(frameBytes(encodeAuthorityFrame({ kind: 'instruct', action: 'prepare' }))))
+    await client.close()
+    await Promise.resolve()
+    expect(handler).not.toHaveBeenCalled()
+  })
+
+  it('assembles a frame split across both its prefix and body', async () => {
+    const channel = new TestChannel()
+    const client = new Fd199ChannelClient(channel)
+    const connected = client.connect()
+    const frame = Buffer.from(frameBytes(encodeAuthorityFrame({ kind: 'ready', protocolVersion: 1, hostAppPath: '/Host' })))
+    channel.emit('data', frame.subarray(0, 2))
+    channel.emit('data', frame.subarray(2, 7))
+    channel.emit('data', frame.subarray(7))
+    await expect(connected).resolves.toEqual({ protocolVersion: 1, hostAppPath: '/Host' })
+    await client.close()
+    channel.emit('data', frame)
+  })
+
+  it.each([0, 2, 16 * 1024 * 1024 + 1])('rejects invalid advertised frame length %i', async (length) => {
+    const channel = new TestChannel()
+    const client = new Fd199ChannelClient(channel)
+    const assertion = expect(client.connect()).rejects.toThrow(Fd199AuthorityError)
+    const prefix = Buffer.alloc(4)
+    prefix.writeUInt32BE(length)
+    channel.emit('data', prefix)
+    await assertion
+    expect(channel.destroyed).toBe(true)
+  })
+
+  it('rejects malformed complete bodies and excessive buffered bytes', async () => {
+    for (const bytes of [Buffer.from(frameBytes(new TextEncoder().encode('bad'))), Buffer.alloc(16 * 1024 * 1024 + 5)]) {
+      const channel = new TestChannel()
+      const client = new Fd199ChannelClient(channel)
+      const assertion = expect(client.connect()).rejects.toThrow(Fd199AuthorityError)
+      channel.emit('data', bytes)
+      await assertion
+    }
+  })
+
+  it('limits queued frames before the paced dispatcher runs', async () => {
+    const channel = new TestChannel()
+    const client = new Fd199ChannelClient(channel)
+    const frame = Buffer.from(frameBytes(encodeAuthorityFrame({ kind: 'instruct', action: 'prepare' })))
+    channel.emit('data', Buffer.concat(Array.from({ length: 17 }, () => frame)))
+    await Promise.resolve()
+    expect(channel.destroyed).toBe(true)
+    await expect(client.desktopReady()).rejects.toThrow(Fd199AuthorityError)
+  })
+
+  it('queues pre-wiring instructions in order and fails the third one closed', async () => {
+    const channel = new TestChannel()
+    const client = new Fd199ChannelClient(channel)
+    const send = (action: 'prepare' | 'activate'): void => { channel.emit('data', Buffer.from(frameBytes(encodeAuthorityFrame({ kind: 'instruct', action })))) }
+    send('prepare')
+    send('activate')
+    await Promise.resolve()
+    await Promise.resolve()
+    const received: string[] = []
+    client.onInstruction((action) => { received.push(action) })
+    expect(received).toEqual(['prepare', 'activate'])
+    await client.close()
+
+    const overflow = new TestChannel()
+    new Fd199ChannelClient(overflow)
+    const frame = Buffer.from(frameBytes(encodeAuthorityFrame({ kind: 'instruct', action: 'prepare' })))
+    overflow.emit('data', Buffer.concat([frame, frame, frame]))
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(overflow.destroyed).toBe(true)
+  })
+
+  it('refuses unwired, empty, excessive, and concurrently pending transitions', async () => {
+    const channel = new TestChannel()
+    const client = new Fd199ChannelClient(channel)
+    await expect(client.prepareReleasedStore({ files: [exportFile()] })).rejects.toThrow(Fd199AuthorityError)
+    client.onInstruction(() => {})
+    await expect(client.prepareReleasedStore({ files: [] })).rejects.toThrow(Fd199AuthorityError)
+    const excessive = Array.from({ length: 8193 }, () => exportFile())
+    await expect(client.prepareReleasedStore({ files: excessive })).rejects.toThrow(Fd199AuthorityError)
+    const pending = client.connect()
+    const assertion = expect(pending).rejects.toThrow(Fd199AuthorityError)
+    await expect(client.connect()).rejects.toThrow(Fd199AuthorityError)
+    await expect(client.prepareReleasedStore({ files: [exportFile()] })).rejects.toThrow(Fd199AuthorityError)
+    channel.emit('error', new Error('peer failure'))
+    await assertion
+  })
+
+  it('fails closed when a synchronous socket write throws, including during prepare', async () => {
+    for (const prepare of [false, true]) {
+      const channel = new TestChannel()
+      const client = new Fd199ChannelClient(channel)
+      client.onInstruction(() => {})
+      vi.spyOn(channel, 'write').mockImplementation(() => { throw new Error('write failure') })
+      await expect(prepare ? client.prepareReleasedStore({ files: [exportFile()] }) : client.connect()).rejects.toThrow(Fd199AuthorityError)
+      expect(channel.destroyed).toBe(true)
+    }
+  })
+
   it('proves the handshake and reports the announced authority facts', async () => {
     const channel = new TestChannel()
     const client = new Fd199ChannelClient(channel)

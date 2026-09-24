@@ -1,13 +1,20 @@
 import { createHash } from 'node:crypto'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Duplex } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import { RemoteHostV3Controller, RemoteHostV3RouteAllocator } from '@deepseek-ai/dsh-remote-host-v3'
 import { directoryFixture, memoryTable } from '../../remote-devices/tests/fixture.ts'
 import { decodeFrame, encodeAuthorityFrame, frameBytes } from '../src/protocol.ts'
 import type { AuthorityMessage, ClientMessage } from '../src/protocol.ts'
-import { CurrentWebFd199LifecycleError } from '../src/lifecycle.ts'
-import { startHostedHandoff } from '../src/index.ts'
+import { CurrentWebFd199Lifecycle, CurrentWebFd199LifecycleError } from '../src/lifecycle.ts'
+import { apply, startHostedHandoff } from '../src/index.ts'
+import { adoptInheritedAuthoritySocket, validateInheritedDescriptors } from '../src/fd.ts'
+
+vi.mock('../src/fd.ts', async importOriginal => ({
+  ...await importOriginal<typeof import('../src/fd.ts')>(),
+  validateInheritedDescriptors: vi.fn(),
+  adoptInheritedAuthoritySocket: vi.fn(),
+}))
 
 /**
  * Scripted authority peer over an in-memory duplex channel. The handshake
@@ -52,13 +59,14 @@ interface HostFixture {
   authority: ScriptedAuthority
   served: string[]
   exits: number[]
+  dispose: () => void
 }
 
 async function harness(snapshot?: AuthorityMessage): Promise<HostFixture> {
   const authority = new ScriptedAuthority()
   if (snapshot !== undefined) authority.snapshot = snapshot
   const ctx = new Context()
-  const fixture: HostFixture = { ctx, authority, served: [], exits: [] }
+  const fixture: HostFixture = { ctx, authority, served: [], exits: [], dispose: () => {} }
   ctx.provide('fd199HostedExit', async (code: number) => { fixture.exits.push(code) })
   // The V3 route composition the hosted plugin injects; recorded instead of real.
   const controller = new RemoteHostV3Controller(ctx,
@@ -73,7 +81,7 @@ async function harness(snapshot?: AuthorityMessage): Promise<HostFixture> {
       fixture.served.push(`serve:${native.hostAppPath}`)
     },
   }))
-  await startHostedHandoff(ctx, authority)
+  fixture.dispose = await startHostedHandoff(ctx, authority)
   return fixture
 }
 
@@ -92,6 +100,46 @@ afterEach(() => {
 })
 
 describe('hosted FD199 startup lifecycle', () => {
+  it('validates descriptors before adopting the production channel', async () => {
+    vi.mocked(adoptInheritedAuthoritySocket).mockImplementationOnce(() => { throw new Error('adoption sentinel') })
+    await expect(apply(new Context())).rejects.toThrow('adoption sentinel')
+    expect(validateInheritedDescriptors).toHaveBeenCalledOnce()
+    expect(adoptInheritedAuthoritySocket).toHaveBeenCalledOnce()
+  })
+
+  it('disposes idempotently and sanitizes a non-Error instruction failure', async () => {
+    const fixture = await harness()
+    fixture.ctx.provide('fd199WebOwner', { exportStoppedState: async () => { throw 'export sentinel' } })
+    // The caller-owned transition can reject without an Error instance.
+    vi.spyOn(CurrentWebFd199Lifecycle.prototype, 'releaseForNative').mockRejectedValueOnce('transition sentinel')
+    fixture.authority.authoritySend({ kind: 'instruct', action: 'prepare' })
+    await until(() => fixture.authority.destroyed)
+    expect(fixture.authority.destroyed).toBe(true)
+    fixture.dispose()
+    fixture.dispose()
+  })
+
+  it('refuses activation when its authority service disappeared', async () => {
+    const fixture = await harness({ kind: 'snapshot', status: 'prepared', generation: 1 })
+    fixture.ctx.set('fd199AuthorityClient', undefined)
+    fixture.authority.authoritySend({ kind: 'instruct', action: 'activate' })
+    await until(() => fixture.authority.destroyed)
+    expect(fixture.authority.destroyed).toBe(true)
+  })
+
+  it('refuses release without the awaited whole-root exit service', async () => {
+    const fixture = await harness()
+    fixture.ctx.set('fd199HostedExit', undefined)
+    const bytes = new Uint8Array([1])
+    fixture.ctx.provide('fd199WebOwner', { exportStoppedState: async () => [{ name: 'sessions/session_00000001.jsonl', bytes, sha256: createHash('sha256').update(bytes).digest('hex') }] })
+    fixture.authority.authoritySend({ kind: 'instruct', action: 'prepare' })
+    await until(() => fixture.authority.sent.some(message => message.kind === 'releasing'))
+    fixture.authority.authoritySend({ kind: 'release-authorized' })
+    await until(() => fixture.authority.destroyed)
+    expect(fixture.authority.destroyed).toBe(true)
+    expect(fixture.exits).toEqual([])
+  })
+
   it('recovers a fresh journal and admits desktop work without binding the relay', async () => {
     const fixture = await harness()
     disposers.push(() => { void fixture.ctx.get('fd199AuthorityClient')?.close() })

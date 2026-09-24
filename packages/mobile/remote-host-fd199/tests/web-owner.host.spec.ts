@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { rm } from 'node:fs/promises'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore from '@deepseek-ai/dsh-session'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -29,6 +29,49 @@ async function harness(): Promise<{ ctx: Context; cleanup: () => Promise<void> }
 const TEXT = createUserMessage({ content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' } })
 
 describe('FD199 configured Web-owner adapter', () => {
+  it('normalizes absent legacy delegation depth without changing the stored header', async () => {
+    const { ctx, cleanup } = await harness()
+    try {
+      const session = ctx.sessions.create(undefined, { meta: { cwd: '/tmp/project' } })
+      await using writer = await ctx.sessionPersistence.create(session.header)
+      await writer.append(session.snapshotEvents())
+      const open = ctx.sessionPersistence.open.bind(ctx.sessionPersistence)
+      vi.spyOn(ctx.sessionPersistence, 'open').mockImplementation(async (...args) => {
+        const handle = await open(...args)
+        const { delegationDepth: _depth, ...header } = handle.header
+        Object.defineProperty(handle, 'header', { value: header })
+        return handle
+      })
+      const files = await ctx.get('fd199WebOwner')!.exportStoppedState()
+      expect(new TextDecoder().decode(files[0]?.bytes)).toContain('"delegationDepth":0')
+    } finally {
+      vi.restoreAllMocks()
+      await cleanup()
+    }
+  })
+
+  it.each(['file-count', 'file-bytes', 'total-bytes'] as const)('refuses an export exceeding %s limits', async (limit) => {
+    const { ctx, cleanup } = await harness()
+    try {
+      const session = ctx.sessions.create(undefined, { meta: { cwd: '/tmp/project' } })
+      await using writer = await ctx.sessionPersistence.create(session.header)
+      await writer.append(session.snapshotEvents())
+      const snapshots = await ctx.sessionPersistence.list()
+      const snapshot = snapshots[0]
+      if (snapshot === undefined) throw new Error('missing fixture snapshot')
+      const count = limit === 'file-count' ? 8193 : limit === 'total-bytes' ? 17 : 1
+      vi.spyOn(ctx.sessionPersistence, 'list').mockResolvedValue(Array.from({ length: count }, () => snapshot))
+      if (limit !== 'file-count') {
+        const size = 8 * 1024 * 1024 + (limit === 'file-bytes' ? 1 : 0)
+        vi.spyOn(TextEncoder.prototype, 'encode').mockReturnValue(new Uint8Array(size))
+      }
+      await expect(ctx.get('fd199WebOwner')!.exportStoppedState()).rejects.toThrow(Fd199AuthorityError)
+    } finally {
+      vi.restoreAllMocks()
+      await cleanup()
+    }
+  })
+
   it('exports every durable session artifact with its exact digest', async () => {
     const { ctx, cleanup } = await harness()
     try {
