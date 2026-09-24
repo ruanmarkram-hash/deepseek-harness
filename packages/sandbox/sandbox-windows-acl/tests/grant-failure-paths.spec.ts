@@ -7,7 +7,9 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import koffi from 'koffi'
 
 import type { NativePtr, Win32Bindings } from '../src/ffi.ts'
@@ -90,10 +92,29 @@ describe('AclWriteGrant failure paths', () => {
   it('dispose aggregates a failing revocation into an AggregateError (best-effort cleanup)', () => {
     const { api, failReads } = grantThenFailApi()
     const grant = AclWriteGrant.create('S-1-4-42-42', api)
-    grant.add('C:\\granted')
-    expect(grant.paths).toEqual(['C:\\granted'])
-    failReads()
-    expect(() =>{  grant.dispose() }).toThrow(AggregateError)
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-acl-grant-failure-'))
+    try {
+      grant.add(dir)
+      expect(grant.paths).toEqual([dir])
+      failReads()
+      expect(() =>{  grant.dispose() }).toThrow(AggregateError)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses a grant when an existing child cannot be inspected', () => {
+    const { api } = grantThenFailApi()
+    api.getFileAttributesW = vi.fn(() => 0xFFFFFFFF)
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-acl-grant-inspect-'))
+    writeFileSync(join(dir, 'existing.txt'), 'x')
+    const grant = AclWriteGrant.create('S-1-4-42-43', api)
+    try {
+      expect(() => { grant.add(dir) }).toThrow(/GetFileAttributesW/u)
+    } finally {
+      grant.dispose()
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('dispose aggregates a failing SID free into an AggregateError', () => {

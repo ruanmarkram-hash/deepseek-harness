@@ -22,7 +22,7 @@
  */
 
 import { createHash } from 'node:crypto'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 import { allocOverlapped, allocPtrSlot, decodePtr, decodeUint8At, decodeUint16At, decodeUint32At, getTempPath, isInvalidHandle, isNullPtr, ptrAddress, sameSidAt, throwLastError, throwWin32 } from './ffi.ts'
@@ -327,6 +327,48 @@ function hasExactDeny(oldAcl: NativePtr, worldSidPtr: NativePtr): boolean {
 }
 
 /**
+ * Existing directories can retain an allow ACE before the deny inherited from
+ * the root. Put an explicit deny ahead of those allows on each real directory;
+ * the inheritable entry also protects directories created below it later.
+ * Reparse points are not traversed or edited through an alias.
+ */
+function secureExistingDirectories(api: Win32Bindings, root: string, worldSidPtr: NativePtr): void {
+  const pending = [root]
+  while (pending.length > 0) {
+    const directory = pending.pop()
+    if (directory === undefined) break
+    if (directory !== root) {
+      const attributes = api.getFileAttributesW(directory)
+      if (attributes === abi.INVALID_FILE_ATTRIBUTES) throwLastError(api, 'GetFileAttributesW', directory)
+      if ((attributes & abi.FILE_ATTRIBUTE_REPARSE_POINT) !== 0) continue
+      if ((attributes & abi.FILE_ATTRIBUTE_DIRECTORY) === 0) throw new Error(`Windows ACL grant child is no longer a directory: ${directory}`)
+      withPathLock(api, directory, () => {
+        const { oldAcl, descriptor } = readCurrentSecurity(api, directory)
+        if (oldAcl !== null && hasExactDeny(oldAcl, worldSidPtr)) {
+          if (descriptor !== null) {
+            const freed = api.localFree(descriptor)
+            if (!isNullPtr(freed)) throwLastError(api, 'LocalFree', `secureExistingDirectories(${directory}) descriptor`)
+          }
+          return
+        }
+        mergeAndApply(
+          api, directory,
+          buildExplicitAccess(worldSidPtr, abi.DENY_ACCESS, abi.FILE_DELETE_CHILD, abi.CONTAINER_INHERIT_ACE),
+          oldAcl, { kind: 'keep' }, descriptor, 'secureExistingDirectories',
+        )
+      })
+    }
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const child = join(directory, entry.name)
+      const attributes = api.getFileAttributesW(child)
+      if (attributes === abi.INVALID_FILE_ATTRIBUTES) throwLastError(api, 'GetFileAttributesW', child)
+      if ((attributes & abi.FILE_ATTRIBUTE_REPARSE_POINT) !== 0) continue
+      if ((attributes & abi.FILE_ATTRIBUTE_DIRECTORY) !== 0) pending.push(child)
+    }
+  }
+}
+
+/**
  * True when a capability grant for a SID OTHER than `sidPtr` stands on this
  * DACL — the condition under which a revoke must leave the shared Low label in
  * place, or the remaining grant's child would lose its write authority.
@@ -411,6 +453,29 @@ export function grantWrite(
       oldAcl, { kind: 'apply', acl: label }, descriptor, 'grantWrite',
     )
   })
+}
+
+/**
+ * Grant a root and secure every existing real subdirectory before a restricted
+ * child runs. The root's standing ACE skip does not skip descendant repair;
+ * failed inspection or ACL editing throws before the caller can spawn.
+ * @param api - the ACL binding table.
+ * @param path - the granted root directory.
+ * @param sidPtr - the root's capability SID.
+ * @param lowLabelSidPtr - the Low integrity SID.
+ * @param worldSidPtr - the Everyone SID denied ambient child deletion.
+ */
+export function grantWriteTree(
+  api: Win32Bindings,
+  path: string,
+  sidPtr: NativePtr,
+  lowLabelSidPtr: NativePtr,
+  worldSidPtr: NativePtr,
+): void {
+  grantWrite(api, path, sidPtr, lowLabelSidPtr, worldSidPtr)
+  // The root's inherited deny may trail an existing child's explicit allow.
+  // Run this even when the root's exact ACEs let its own merge be skipped.
+  secureExistingDirectories(api, path, worldSidPtr)
 }
 
 /**

@@ -9,13 +9,13 @@
  * whose per-test lock file is removed in cleanup.
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import koffi from 'koffi'
 
-import { buildExplicitAccess, grantWrite, lockFilePath, revokeWrite, withPathLock } from '../src/acl.ts'
+import { buildExplicitAccess, grantWrite, grantWriteTree, lockFilePath, revokeWrite, withPathLock } from '../src/acl.ts'
 import { AclSandbox } from '../src/index.ts'
 import { createRestrictedToken, makeWellKnownSid } from '../src/token.ts'
 import { allocOverlapped, allocPtrSlot, decodePtr, isInvalidHandle, isNullPtr, win32 } from '../src/ffi.ts'
@@ -240,6 +240,39 @@ describe.skipIf(!isWin32)('ACL editing', () => {
       if (!isNullPtr(capabilitySid)) api.localFree(capabilitySid)
       if (!isNullPtr(lowSid)) api.localFree(lowSid)
       if (!isNullPtr(world)) api.localFree(world)
+    }
+  })
+
+  it('secures pre-existing subdirectories with explicit denies and does not follow junctions', async () => {
+    const api = await win32()
+    const dir = scratch()
+    const child = join(dir, 'existing')
+    const grandchild = join(child, 'nested')
+    const outside = scratch()
+    const alias = join(dir, 'outside-junction')
+    mkdirSync(grandchild, { recursive: true })
+    symlinkSync(outside, alias, 'junction')
+    const capabilitySid = sidFromString(api, 'S-1-4-4242-12')
+    const lowSid = lowLabelSid(api)
+    const world = worldSid(api)
+    const isDirectWorldDeny = (ace: TypedAce): boolean =>
+      ace.type === abi.ACCESS_DENIED_ACE_TYPE && ace.sid === 'S-1-1-0'
+      && ace.mask === abi.FILE_DELETE_CHILD && (ace.flags & abi.INHERITED_ACE) === 0
+    try {
+      grantWriteTree(api, dir, capabilitySid, lowSid, world)
+      for (const path of [child, grandchild]) {
+        expect(readTypedAces(api, path).filter(isDirectWorldDeny)).toHaveLength(1)
+      }
+      expect(readTypedAces(api, outside).filter(isDirectWorldDeny)).toHaveLength(0)
+      grantWriteTree(api, dir, capabilitySid, lowSid, world)
+      for (const path of [child, grandchild]) {
+        expect(readTypedAces(api, path).filter(isDirectWorldDeny)).toHaveLength(1)
+      }
+    } finally {
+      unlinkSync(alias)
+      for (const sid of [capabilitySid, lowSid, world]) {
+        if (!isNullPtr(sid)) api.localFree(sid)
+      }
     }
   })
 

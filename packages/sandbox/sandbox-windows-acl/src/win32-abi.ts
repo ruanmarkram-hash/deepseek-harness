@@ -20,6 +20,12 @@ export const FILE_GENERIC_WRITE = 0x00120116
 export const DELETE = 0x00010000
 /** Delete or rename a directory child. */
 export const FILE_DELETE_CHILD = 0x0040
+/** GetFileAttributesW directory flag. */
+export const FILE_ATTRIBUTE_DIRECTORY = 0x0010
+/** GetFileAttributesW reparse-point flag (junctions, symlinks, and mount points). */
+export const FILE_ATTRIBUTE_REPARSE_POINT = 0x0400
+/** GetFileAttributesW failure sentinel. */
+export const INVALID_FILE_ATTRIBUTES = 0xFFFFFFFF
 /**
  * Capability-SID access mask granting write, delete, and child deletion.
  * WRITE_DAC and WRITE_OWNER stay excluded so a confined child cannot rewrite
