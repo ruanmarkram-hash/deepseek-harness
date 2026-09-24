@@ -2324,7 +2324,7 @@ export interface RemoteGatewayOptions {
 }
 ```
 
-Source: [`packages/mobile/remote-gateway/src/index.ts:68`](../packages/mobile/remote-gateway/src/index.ts)
+Source: [`packages/mobile/remote-gateway/src/index.ts:69`](../packages/mobile/remote-gateway/src/index.ts)
 
 <a id="deepseek-aidsh-remote-host-v3"></a>
 

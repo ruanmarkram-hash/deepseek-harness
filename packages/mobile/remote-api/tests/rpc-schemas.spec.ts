@@ -291,7 +291,7 @@ describe('sessions domain schemas', () => {
 })
 
 describe('subagent domain schemas', () => {
-  it('carries optional request-local browser-zone provenance on prompts', () => {
+  it('carries the optional request-local browser time zone on prompts', () => {
     expect(subagentPromptRequestSchema.parse({
       parentSessionId: 'parent',
       childSessionId: 'child',
