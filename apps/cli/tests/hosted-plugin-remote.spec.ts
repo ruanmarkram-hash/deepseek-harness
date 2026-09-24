@@ -1,6 +1,7 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
@@ -16,7 +17,8 @@ vi.mock('@deepseek-ai/dsh-app-boot', async importOriginal => ({
 
 import { PluginPackages } from '@deepseek-ai/dsh-app-boot'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
-import * as TypertLoader from '@deepseek-ai/dsh-typert-loader'
+import type { TypertContribution } from '@deepseek-ai/dsh-typert-registry/types'
+import { FaceModelEmitter, WorkspaceAnalyzer } from '@deepseek-ai/dsh-typert-generator'
 import TypertGateway from '@deepseek-ai/dsh-api-gateway'
 import HostedPluginControls, { HostedPluginState } from '@deepseek-ai/dsh-hosted-plugin-controls'
 import type { PluginEnablementResult, PluginList } from '@deepseek-ai/dsh-hosted-plugin-controls/types'
@@ -24,6 +26,7 @@ import { hostedBootConfiguration, hostedProfilePatches, hostedRuntimeResolution,
 
 let ctx: Context | undefined
 let home: string | undefined
+let generatedRoot: string | undefined
 
 afterEach(async () => {
   reconcile.mockReset()
@@ -31,6 +34,8 @@ afterEach(async () => {
   ctx = undefined
   if (home !== undefined) rmSync(home, { recursive: true, force: true })
   home = undefined
+  if (generatedRoot !== undefined) rmSync(generatedRoot, { recursive: true, force: true })
+  generatedRoot = undefined
 })
 
 it('lists and switches sealed Host rows through the generated Typert namespace', { timeout: 60_000 }, async () => {
@@ -54,7 +59,19 @@ it('lists and switches sealed Host rows through the generated Typert namespace',
   ctx.provide('hostedPluginState', state)
   await ctx.plugin(HostedPluginControls)
   await ctx.plugin(TypertRegistry)
-  await ctx.plugin(TypertLoader, { packages: ['@deepseek-ai/dsh-hosted-plugin-controls'] })
+  const workspaceRoot = resolve(import.meta.dirname, '../../..')
+  const analyzed = new WorkspaceAnalyzer({
+    root: workspaceRoot,
+    faces: ['host'],
+    packages: ['@deepseek-ai/dsh-hosted-plugin-controls'],
+  }).analyze()
+  const host = analyzed.faces.find(face => face.face === 'host')
+  if (host === undefined) throw new Error('hosted plugin controls have no analyzed Host face')
+  generatedRoot = mkdtempSync(join(workspaceRoot, 'packages/host/hosted-plugin-controls/tests/.generated-'))
+  const generatedPath = join(generatedRoot, 'typert.host.mjs')
+  writeFileSync(generatedPath, new FaceModelEmitter(host).emit('@deepseek-ai/dsh-hosted-plugin-controls').js)
+  const generated = await import(pathToFileURL(generatedPath).href) as { TYPERT: TypertContribution }
+  ctx.typert.register(generated.TYPERT)
   await ctx.plugin(TypertGateway)
 
   const result = await ctx.typertGateway.invoke({ namespace: 'hostPlugins', method: 'list', args: {} }) as PluginList
