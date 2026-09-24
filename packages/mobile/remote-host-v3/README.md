@@ -24,6 +24,8 @@ English | [中文](README.zh.md)
 
 ## Signed Host-app handoff
 
+No runtime invariant companion is published because route mutations are serialized and storage-schema validated, with no independent event-derived route state.
+
 The Web bundle keeps this package disabled. A live composition is permitted only inside a runtime child started by a signed persistent DSH Host.app. That app is the sole client of the Keychain XPC helper, owns every private key operation, route token, relay provisioning call, WebSocket upgrade, encrypted handshake, and ciphertext carrier. It passes only already authenticated, decrypted `TrustedRemoteConnection` values through an inherited private pipe to the verified runtime child. The pipe has no path, port, discovery protocol, signing method, derivation method, route-token operation, or generic request interface.
 
 The controller validates that its injected provider attests the configured absolute Host-app executable path and names the handoff `inherited-private-pipe`; it then gives that typed provider to `ctx.remoteGateway`. The gateway independently rechecks the immutable peer tuple against the local device directory before every DSH operation. Ordinary `dsh web` source execution receives no provider and fails closed when enabled.

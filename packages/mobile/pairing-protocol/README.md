@@ -21,6 +21,8 @@ English | [中文](README.zh.md)
 
 ## Surface
 
+No runtime invariant companion is published because this parser and cipher library exposes no independently observable Host service relationship.
+
 The desktop creates a fresh X25519 pair and puts only its canonical 32-byte base64url public key in the short-lived `dsh-pairing:v2:` QR bootstrap. The QR also contains the public pairing and desktop ids, fixed mobile capability set, `wss:` relay URL, expiry, and the mobile-only relay credential. The desktop relay credential and every ephemeral secret stay outside the QR.
 
 The phone creates its own X25519 pair through an injected `PairingRandomSource`, then sends an exact `mobile-init` control with its public key, allowed requested capabilities, and a bounded nonce-prefixed XChaCha20-Poly1305 proof. The proof key is HKDF-SHA-256 over X25519 shared secret and a transcript binding the protocol version, pairing id, both device ids, both public keys, and capabilities. The desktop verifies that proof before explicit approval, then sends a similarly bound `desktop-accept` proof. The phone verifies it before opening its local application-frame gate.

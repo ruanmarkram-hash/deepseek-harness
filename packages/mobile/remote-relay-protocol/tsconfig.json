@@ -1,9 +1,15 @@
 {
   "extends": "../../../tsconfig.base.json",
-  "compilerOptions": { "rootDir": "src", "outDir": "lib/types" },
-  "include": ["src"],
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
   "references": [
-    { "path": "../../runtime-diagnostics/invariants" },
-    { "path": "../remote-wire" }
+    {
+      "path": "../remote-wire"
+    }
   ]
 }

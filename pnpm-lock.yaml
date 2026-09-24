@@ -9756,9 +9756,6 @@ importers:
       '@deepseek-ai/dsh-brand':
         specifier: workspace:*
         version: link:../../util/brand
-      '@deepseek-ai/dsh-invariants':
-        specifier: workspace:*
-        version: link:../../runtime-diagnostics/invariants
 
   packages/mobile/remote-api:
     dependencies:
@@ -9914,9 +9911,6 @@ importers:
       '@deepseek-ai/dsh-brand':
         specifier: workspace:*
         version: link:../../util/brand
-      '@deepseek-ai/dsh-invariants':
-        specifier: workspace:*
-        version: link:../../runtime-diagnostics/invariants
 
   packages/mobile/remote-host-v3:
     dependencies:
@@ -9936,9 +9930,6 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:../../../vendor/cordis
-      '@deepseek-ai/dsh-invariants':
-        specifier: workspace:*
-        version: link:../../runtime-diagnostics/invariants
       '@deepseek-ai/dsh-remote-devices':
         specifier: workspace:*
         version: link:../remote-devices
@@ -9970,9 +9961,6 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:../../../vendor/cordis
-      '@deepseek-ai/dsh-invariants':
-        specifier: workspace:*
-        version: link:../../runtime-diagnostics/invariants
       '@deepseek-ai/dsh-remote-wire':
         specifier: workspace:*
         version: link:../remote-wire
@@ -9982,9 +9970,6 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:../../../vendor/cordis
-      '@deepseek-ai/dsh-invariants':
-        specifier: workspace:*
-        version: link:../../runtime-diagnostics/invariants
       '@deepseek-ai/dsh-remote-api':
         specifier: workspace:*
         version: link:../remote-api

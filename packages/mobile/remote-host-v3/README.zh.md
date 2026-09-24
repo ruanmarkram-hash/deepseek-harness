@@ -24,6 +24,8 @@ kind: "package-reference"
 
 ## 已签名 Host-app handoff
 
+不发布运行时不变量 companion，因为路由变更经过串行处理和存储 schema 验证，不存在独立从事件派生的路由状态。
+
 Web bundle 保持禁用此包。只有由已签名持久 DSH Host.app 启动的 runtime child 才可进行 live composition。该 app 是 Keychain XPC helper 的唯一 client，拥有所有私钥操作、route token、中继 provision call、WebSocket upgrade、加密 handshake 与 ciphertext carrier。它仅通过 inherited private pipe 向已验证 runtime child 传递已认证、已解密的 `TrustedRemoteConnection`。该 pipe 没有路径、port、发现协议、signing method、derivation method、route-token operation 或通用 request interface。
 
 控制器验证注入 provider 证明配置的绝对 Host-app executable path，并将 handoff 命名为 `inherited-private-pipe`；然后把 typed provider 交给 `ctx.remoteGateway`。gateway 会在每次 DSH 操作前独立将不可变 peer tuple 与本地 device directory 重新核对。普通 `dsh web` source execution 没有 provider，启用时会 fail closed。

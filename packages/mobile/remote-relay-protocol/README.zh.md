@@ -21,6 +21,8 @@ kind: "package-library"
 
 ## Surface
 
+不发布运行时不变量 companion，因为调用方管理的传输和加密层没有可独立观察的 Cordis 服务关系。
+
 连接开始前，Host 和设备已经知道对方已登记的静态 X25519 public agreement key 以及由 Host 签发的 immutable identity incarnation。设备的 incarnation 会在 re-enrollment 时改变；Host 的 incarnation 标识其当前 protected identity，而不是 device enrollment。每一端提供 `RemoteRelayIdentity.agreement`，即带 public key 和 `deriveSharedSecret(peerPublicKey)` callback 的 protected provider。callback 返回用于立即 KDF consumption 的 fresh shared-secret copy，且从不暴露 private key。每个 handshake 和加密 frame 都认证双方的 device id 与 identity incarnation，因此已撤销或重新登记的 identity 不能通过 stale connection 附着。`connectRemoteRelayDevice()` 发送设备 ephemeral key 和 nonce；`acceptRemoteRelayDevice()` 以 Host ephemeral key 和 nonce 回应。两端从 static-static、static-ephemeral、ephemeral-static 和 ephemeral-ephemeral X25519 值推导方向性 key。加密 `ready`、Host `finish`、device `ack`、Host `commit`、device `confirm` 和 Host `receipt` flight 证明 finality：Host 只会在认证 `confirm` 后调用必需的 durable epoch finalizer，设备只会在认证 finalizer 之后的 `receipt` 后成为 live。每个加密 flight 都将 route id、generation、epoch、device id 和 enrollment id 绑定为 AEAD associated data。ephemeral secret 会在推导后擦除，因此日后 static-key compromise 无法恢复被记录的连接。
 
 已接受的连接只加密和解密精确的 `@deepseek-ai/dsh-remote-wire` envelope。每个 ciphertext 将 route id、generation、connection epoch、sender、recipient 和精确的下一 sequence 作为 authenticated data 绑定。入站 ciphertext 必须是下一个连续 sequence；旧的、跳过的、格式错误的、被改动的或错误 epoch message 都会 fail closed。relay 可以校验并路由相同的外层 message，但无法访问 application envelope 或其 ciphertext plaintext。

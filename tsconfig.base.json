@@ -28,6 +28,10 @@
     // not declaration path aliases, keep each package/vendor source compiled
     // under its own tsconfig boundary.
     "paths": {
+      "@deepseek-ai/dsh-remote-api/api": ["./packages/mobile/remote-api/src/api/index.ts"],
+      "@deepseek-ai/dsh-remote-api/api/*": ["./packages/mobile/remote-api/src/api/*.ts"],
+      "@deepseek-ai/dsh-remote-api/client": ["./packages/mobile/remote-api/src/fetch/client.ts"],
+      "@deepseek-ai/dsh-remote-host-fd199/web-owner": ["./packages/mobile/remote-host-fd199/src/web-owner.ts"],
       "@deepseek-ai/dsh-client-ui-settings-account": ["./packages/client/ui-settings-account/src/index.ts"],
       "@deepseek-ai/dsh-client-ui-settings-account/client": ["./packages/client/ui-settings-account/src/client/index.ts"],
       "@deepseek-ai/dsh-api-gateway/stream-protocol": ["./packages/api/gateway/src/stream-protocol.ts"],
@@ -410,7 +414,6 @@
       "@deepseek-ai/dsh-output-retention": ["./packages/util/output-retention/src"],
       "@deepseek-ai/dsh-package-manifest": ["./packages/util/package-manifest/src"],
       "@deepseek-ai/dsh-pairing-protocol": ["./packages/mobile/pairing-protocol/src"],
-      "@deepseek-ai/dsh-pairing-protocol/invariant": ["./packages/mobile/pairing-protocol/src/invariant.ts"],
       "@deepseek-ai/dsh-permission-presets": ["./packages/interaction/permission-presets/src"],
       "@deepseek-ai/dsh-permission-presets/invariant": ["./packages/interaction/permission-presets/src/invariant.ts"],
       "@deepseek-ai/dsh-persona": ["./packages/preset/persona/src"],
@@ -429,14 +432,10 @@
       "@deepseek-ai/dsh-remote-host-fd199": ["./packages/mobile/remote-host-fd199/src"],
       "@deepseek-ai/dsh-remote-host-fd199/invariant": ["./packages/mobile/remote-host-fd199/src/invariant.ts"],
       "@deepseek-ai/dsh-remote-host-identity": ["./packages/mobile/remote-host-identity/src"],
-      "@deepseek-ai/dsh-remote-host-identity/invariant": ["./packages/mobile/remote-host-identity/src/invariant.ts"],
       "@deepseek-ai/dsh-remote-host-v3": ["./packages/mobile/remote-host-v3/src"],
-      "@deepseek-ai/dsh-remote-host-v3/invariant": ["./packages/mobile/remote-host-v3/src/invariant.ts"],
       "@deepseek-ai/dsh-remote-mock": ["./packages/test-support/remote-mock/src"],
       "@deepseek-ai/dsh-remote-relay-protocol": ["./packages/mobile/remote-relay-protocol/src"],
-      "@deepseek-ai/dsh-remote-relay-protocol/invariant": ["./packages/mobile/remote-relay-protocol/src/invariant.ts"],
       "@deepseek-ai/dsh-remote-wire": ["./packages/mobile/remote-wire/src"],
-      "@deepseek-ai/dsh-remote-wire/invariant": ["./packages/mobile/remote-wire/src/invariant.ts"],
       "@deepseek-ai/dsh-repeat-tool-reminder": ["./packages/guard/repeat-tool-reminder/src"],
       "@deepseek-ai/dsh-sandbox": ["./packages/sandbox/sandbox/src"],
       "@deepseek-ai/dsh-sandbox-local": ["./packages/sandbox/sandbox-local/src"],

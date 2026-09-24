@@ -21,6 +21,8 @@ kind: "package-reference"
 
 ## 接口
 
+不发布运行时不变量 companion，因为身份 provider 之外无法独立观察私有 Keychain 状态。
+
 当已签名的原生 Keychain provider 组合本包后，`ctx.remoteHostIdentity` 会返回公开 Host 元数据、签署已经绑定 transcript 的 payload，并从一个已验证的 X25519 远程公开密钥派生 shared secret。调用方必须立即把该 secret 交给 KDF，不得持久化或记录它。
 
 `ctx.remoteEnrollment.issueRoute()` 会为未来本地 QR 交换创建有效期五分钟的 route id，以及不同的 Host 与 client relay token。它只在进程内保存最多 32 个完全一致的 route，直到过期或一次 `confirm()` 消耗其中一个，并把复制的已本地确认远程公开身份传给 `ctx.remoteDevices.enroll()`。本包不会写入 route token，也不会创建 HTTP endpoint、QR 界面、relay request 或远程注册 listener。

@@ -10,9 +10,6 @@
   "references": [
     {
       "path": "../remote-api"
-    },
-    {
-      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

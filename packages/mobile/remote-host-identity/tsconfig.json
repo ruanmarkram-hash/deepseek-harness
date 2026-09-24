@@ -19,9 +19,6 @@
     },
     {
       "path": "../remote-devices"
-    },
-    {
-      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

@@ -21,6 +21,8 @@ kind: "package-library"
 
 ## 接口
 
+不发布运行时不变量 companion，因为此无状态信封解析器不管理 Host 进程状态或事件流。
+
 每个信封都携带固定的 `version: 3` 和 `connectionEpoch`。客户端请求携带不透明的 `requestId` 和 `idempotencyKey`；响应回显该请求 id。宿主事件携带不透明投递 `eventId`、原始 Host `requestId` 和连续投递 `cursor`；可回答事件的回复会回显该 Host 请求 id。客户端只会在本地应用了最高连续 cursor 后发送 `stream-ack`。解析器不保留顺序状态，因此未来的连接所有者会执行 epoch 替换、幂等性保留和确认推进。
 
 `REMOTE_WIRE_METHODS` 是一个封闭的允许列表，并会针对公开 API Proxy `RpcMethodMap` 进行检查。它接受当前 DSH 的 session、workspace、model、subagent、configuration、credential 和 host 方法，而不会引入第二个、手工命名的 computer-use API。`REMOTE_WIRE_EVENTS` 保留每个现有公开 host 和 mux 事件名称。批准回答保留当前的 `allowed-once` 和 `rejected` 结果。通用 `client-response` 会回显宿主请求 id，并能回答现有问题请求。device control 仅限于连接生命周期（`device.describe`、`device.heartbeat` 和 `device.disconnect`），绝不执行宿主工具。

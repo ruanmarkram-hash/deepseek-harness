@@ -456,10 +456,7 @@ flowchart TD
   pkg_lsp --> pkg_brand
   pkg_lsp --> pkg_llm
   pkg_pairing_protocol --> pkg_brand
-  pkg_pairing_protocol --> pkg_invariants
   pkg_remote_host_identity --> pkg_brand
-  pkg_remote_host_identity --> pkg_invariants
-  pkg_remote_wire --> pkg_invariants
   pkg_remote_wire --> pkg_remote_api
   pkg_storage_domain --> pkg_invariants
   pkg_storage_domain --> pkg_storage
@@ -500,7 +497,6 @@ flowchart TD
   pkg_remote_devices --> pkg_brand
   pkg_remote_devices --> pkg_invariants
   pkg_remote_devices --> pkg_storage_domain
-  pkg_remote_relay_protocol --> pkg_invariants
   pkg_remote_relay_protocol --> pkg_remote_wire
   pkg_sandbox_windows_acl --> pkg_subprocess
   pkg_subprocess_local --> pkg_subprocess
@@ -554,7 +550,6 @@ flowchart TD
   pkg_hmr --> pkg_app_boot
   pkg_hmr --> pkg_cmdline
   pkg_experimental_speech_to_text --> pkg_settings
-  pkg_remote_host_v3 --> pkg_invariants
   pkg_remote_host_v3 --> pkg_remote_api
   pkg_remote_host_v3 --> pkg_remote_devices
   pkg_remote_host_v3 --> pkg_remote_gateway
@@ -1506,9 +1501,9 @@ flowchart TD
 | [`host-directory-picker-auto`](../packages/host/directory-picker-auto) | `host` | [`client-ui-directory-picker-browse`](../packages/client/ui-directory-picker-browse), [`client-ui-directory-picker-native`](../packages/client/ui-directory-picker-native), [`host-directory-picker-browse`](../packages/host/directory-picker-browse), [`host-directory-picker-native`](../packages/host/directory-picker-native), [`host-webserver`](../packages/host/webserver) |
 | [`anonymous-user-id`](../packages/identity/anonymous-user-id) | `identity` | [`brand`](../packages/util/brand), [`home-paths`](../packages/util/home-paths) |
 | [`lsp`](../packages/lsp/lsp) | `lsp` | [`brand`](../packages/util/brand), [`llm`](../packages/llm/llm) |
-| [`pairing-protocol`](../packages/mobile/pairing-protocol) | `mobile` | [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants) |
-| [`remote-host-identity`](../packages/mobile/remote-host-identity) | `mobile` | [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants) |
-| [`remote-wire`](../packages/mobile/remote-wire) | `mobile` | [`invariants`](../packages/runtime-diagnostics/invariants), [`remote-api`](../packages/mobile/remote-api) |
+| [`pairing-protocol`](../packages/mobile/pairing-protocol) | `mobile` | [`brand`](../packages/util/brand) |
+| [`remote-host-identity`](../packages/mobile/remote-host-identity) | `mobile` | [`brand`](../packages/util/brand) |
+| [`remote-wire`](../packages/mobile/remote-wire) | `mobile` | [`remote-api`](../packages/mobile/remote-api) |
 | [`storage-domain`](../packages/storage/storage-domain) | `storage` | [`invariants`](../packages/runtime-diagnostics/invariants), [`storage`](../packages/storage/storage) |
 | [`storage-json`](../packages/storage/storage-json) | `storage` | [`storage`](../packages/storage/storage) |
 | [`storage-sqlite`](../packages/storage/storage-sqlite) | `storage` | [`storage`](../packages/storage/storage) |
@@ -1531,7 +1526,7 @@ flowchart TD
 | [`credentials-local`](../packages/credentials/credentials-local) | `credentials` | [`atomic-write`](../packages/util/atomic-write), [`credentials`](../packages/credentials/credentials), [`home-paths`](../packages/util/home-paths), [`launch-environment`](../packages/util/launch-environment) |
 | [`experimental-computer-use-cua-driver-mcp`](../packages/experimental/computer-use-cua-driver-mcp) | `experimental` | [`computer-use`](../packages/computer-use/computer-use) |
 | [`remote-devices`](../packages/mobile/remote-devices) | `mobile` | [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`storage-domain`](../packages/storage/storage-domain) |
-| [`remote-relay-protocol`](../packages/mobile/remote-relay-protocol) | `mobile` | [`invariants`](../packages/runtime-diagnostics/invariants), [`remote-wire`](../packages/mobile/remote-wire) |
+| [`remote-relay-protocol`](../packages/mobile/remote-relay-protocol) | `mobile` | [`remote-wire`](../packages/mobile/remote-wire) |
 | [`sandbox-windows-acl`](../packages/sandbox/sandbox-windows-acl) | `sandbox` | [`subprocess`](../packages/subprocess/subprocess) |
 | [`subprocess-local`](../packages/subprocess/subprocess-local) | `subprocess` | [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout) |
 | [`skill-badge`](../packages/skill/skill-badge) | `skill` | [`skill`](../packages/skill/skill) |
@@ -1557,7 +1552,7 @@ flowchart TD
 | [`session-log-export`](../packages/session-query/session-log-export) | `session-query` | [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence) |
 | [`hmr`](../packages/boot/hmr) | `boot` | [`app-boot`](../packages/boot/app-boot), [`cmdline`](../packages/boot/cmdline) |
 | [`experimental-speech-to-text`](../packages/experimental/speech-to-text) | `experimental` | [`settings`](../packages/settings/settings) |
-| [`remote-host-v3`](../packages/mobile/remote-host-v3) | `mobile` | [`invariants`](../packages/runtime-diagnostics/invariants), [`remote-api`](../packages/mobile/remote-api), [`remote-devices`](../packages/mobile/remote-devices), [`remote-gateway`](../packages/mobile/remote-gateway), [`remote-wire`](../packages/mobile/remote-wire), [`storage-domain`](../packages/storage/storage-domain) |
+| [`remote-host-v3`](../packages/mobile/remote-host-v3) | `mobile` | [`remote-api`](../packages/mobile/remote-api), [`remote-devices`](../packages/mobile/remote-devices), [`remote-gateway`](../packages/mobile/remote-gateway), [`remote-wire`](../packages/mobile/remote-wire), [`storage-domain`](../packages/storage/storage-domain) |
 | [`ptc-runtime`](../packages/ptc-runtime/ptc-runtime) | `ptc-runtime` | [`sandbox`](../packages/sandbox/sandbox) |
 | [`sandbox-local`](../packages/sandbox/sandbox-local) | `sandbox` | [`llm`](../packages/llm/llm), [`sandbox`](../packages/sandbox/sandbox), [`session`](../packages/core/session) |
 | [`session-persistence-jsonl`](../packages/session/session-persistence-jsonl) | `session` | [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence) |

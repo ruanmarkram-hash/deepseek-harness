@@ -21,6 +21,8 @@ kind: "package-library"
 
 ## 接口
 
+不发布运行时不变量 companion，因为此解析器和加密库没有可独立观察的 Host 服务关系。
+
 桌面端创建新的 X25519 密钥对，并且只把其规范的 32 字节 base64url 公钥放入短时 `dsh-pairing:v2:` QR bootstrap。QR 还包含公开的配对和桌面 id、固定移动端能力集、`wss:` 中继 URL、过期时间和仅供手机使用的中继凭据。桌面端中继凭据和所有临时私钥都不进入 QR。
 
 手机端通过注入的 `PairingRandomSource` 创建自己的 X25519 密钥对，然后发送精确的 `mobile-init` control，其中包含其公钥、允许的请求能力，以及有界的 nonce 前缀 XChaCha20-Poly1305 proof。proof 密钥由 X25519 shared secret 和 HKDF-SHA-256 导出，其 transcript 绑定协议版本、配对 id、两个设备 id、两个公钥和能力。桌面端在明确批准前验证该 proof，然后发送同样绑定的 `desktop-accept` proof。手机端在打开本地 application-frame gate 前验证它。

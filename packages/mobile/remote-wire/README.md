@@ -21,6 +21,8 @@ English | [中文](README.zh.md)
 
 ## Surface
 
+No runtime invariant companion is published because this stateless envelope parser owns no Host process state or event stream.
+
 Every envelope carries fixed `version: 3` and `connectionEpoch`. A client request carries an opaque `requestId` and `idempotencyKey`; a response echoes that request id. Host events carry both an opaque delivery `eventId` and the original Host `requestId`, plus a contiguous delivery `cursor`; answerable event replies echo that Host request id. The client sends `stream-ack` only after applying the highest contiguous cursor locally. The parser does not retain ordering state, so a future connection owner enforces epoch replacement, idempotency retention, and acknowledgement progression.
 
 `REMOTE_WIRE_METHODS` is a closed allowlist checked against the public API Proxy `RpcMethodMap`. It admits the current DSH session, workspace, model, subagent, configuration, credential, and host methods without introducing a second, hand-named computer-use API. `REMOTE_WIRE_EVENTS` preserves every existing public host and mux event name. Approval answers preserve the current `allowed-once` and `rejected` outcomes. A generic `client-response` echoes a host request id and can answer the existing question requests. Device controls are limited to connection lifecycle (`device.describe`, `device.heartbeat`, and `device.disconnect`), never host tool execution.

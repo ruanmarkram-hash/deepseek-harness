@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/mobile/remote-relay-protocol/README.md
-README.md: 274f6a55f04b82066921f8f8929ccbaeda6f6466
-README.zh.md: 1eca669ad49e615cc7102e7c38743bdfa27ee9ca
+README.md: 5eabc31d9033d92306fd0a225a71da5893b7e201
+README.zh.md: 46988c8c80c8c39edef22600c44551143817a705

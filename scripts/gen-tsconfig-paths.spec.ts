@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import ts from 'typescript'
 import {
   collectPackageAliases,
   collectPackageNames,
@@ -13,6 +14,21 @@ import {
 const root = resolve(import.meta.dirname, '..')
 
 describe('generated tsconfig package aliases', () => {
+  it.each([
+    ['@deepseek-ai/dsh-remote-api/api', 'packages/mobile/remote-api/src/api/index.ts'],
+    ['@deepseek-ai/dsh-remote-api/api/events.schema', 'packages/mobile/remote-api/src/api/events.schema.ts'],
+    ['@deepseek-ai/dsh-remote-api/api/rpc.schema', 'packages/mobile/remote-api/src/api/rpc.schema.ts'],
+    ['@deepseek-ai/dsh-remote-api/client', 'packages/mobile/remote-api/src/fetch/client.ts'],
+    ['@deepseek-ai/dsh-remote-host-fd199/web-owner', 'packages/mobile/remote-host-fd199/src/web-owner.ts'],
+  ])('resolves the mobile subpath %s to source without built artifacts', (specifier, expected) => {
+    const filename = resolve(root, 'tsconfig.base.json')
+    const config = ts.readConfigFile(filename, path => ts.sys.readFile(path))
+    const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, root)
+    const host = { ...ts.sys, fileExists: (path: string) => !path.replaceAll('\\', '/').includes('/lib/') && ts.sys.fileExists(path) }
+    const result = ts.resolveModuleName(specifier, resolve(root, 'apps/cli/src/profile-boot.ts'), parsed.options, host)
+    expect(result.resolvedModule?.resolvedFileName.replaceAll('\\', '/')).toBe(resolve(root, expected).replaceAll('\\', '/'))
+  })
+
   it('maps each package to its own source directory', () => {
     const aliases = collectPackageAliases()
     expect(aliases.length).toBeGreaterThan(100)

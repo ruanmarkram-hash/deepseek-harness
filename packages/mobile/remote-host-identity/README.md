@@ -21,6 +21,8 @@ English | [中文](README.zh.md)
 
 ## Surface
 
+No runtime invariant companion is published because private Keychain state is not independently observable outside the identity provider.
+
 When a signed native Keychain provider composes it, `ctx.remoteHostIdentity` returns public Host metadata, signs an already transcript-bound payload, and derives a shared secret from one validated X25519 remote public key. Callers must feed the returned secret directly to their KDF and must not persist or log it.
 
 `ctx.remoteEnrollment.issueRoute()` mints a five-minute route id plus distinct Host and client relay tokens for a future local QR exchange. It keeps at most 32 exact routes only in process memory until expiry or one `confirm()` call consumes one and passes a copied locally confirmed remote public identity to `ctx.remoteDevices.enroll()`. Route tokens are not written anywhere by this package, and this package creates no HTTP endpoint, QR screen, relay request, or remote enrollment listener.
