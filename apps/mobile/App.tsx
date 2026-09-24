@@ -40,6 +40,7 @@ export default function App(): React.JSX.Element {
   const mounted = useRef(true)
   const noticeLease = useRef<ReturnType<MobileConnectionNotices['claim']> | undefined>(undefined)
   const connectAction = useRef<AbortController | undefined>(undefined)
+  const pendingPluginToggle = useRef<Promise<MobilePlugin> | undefined>(undefined)
   const updateNotice = (event: MobileConnectionNoticeEvent) => {
     noticeLease.current?.update(event)
     if (mounted.current) setNotice(connectionNotices.current)
@@ -163,7 +164,7 @@ export default function App(): React.JSX.Element {
       {sheet === 'details' && <HostDetails session={selected} workspace={workspace} />}
       {sheet === 'pairing' && <PairingSheet existing={pairing} state={remoteState} onConnect={() => void connectHost()} onImport={importInvitation} onRemotePair={completeRemotePairing} onOpenForget={() => setSheet('forget')} />}
       {sheet === 'forget' && <ForgetSheet onCancel={() => setSheet('connection')} onForget={() => void forget()} />}
-      {sheet === 'plugins' && <PluginsSheet client={client.current} connected={connected} />}
+      {sheet === 'plugins' && <PluginsSheet client={client.current} connected={connected} pendingToggle={pendingPluginToggle} />}
     </ModalSheet>}
   </SafeAreaView></ConnectionNoticeContext.Provider>
 }
@@ -274,16 +275,16 @@ function SessionDrawer({
   return <View style={styles.screen}><View style={styles.drawerHeader}><Pressable accessibilityLabel="Close sessions" accessibilityRole="button" onPress={onClose} style={styles.iconButton}><Text style={styles.iconText}>‹</Text></Pressable><Brand /><View style={styles.iconButton} /></View><ScrollView contentContainerStyle={styles.drawer}><Pressable accessibilityRole="button" onPress={onCreateSession} style={styles.newButton}><Text style={styles.newText}>＋ New session</Text></Pressable><Pressable accessibilityLabel="Open plugins" accessibilityRole="button" onPress={onOpenPlugins} style={styles.sessionRow}><Text style={styles.rowTitle}>Plugins</Text><Text style={styles.chevron}>›</Text></Pressable><View style={styles.drawerRow}><Text style={styles.sectionLabel}>RECENT SESSIONS</Text><Pressable accessibilityRole="button" onPress={onRefresh}><Text style={styles.refresh}>Refresh</Text></Pressable></View>{workspace.sessions.length === 0 ? <Text style={styles.drawerEmpty}>{connected ? 'No sessions received from the Host yet.' : 'Connect a DSH Host to see its live sessions.'}</Text> : workspace.sessions.map(session => <Pressable key={session.id} accessibilityRole="button" onPress={() => onSelectSession(session.id)} style={styles.sessionRow}><Image accessibilityIgnoresInvertColors source={deepSeekMark} style={styles.rowMark} /><View style={styles.rowCopy}><Text numberOfLines={1} style={styles.rowTitle}>{session.title}</Text><Text numberOfLines={1} style={styles.rowDetail}>{session.running ? 'Responding' : `${session.messages.length} live messages`}</Text></View><Text style={styles.chevron}>›</Text></Pressable>)}<View style={styles.drawerFooter}><Pressable accessibilityRole="button" onPress={onOpenConnection} style={styles.connectionCard}><View style={[styles.dot, connected && styles.dotLive]} /><View style={styles.rowCopy}><Text style={styles.rowTitle}>{connected ? 'DSH Host connected' : stateLabel(remoteState)}</Text><Text style={styles.rowDetail}>{connected ? 'Encrypted remote connection' : 'Open connection controls'}</Text></View><Text style={styles.chevron}>›</Text></Pressable></View></ScrollView></View>
 }
 
-function PluginsSheet({ client, connected }: {
+function PluginsSheet({ client, connected, pendingToggle }: {
   readonly client: MobileRemoteClient | undefined
   readonly connected: boolean
+  readonly pendingToggle: React.RefObject<Promise<MobilePlugin> | undefined>
 }): React.JSX.Element {
   const [plugins, setPlugins] = useState<MobilePlugin[] | undefined>()
   const [error, setError] = useState<string | undefined>()
   const [busyId, setBusyId] = useState<string | undefined>()
   const [loading, setLoading] = useState(false)
   const generation = useRef(0)
-  const pendingToggle = useRef<Promise<MobilePlugin> | undefined>(undefined)
   const active = useRef(true)
   const refresh = async () => {
     const current = ++generation.current

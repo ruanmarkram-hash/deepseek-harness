@@ -1,20 +1,22 @@
 /**
  * ACL failure-path tests with minimal stub binding tables: every checked
  * Win32 call in the lock, read-merge-write, mandatory-label, and
- * grant-skip sequence has a failing counterpart, and each failure closes the
- * handles it created before throwing. The exact-ACE/exact-label skip and the
- * DACL/SACL-walk defenses are driven through crafted in-memory ACL/SID
+ * grant-skip and existing-directory repair sequences have failing counterparts.
+ * Each failure closes the handles it created before throwing. The exact-ACE,
+ * exact-label skip, and DACL/SACL-walk defenses use crafted in-memory ACL/SID
  * buffers. Pure stubs — no real Win32 calls, so these run on every platform;
  * the real-FFI round-trip lives in acl.spec.ts (win32 only).
  */
 
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Win32Error } from '@deepseek-ai/dsh-win32-process'
 import { describe, expect, it, vi } from 'vitest'
 import type { Mock } from 'vitest'
 import koffi from 'koffi'
 
-import { grantWrite, revokeWrite, withPathLock } from '../src/acl.ts'
+import { grantWrite, grantWriteTree, revokeWrite, withPathLock } from '../src/acl.ts'
 import { allocBytes, ptrAddress } from '../src/ffi.ts'
 import type { NativePtr, Win32Bindings } from '../src/ffi.ts'
 import * as abi from '../src/win32-abi.ts'
@@ -171,6 +173,130 @@ function readStub(dacl: NativePtr | null, label: NativePtr | null, descriptor: b
     return 0
   })
 }
+
+/** Exercise the tree walker against a real directory listing and mocked Win32 metadata. */
+function withExistingChild(test: (root: string, child: string) => void): void {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-acl-tree-'))
+  const child = join(root, 'child')
+  mkdirSync(child)
+  try {
+    test(root, child)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+}
+
+/** Root and child each receive a separate ACL read; the root grant always runs first. */
+function treeApi(childAcl: NativePtr | null, childDescriptor: bigint | null): Win32Bindings {
+  return aclApi({
+    getFileAttributesW: vi.fn(() => abi.FILE_ATTRIBUTE_DIRECTORY),
+    getNamedSecurityInfoW: vi.fn()
+      .mockImplementationOnce(readStub(null, null, null))
+      .mockImplementation(readStub(childAcl, null, childDescriptor)),
+  })
+}
+
+describe('grantWriteTree existing-directory repair', () => {
+  it('adds a deny to an existing child without an explicit DACL', () => {
+    withExistingChild((root, child) => {
+      const api = treeApi(null, null)
+      grantWriteTree(api, root, craftSid(1, 0), craftLowLabelSid(), craftWorldSid())
+      expect((api.getFileAttributesW as Mock).mock.calls).toContainEqual([child])
+      expect((api.getNamedSecurityInfoW as Mock).mock.calls).toHaveLength(2)
+      expect((api.setNamedSecurityInfoW as Mock).mock.calls).toHaveLength(2)
+    })
+  })
+
+  it('fails closed when a queued child can no longer be inspected', () => {
+    withExistingChild((root, child) => {
+      const api = treeApi(null, null)
+      api.getFileAttributesW = vi.fn()
+        .mockReturnValueOnce(abi.FILE_ATTRIBUTE_DIRECTORY)
+        .mockReturnValue(abi.INVALID_FILE_ATTRIBUTES)
+      expect(() => { grantWriteTree(api, root, craftSid(1, 0), craftLowLabelSid(), craftWorldSid()) })
+        .toThrow(/GetFileAttributesW/u)
+      expect((api.getFileAttributesW as Mock).mock.calls[1]).toEqual([child])
+      expect((api.getNamedSecurityInfoW as Mock).mock.calls).toHaveLength(1)
+    })
+  })
+
+  it('does not edit a queued child that became a reparse point', () => {
+    withExistingChild((root, child) => {
+      const api = treeApi(null, null)
+      api.getFileAttributesW = vi.fn()
+        .mockReturnValueOnce(abi.FILE_ATTRIBUTE_DIRECTORY)
+        .mockReturnValue(abi.FILE_ATTRIBUTE_DIRECTORY | abi.FILE_ATTRIBUTE_REPARSE_POINT)
+      grantWriteTree(api, root, craftSid(1, 0), craftLowLabelSid(), craftWorldSid())
+      expect((api.getFileAttributesW as Mock).mock.calls[1]).toEqual([child])
+      expect((api.getNamedSecurityInfoW as Mock).mock.calls).toHaveLength(1)
+      expect((api.setNamedSecurityInfoW as Mock).mock.calls).toHaveLength(1)
+    })
+  })
+
+  it('skips files and reparse points while enumerating existing children', () => {
+    withExistingChild((root, child) => {
+      const file = join(root, 'file.txt')
+      const alias = join(root, 'alias')
+      writeFileSync(file, 'x')
+      mkdirSync(alias)
+      const api = treeApi(null, null)
+      api.getFileAttributesW = vi.fn((path: string) => {
+        if (path === alias) return abi.FILE_ATTRIBUTE_DIRECTORY | abi.FILE_ATTRIBUTE_REPARSE_POINT
+        return path === file ? 0 : abi.FILE_ATTRIBUTE_DIRECTORY
+      })
+      grantWriteTree(api, root, craftSid(1, 0), craftLowLabelSid(), craftWorldSid())
+      expect((api.getFileAttributesW as Mock).mock.calls).toContainEqual([child])
+      expect((api.getFileAttributesW as Mock).mock.calls).toContainEqual([file])
+      expect((api.getFileAttributesW as Mock).mock.calls).toContainEqual([alias])
+      expect((api.getNamedSecurityInfoW as Mock).mock.calls).toHaveLength(2)
+      expect((api.setNamedSecurityInfoW as Mock).mock.calls).toHaveLength(2)
+    })
+  })
+
+  it('fails closed when a queued child is no longer a directory', () => {
+    withExistingChild((root, child) => {
+      const api = treeApi(null, null)
+      api.getFileAttributesW = vi.fn()
+        .mockReturnValueOnce(abi.FILE_ATTRIBUTE_DIRECTORY)
+        .mockReturnValue(0)
+      expect(() => { grantWriteTree(api, root, craftSid(1, 0), craftLowLabelSid(), craftWorldSid()) })
+        .toThrow(`Windows ACL grant child is no longer a directory: ${child}`)
+      expect((api.getNamedSecurityInfoW as Mock).mock.calls).toHaveLength(1)
+    })
+  })
+
+  it.each([null, 6n])('skips an existing exact child deny and frees its descriptor when present (%s)', (descriptor) => {
+    withExistingChild((root, child) => {
+      const world = craftWorldSid()
+      const localFree = vi.fn(() => 0n as NativePtr)
+      const api = treeApi(craftGrantedAcl(craftSid(1, 0), world, true), descriptor)
+      api.localFree = localFree
+      grantWriteTree(api, root, craftSid(1, 0), craftLowLabelSid(), world)
+      expect((api.getNamedSecurityInfoW as Mock).mock.calls).toHaveLength(2)
+      expect((api.setNamedSecurityInfoW as Mock).mock.calls).toHaveLength(1)
+      if (descriptor === null) expect(localFree).not.toHaveBeenCalledWith(6n)
+      else expect(localFree).toHaveBeenCalledWith(6n)
+      expect((api.getFileAttributesW as Mock).mock.calls).toContainEqual([child])
+    })
+  })
+
+  it('reports a failed descriptor free on the exact child deny skip', () => {
+    withExistingChild((root) => {
+      const world = craftWorldSid()
+      const api = treeApi(craftGrantedAcl(craftSid(1, 0), world, true), 6n)
+      api.localFree = vi.fn((pointer: NativePtr) => (pointer === 6n ? 1n : 0n) as NativePtr)
+      let caught: unknown
+      try {
+        grantWriteTree(api, root, craftSid(1, 0), craftLowLabelSid(), world)
+      } catch (error) {
+        caught = error
+      }
+      expect(caught).toBeInstanceOf(Win32Error)
+      expect((caught as Win32Error).api).toBe('LocalFree')
+      expect((api.setNamedSecurityInfoW as Mock).mock.calls).toHaveLength(1)
+    })
+  })
+})
 
 describe('withPathLock failure paths', () => {
   it('fails closed when CreateFileW returns an invalid handle', () => {

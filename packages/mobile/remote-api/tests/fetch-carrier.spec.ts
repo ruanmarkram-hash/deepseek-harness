@@ -341,6 +341,22 @@ async function collect<F>(stream: AsyncIterable<RpcRequest<F>>): Promise<RpcRequ
 }
 
 describe('unary round trip (handler ⇄ client, no network)', () => {
+  it('routes Host plugin inventory and toggles through the typed client', async () => {
+    const api = fakeApi()
+    const list = vi.spyOn(api.plugins, 'list')
+    const setEnabled = vi.spyOn(api.plugins, 'setEnabled')
+    const c = client(api)
+
+    expect((await c.plugins.list({})).result).toEqual({ ok: true, value: { plugins: [] } })
+    expect(list).toHaveBeenCalledOnce()
+    expect((await c.plugins.setEnabled({ id: 'computer-use', enabled: false })).result).toEqual({
+      ok: false, error: { code: 'internal', message: 'stub', details: {} },
+    })
+    expect(setEnabled).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: { id: 'computer-use', enabled: false } }),
+    )
+  })
+
   it('carries a success result and echoes the minted rpcId', async () => {
     const response = await client().sessions.list({})
     expect(response.result).toEqual({ ok: true, value: { items: [] } })

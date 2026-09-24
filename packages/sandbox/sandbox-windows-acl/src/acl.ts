@@ -335,8 +335,7 @@ function hasExactDeny(oldAcl: NativePtr, worldSidPtr: NativePtr): boolean {
 function secureExistingDirectories(api: Win32Bindings, root: string, worldSidPtr: NativePtr): void {
   const pending = [root]
   while (pending.length > 0) {
-    const directory = pending.pop()
-    if (directory === undefined) break
+    const directory = pending.pop() as string // pending is non-empty at the loop condition
     if (directory !== root) {
       const attributes = api.getFileAttributesW(directory)
       if (attributes === abi.INVALID_FILE_ATTRIBUTES) throwLastError(api, 'GetFileAttributesW', directory)

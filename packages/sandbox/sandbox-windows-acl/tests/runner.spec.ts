@@ -25,6 +25,11 @@ function pwshAvailable(): boolean {
   return spawnSync(resolvePwshPath(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$true'], { encoding: 'utf8' }).status === 0
 }
 
+const hasPwsh = isWin32 && pwshAvailable()
+if (isWin32 && process.env.CI && !hasPwsh) {
+  throw new Error('Windows ACL CI requires a working PowerShell runtime')
+}
+
 function runRunner(args: string[], timeoutMs = 30_000) {
   return spawnSync(process.execPath, ['--import', 'tsx/esm', runnerEntry, ...args], {
     timeout: timeoutMs,
@@ -32,7 +37,7 @@ function runRunner(args: string[], timeoutMs = 30_000) {
   })
 }
 
-describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
+describe.skipIf(!isWin32 || !hasPwsh)('windows-acl runner', () => {
   let scratchRoot!: string
   let writableDir!: string
   let isolatedTemp!: string

@@ -10,7 +10,7 @@ it('binds every unary API member to its released method name without invoking th
   })
   const domains: Record<string, string> = {
     sessions: 'session', subagents: 'subagent', host: 'host', workspace: 'workspace',
-    skills: 'skill', agentPresets: 'agentPreset', goals: 'goal', settings: 'settings',
+    skills: 'skill', plugins: 'plugins', agentPresets: 'agentPreset', goals: 'goal', settings: 'settings',
     credentials: 'credentials', llm: 'llm',
   }
   expect(Object.keys(api).sort()).toEqual(Object.keys(domains).sort())
@@ -19,5 +19,5 @@ it('binds every unary API member to its released method name without invoking th
       expect(bindings.get(handler)).toBe(`${domains[domain]}.${method}`)
     }
   }
-  expect(bindings.size).toBe(52)
+  expect(bindings.size).toBe(54)
 })

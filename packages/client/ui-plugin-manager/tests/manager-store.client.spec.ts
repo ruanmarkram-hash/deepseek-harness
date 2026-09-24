@@ -288,6 +288,31 @@ describe('PluginManagerController', () => {
     expect(hosted.list).toHaveBeenCalledTimes(2)
   })
 
+  it('shows a retryable read error when signed Host plugin controls refuse the list', async () => {
+    const { controller, state } = bench({
+      inventory: vi.fn(() => Promise.resolve(ok({ entries: [], managementAvailable: false, hostedControlsAvailable: true }))),
+      hostedList: vi.fn(() => Promise.resolve(refused('gateway/internal', 'offline'))),
+    })
+    await controller.load()
+    expect(state()).toMatchObject({ hosted: true, status: 'error', hostedPlugins: [], packages: [] })
+  })
+
+  it.each(['resolve', 'reject'] as const)('drops a signed Host plugin read that settles after disposal by %s', async (outcome) => {
+    const gate = deferred<ReturnType<typeof ok<{ plugins: never[] }>>>()
+    const hostedList = vi.fn(() => outcome === 'resolve' ? gate.promise : gate.promise.then(() => { throw new Error('offline') }))
+    const { controller, state, hosted } = bench({
+      inventory: vi.fn(() => Promise.resolve(ok({ entries: [], managementAvailable: false, hostedControlsAvailable: true }))),
+      hostedList,
+    })
+    const loading = controller.load()
+    await vi.waitFor(() => { expect(hosted.list).toHaveBeenCalledOnce() })
+    const before = state()
+    controller.dispose()
+    gate.resolve(ok({ plugins: [] }))
+    await loading
+    expect(state()).toBe(before)
+  })
+
   it('keeps the unavailable profile page when neither plugin manager nor signed Host controls exist', async () => {
     const { controller, hosted, state } = bench({
       inventory: vi.fn(() => Promise.resolve(ok({ entries: [], managementAvailable: false }))),

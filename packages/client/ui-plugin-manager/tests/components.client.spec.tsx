@@ -216,6 +216,22 @@ describe('PluginManagerPage', () => {
     expect(actions.refresh).toHaveBeenCalled()
   })
 
+  it('shows hosted loading, empty results, and notices while keeping refresh and dismissal available', () => {
+    const { actions, set } = renderTab({ hosted: true, status: 'loading' })
+    expect(screen.getByRole('status').textContent).toContain(en.loading)
+    expect(screen.getByRole('button', { name: en.refresh })).toHaveProperty('disabled', true)
+    expect(document.querySelector('[data-hosted-plugin]')).toBeNull()
+    set({ status: 'ready' })
+    expect(screen.getByText(en.empty)).toBeTruthy()
+    expect(screen.getByRole('button', { name: en.refresh })).toHaveProperty('disabled', false)
+    fireEvent.click(screen.getByRole('button', { name: en.refresh }))
+    expect(actions.refresh).toHaveBeenCalledOnce()
+    set({ notice: { kind: 'restart', packageName: 'computer-use', seq: 1 } })
+    expect(screen.getByRole('alert').textContent).toContain(en.restartNotice)
+    set({ notice: null })
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('keeps the read failure and its retry visible while a detail page is open', () => {
     const { actions, set } = renderTab({ packages: [pkg()] })
     fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'dsh-better-sidebar') }))
