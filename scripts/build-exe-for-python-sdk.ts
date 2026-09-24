@@ -15,6 +15,7 @@ import { parseArgs } from 'node:util'
 import { resolveLinuxNodePtyAddon, resolveWindowsNodePtyAddons } from './build-exe-for-python-sdk-native-pty.ts'
 import { copyOfficeSidecar, OFFICE_ASSET_IGNORES } from './build-exe-for-python-sdk-office.ts'
 import { preparePrimaryRuntime, smokePrimaryRuntime, type PrimaryRuntimeTarget } from './primary-runtime/prepare.ts'
+import { verifyStagedRuntimeClosure } from './verify-runtime-closure.ts'
 
 const root = resolve(import.meta.dirname, '..')
 
@@ -304,6 +305,12 @@ class SingleExeBuild {
     ])
     await this.restoreLegacyHoists()
     await this.materializeStagedLinks()
+    if (!this.cli.dryRun) {
+      const failures = await verifyStagedRuntimeClosure(root, this.staging)
+      if (failures.length > 0) {
+        throw new Error(`build-exe-for-python-sdk: incomplete staged workspace closure:\n${failures.join('\n')}`)
+      }
+    }
     if (this.cli.dryRun) {
       for (const name of DEPLOY_ONLY_DOCS) console.log(`build-exe-for-python-sdk: [dry-run] rm -f ${join(this.staging, name)}`)
     } else {

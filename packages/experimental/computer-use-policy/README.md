@@ -33,7 +33,7 @@ Mount this optional row beside the computer-use, tool, and system-prompt service
 - name: '@deepseek-ai/dsh-experimental-computer-use-policy'
 ```
 
-The row accepts no configuration fields. It mounts the official native provider itself; do not mount that provider separately. The [authoring overlay](../../../apps/cli/config/examples/native-computer-use-policy.cordis.yml) adds this row and optional progress narration.
+The row accepts no configuration fields. It mounts the official native provider itself; do not mount that provider separately. The [package-owned authoring overlay](examples/native-computer-use-policy.cordis.yml) adds this row and optional progress narration after the deployment installs these optional packages.
 
 Approval is per call, including observations. A missing answerer, rejected request, cancelled request, throwing answerer, or absent approval service never dispatches the native call. The session approval policy `never` also rejects calls. A refused first call releases its reservation; an admitted call retains ownership until Agent or Session disposal.
 

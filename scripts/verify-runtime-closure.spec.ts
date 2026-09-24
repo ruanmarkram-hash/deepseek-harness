@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { loadCordisYaml } from './cordis-yaml.ts'
-import { verifyRuntimeClosure } from './verify-runtime-closure.ts'
+import { verifyRuntimeClosure, verifyStagedRuntimeClosure } from './verify-runtime-closure.ts'
 
 const roots: string[] = []
 
@@ -39,6 +39,58 @@ afterEach(() => {
 })
 
 describe('verifyRuntimeClosure', () => {
+  it('checks required transitive workspace packages in the sealed tree without ancestor fallback', async () => {
+    const root = fixture({
+      'packages/core/entry/package.json': { name: '@scope/entry' },
+      'packages/core/service/package.json': { name: '@scope/service' },
+      'packages/core/leaf/package.json': { name: '@scope/leaf' },
+      'staged/package.json': { dependencies: { '@scope/entry': 'workspace:*' } },
+      'staged/node_modules/@scope/entry/package.json': { name: '@scope/entry', dependencies: { '@scope/service': 'workspace:*' } },
+      'staged/node_modules/@scope/service/package.json': { name: '@scope/service', dependencies: { '@scope/leaf': 'workspace:*' } },
+      'node_modules/@scope/leaf/package.json': { name: '@scope/leaf' },
+    })
+    expect(await verifyStagedRuntimeClosure(root, join(root, 'staged'))).toEqual([
+      '@scope/service -> @scope/leaf is missing from the staged runtime',
+    ])
+    const leaf = join(root, 'staged/node_modules/@scope/leaf')
+    mkdirSync(leaf, { recursive: true })
+    writeFileSync(join(leaf, 'package.json'), JSON.stringify({ name: '@scope/leaf' }))
+    expect(await verifyStagedRuntimeClosure(root, join(root, 'staged'))).toEqual([])
+  })
+
+  it('requires workspace peers but excludes dev dependencies, optional peers, and unrelated private apps', async () => {
+    const root = fixture({
+      'packages/core/service/package.json': { name: '@scope/service' },
+      'packages/core/peer/package.json': { name: '@scope/peer' },
+      'packages/core/dev/package.json': { name: '@scope/dev' },
+      'packages/core/optional/package.json': { name: '@scope/optional' },
+      'apps/private/package.json': { name: '@scope/private', private: true, dependencies: { '@scope/dev': 'workspace:*' } },
+      'staged/package.json': { dependencies: { '@scope/service': 'workspace:*' } },
+      'staged/node_modules/@scope/service/package.json': {
+        name: '@scope/service', devDependencies: { '@scope/dev': 'workspace:*' },
+        peerDependencies: { '@scope/peer': 'workspace:*', '@scope/optional': 'workspace:*' },
+        peerDependenciesMeta: { '@scope/optional': { optional: true } },
+      },
+    })
+    expect(await verifyStagedRuntimeClosure(root, join(root, 'staged'))).toEqual([
+      '@scope/service -> @scope/peer is missing from the staged runtime',
+    ])
+    const peer = join(root, 'staged/node_modules/@scope/peer')
+    mkdirSync(peer, { recursive: true })
+    writeFileSync(join(peer, 'package.json'), JSON.stringify({ name: '@scope/peer' }))
+    expect(await verifyStagedRuntimeClosure(root, join(root, 'staged'))).toEqual([])
+  })
+
+  it('leaves application-owned alternate profiles outside the declared shared-package closure', async () => {
+    const root = fixture({
+      'apps/cli/package.json': { name: '@scope/cli' },
+      'packages/bundle/alternate/package.json': { name: '@scope/alternate' },
+      'staged/package.json': { dependencies: { '@scope/cli': 'workspace:*' } },
+      'staged/node_modules/@scope/cli/package.json': { name: '@scope/cli', dependencies: { '@scope/alternate': 'workspace:*' } },
+    })
+    expect(await verifyStagedRuntimeClosure(root, join(root, 'staged'))).toEqual([])
+  })
+
   it('requires only plugins active for each published target', async () => {
     const root = fixture({
       'python/sdk-runtime/package.json': { name: 'runtime', dependencies: { '@scope/shared': 'workspace:^' } },

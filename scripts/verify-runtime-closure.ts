@@ -4,9 +4,9 @@
  * graph. With auto peer installation disabled, either omission can otherwise
  * fail only when Cordis loads the packaged plugin.
  */
-import { globSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { existsSync, globSync } from 'node:fs'
+import { readFile, realpath } from 'node:fs/promises'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { parseArgs } from 'node:util'
 import { isCordisGroupEntry, loadCordisYaml, presetDefinitions } from './cordis-yaml.ts'
 
@@ -96,6 +96,58 @@ export async function verifyRuntimeClosure(
     presetCount: (await Promise.all(presetPaths.map(async path => presetDefinitions(loadCordisYaml(await readFile(resolve(root, path), 'utf8'))).length))).reduce((a, b) => a + b, 0),
     workspacePackageCount: queue.length,
   }
+}
+
+/**
+ * Check required workspace dependencies after deploy, without resolving outside the sealed tree.
+ * Follows the same shared-package/vendor graph as the source peer check. Application-owned
+ * alternate profiles are outside that shipped-root contract; executable smokes cover CLI startup.
+ * @param root repository root used only to identify workspace package names.
+ * @param staging deployed, symlink-free runtime directory.
+ * @returns missing required workspace dependencies or paths escaping the deployed tree.
+ */
+export async function verifyStagedRuntimeClosure(root: string, staging: string): Promise<string[]> {
+  const workspace = await loadWorkspacePackages(root)
+  const boundary = await realpath(staging)
+  const queue = [boundary]
+  const seen = new Set(queue)
+  const failures: string[] = []
+  for (const directory of queue) {
+    const manifest = await loadManifest(join(directory, 'package.json'))
+    const dependencies = {
+      ...manifest.dependencies,
+      ...manifest.peerDependencies,
+      ...manifest.optionalDependencies,
+    }
+    for (const name of Object.keys(dependencies).sort()) {
+      if (!workspace.has(name)) continue
+      const optional = manifest.optionalDependencies?.[name] !== undefined
+        || (manifest.dependencies?.[name] === undefined && manifest.peerDependenciesMeta?.[name]?.optional === true)
+      let cursor = directory
+      let found: string | undefined
+      while (true) {
+        const candidate = join(cursor, 'node_modules', name)
+        if (existsSync(join(candidate, 'package.json'))) {
+          found = await realpath(candidate)
+          break
+        }
+        if (cursor === boundary) break
+        cursor = dirname(cursor)
+      }
+      if (found === undefined) {
+        if (!optional) failures.push(`${manifest.name ?? 'runtime'} -> ${name} is missing from the staged runtime`)
+        continue
+      }
+      const path = relative(boundary, found)
+      if (isAbsolute(path) || path === '..' || path.startsWith(`..${sep}`)) {
+        failures.push(`${manifest.name ?? 'runtime'} -> ${name} escapes the staged runtime`)
+      } else if (!seen.has(found)) {
+        seen.add(found)
+        queue.push(found)
+      }
+    }
+  }
+  return failures
 }
 
 if (import.meta.main) {

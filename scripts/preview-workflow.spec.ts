@@ -10,7 +10,15 @@ const workflow = yaml.load(readFileSync(resolve(import.meta.dirname, '../.github
   env: Record<string, string>
   jobs: Record<'preview', {
     'runs-on': string
-    steps: Array<{ name?: string; uses?: string; run?: string; with?: Record<string, unknown>; env?: Record<string, string> }>
+    steps: Array<{
+      name?: string
+      id?: string
+      if?: string
+      uses?: string
+      run?: string
+      with?: Record<string, unknown>
+      env?: Record<string, string>
+    }>
   }>
 }
 const preview = workflow.jobs.preview
@@ -31,6 +39,9 @@ describe('PR preview workflow', () => {
     expect(commands).toContain('pnpm install --frozen-lockfile')
     expect(commands).toContain('pnpm run build')
     expect(commands).toContain('pnpm --filter @deepseek-ai/dsh-web-frontend run build:preview')
+    for (const name of ['Install (immutable)', 'Build workspace', 'Build the preview page and pack the VFS image']) {
+      expect(preview.steps.find(step => step.name === name)?.if).toBeUndefined()
+    }
     expect(commands.indexOf('pnpm run build')).toBeLessThan(commands.indexOf('pnpm --filter @deepseek-ai/dsh-web-frontend run build:preview'))
     expect(preview.steps.filter(step => step.uses?.startsWith('actions/cache'))).toHaveLength(1)
     expect(preview.steps.find(step => step.uses === 'actions/cache/restore@v4')?.with).toMatchObject({
@@ -48,7 +59,7 @@ describe('PR preview workflow', () => {
     expect(shape.run).toContain("find apps/web/dist -name '*.map' -delete")
     expect(shape.run).toContain('cp apps/web/dist/preview.html apps/web/dist/index.html')
     const deploy = preview.steps.find(step => step.name === 'Upload to Cloudflare Pages')!
-    expect(deploy.run).toContain('npx --yes wrangler@4 pages deploy apps/web/dist')
+    expect(deploy.run).toContain('pnpm --filter @deepseek-ai/dsh-mobile-relay exec wrangler pages deploy "$GITHUB_WORKSPACE/apps/web/dist"')
     expect(deploy.run).toContain('--branch "pr-${{ github.event.pull_request.number }}"')
     const verify = preview.steps.find(step => step.name === 'Verify the protected deployment serves the image')!
     expect(verify.run).toContain('/preview/vfs-image.tar.gz')
@@ -59,5 +70,25 @@ describe('PR preview workflow', () => {
     const comment = preview.steps.find(step => step.name === 'Comment the preview URL')!
     expect(comment.run).toContain('<!-- dsh-preview-url -->')
     expect(comment.run).toContain('gh pr comment "$PR" --body-file -')
+  })
+
+  it('gates only publication on the complete deployment and Access credential set', () => {
+    const publication = preview.steps.find(step => step.id === 'publication')!
+    expect(publication.env).toEqual({
+      CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN }}',
+      CLOUDFLARE_ACCOUNT_ID: '${{ secrets.CLOUDFLARE_ACCOUNT_ID }}',
+      CF_ACCESS_CLIENT_ID: '${{ secrets.CF_ACCESS_CLIENT_ID }}',
+      CF_ACCESS_CLIENT_SECRET: '${{ secrets.CF_ACCESS_CLIENT_SECRET }}',
+    })
+    for (const name of Object.keys(publication.env!)) {
+      expect(publication.run).toContain(`[ -n "$${name}" ]`)
+    }
+    expect(publication.run).toContain('echo "enabled=true" >> "$GITHUB_OUTPUT"')
+    expect(publication.run).toContain('echo "enabled=false" >> "$GITHUB_OUTPUT"')
+    expect(preview.steps.filter(step => step.if !== undefined).map(step => [step.name, step.if])).toEqual([
+      ['Upload to Cloudflare Pages', "steps.publication.outputs.enabled == 'true'"],
+      ['Verify the protected deployment serves the image', "steps.publication.outputs.enabled == 'true'"],
+      ['Comment the preview URL', "steps.publication.outputs.enabled == 'true'"],
+    ])
   })
 })

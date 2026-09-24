@@ -33,7 +33,7 @@ kind: "package-reference"
 - name: '@deepseek-ai/dsh-experimental-computer-use-policy'
 ```
 
-此配置项不接受配置字段。它自行挂载官方原生提供方；请勿单独挂载该提供方。[编写用覆盖层](../../../apps/cli/config/examples/native-computer-use-policy.cordis.yml) 添加此配置项和可选的进度说明。
+此配置项不接受配置字段。它自行挂载官方原生提供方；请勿单独挂载该提供方。部署安装这些可选包后，[包内编写用覆盖层](examples/native-computer-use-policy.cordis.yml) 添加此配置项和可选的进度说明。
 
 批准按每次调用执行，包括观察。缺少应答器、请求被拒绝或取消、应答器抛出异常、缺少批准服务时，均不会分派原生调用。Session 批准策略 `never` 同样拒绝调用。首次调用被拒绝会释放预留；获准调用会保留所有权直到 Agent 或 Session 被释放。
 
