@@ -48,7 +48,7 @@ import {
 } from './web-runtime-registry.ts'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import { HostedSettings } from './hosted-settings.ts'
-import HostedPluginControls, { HostedPluginState } from '@deepseek-ai/dsh-hosted-plugin-controls'
+import HostedPluginControls, { HostedPluginState, type ApprovedHostedPlugin } from '@deepseek-ai/dsh-hosted-plugin-controls'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -61,6 +61,39 @@ const NAME = 'dsh'
 /** Resolve native-only resources only when the signed hosted composition is requested. */
 function hostedRootConfig(): string {
   return realpathSync.native(fileURLToPath(new URL('../config/hosted-root.yml', import.meta.url)))
+}
+
+/** Read the approved executable inventory from the same attested tree as hosted-root.yml. */
+export function loadApprovedHostedPlugins(rootConfig = hostedRootConfig()): ApprovedHostedPlugin[] {
+  const path = join(dirname(rootConfig), 'approved-plugins.json')
+  let parsed: unknown
+  try { parsed = JSON.parse(readFileSync(path, 'utf8')) }
+  catch { throw new Error(`${NAME}: signed hosted plugin inventory is unavailable or invalid`) }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)
+    || Object.keys(parsed).length !== 2 || !('formatVersion' in parsed) || parsed.formatVersion !== 1
+    || !('plugins' in parsed) || !Array.isArray(parsed.plugins)) {
+    throw new Error(`${NAME}: signed hosted plugin inventory has an invalid shape`)
+  }
+  const plugins: ApprovedHostedPlugin[] = []
+  const ids = new Set<string>()
+  for (const value of parsed.plugins) {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)
+      || Object.keys(value).length !== 4 || !('id' in value) || typeof value.id !== 'string'
+      || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(value.id) || ids.has(value.id)
+      || !('name' in value) || typeof value.name !== 'string'
+      || !/^(@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)$/.test(value.name)
+      || !('version' in value) || typeof value.version !== 'string' || value.version.length === 0
+      || !('sha256' in value) || typeof value.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(value.sha256)) {
+      throw new Error(`${NAME}: signed hosted plugin inventory contains an invalid approval`)
+    }
+    ids.add(value.id)
+    plugins.push({ id: value.id, name: value.name, version: value.version, sha256: value.sha256 })
+  }
+  return plugins
+}
+
+export function approvedHostedPluginPatches(plugins: readonly ApprovedHostedPlugin[]): PatchOptions[] {
+  return plugins.length === 0 ? [] : [{ insert: plugins.map(({ id, name }) => ({ id, name, disabled: true })) }]
 }
 
 const HOSTED_PATCH_HASH_ENV = 'DSH_HOSTED_PATCH_SHA256'
@@ -533,10 +566,11 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       cwd: process.cwd(), home: resolveDshHome(),
       overlays: composed.overlays, telemetryDisabledEnv: process.env.DSH_TELEMETRY_DISABLED,
     }
+    const approvedPlugins = hostedRuntime ? loadApprovedHostedPlugins(hostedBoot?.rootConfig) : []
     const sealedPatches = hostedRuntime
-      ? hostedProfilePatches(composed.profile, composed.overlays)
+      ? [...hostedProfilePatches(composed.profile, composed.overlays), ...approvedHostedPluginPatches(approvedPlugins)]
       : readProfilePatches(NAME, profileContext, composed.profile)
-    const hostedPlugins = hostedRuntime ? new HostedPluginState(resolveDshHome(), sealedPatches) : undefined
+    const hostedPlugins = hostedRuntime ? new HostedPluginState(resolveDshHome(), sealedPatches, approvedPlugins) : undefined
     const hostedSettings = hostedRuntime
       ? new HostedSettings(resolveDshHome(), sealedPatches, () => hostedPlugins?.overrides() ?? [], hostedPlugins?.compositionLockPath)
       : undefined

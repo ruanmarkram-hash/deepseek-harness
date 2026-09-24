@@ -6,7 +6,8 @@ import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { applyEntryPatches } from '@deepseek-ai/cordis-plugin-include'
 import {
-  hostedBootConfiguration, hostedProfilePatches, hostedRuntimeResolution, loadHostedPatchSnapshot, parseHostedPatchSnapshotBytes,
+  approvedHostedPluginPatches, hostedBootConfiguration, hostedProfilePatches, hostedRuntimeResolution,
+  loadApprovedHostedPlugins, loadHostedPatchSnapshot, parseHostedPatchSnapshotBytes,
   sealedHostedProfile,
 } from '../src/profile-boot.ts'
 
@@ -34,6 +35,21 @@ async function snapshot(body: string): Promise<{ home: string; patch: string }> 
 }
 
 describe('signed hosted patch snapshot', () => {
+  it('loads only sealed approved rows, disabled until an explicit Host control enables them', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-approved-hosted-'))
+    roots.push(home)
+    const rootConfig = join(home, 'hosted-root.yml')
+    const approved = { id: 'web-search-brave', name: '@rulabs/dsh-web-search-brave', version: '1.0.0', sha256: 'a'.repeat(64) }
+    await writeFile(join(home, 'approved-plugins.json'), JSON.stringify({ formatVersion: 1, plugins: [approved] }))
+    expect(loadApprovedHostedPlugins(rootConfig)).toEqual([approved])
+    const entries = applyEntryPatches([], [
+      ...hostedProfilePatches(sealedHostedProfile(), []), ...approvedHostedPluginPatches([approved]),
+    ], (message): never => { throw new Error(message) })
+    expect(entries.filter(row => row.id === approved.id)).toEqual([{ id: approved.id, name: approved.name, disabled: true }])
+    await writeFile(join(home, 'approved-plugins.json'), JSON.stringify({ formatVersion: 1, plugins: [{ ...approved, name: '../escape.mjs' }] }))
+    expect(() => loadApprovedHostedPlugins(rootConfig)).toThrow('invalid approval')
+  })
+
   it('adds one complete native mobile stack only after the sealed Web profile layers', () => {
     const profile = sealedHostedProfile()
     const fail = (message: string): never => { throw new Error(message) }

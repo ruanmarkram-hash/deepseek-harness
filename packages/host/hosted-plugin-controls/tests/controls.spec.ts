@@ -56,7 +56,9 @@ describe('signed Host plugin controls', () => {
     expect(state.list(context).plugins.at(-1)).toMatchObject({ id: 'web-search-brave', source: 'downloaded', enabled: false, required: false })
     expect(state.overrides()).toEqual([{ id: 'web-search-brave', disabled: true }])
     reconcile.mockImplementation(async (_ctx, candidate) => {
-      entries.at(-1)!.disabled = candidate.some(patch => patch.id === 'web-search-brave' && patch.disabled === true)
+      const row = candidate.flatMap(patch => patch.insert ?? []).find(item => item.id === 'web-search-brave')
+      const override = candidate.filter(patch => patch.id === 'web-search-brave').at(-1)
+      entries.at(-1)!.disabled = override?.disabled ?? row?.disabled ?? false
       return []
     })
     await state.setEnabled(context, { id: 'web-search-brave', enabled: true })
@@ -65,7 +67,7 @@ describe('signed Host plugin controls', () => {
       version: 2, enabledApproved: [{ id: 'web-search-brave', sha256: digest }],
     })
     const next = new HostedPluginState(home, patches, approved)
-    expect(next.overrides()).toEqual([])
+    expect(next.overrides()).toEqual([{ id: 'web-search-brave', disabled: false }])
     const updated = new HostedPluginState(home, patches, [{ ...approved[0]!, sha256: 'b'.repeat(64) }])
     expect(updated.overrides()).toEqual([{ id: 'web-search-brave', disabled: true }])
   })

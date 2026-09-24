@@ -11,6 +11,7 @@ import { apply, inject, NS, PANEL_ID } from '../src/client/index.ts'
 import { PluginManagerPage } from '../src/client/PluginManagerPage.tsx'
 import { PluginsPanelIcon } from '../src/client/PluginsPanelIcon.tsx'
 import type { PluginManagerFace } from '../src/client/manager-store.ts'
+import type { PluginInventorySnapshot } from '@deepseek-ai/dsh-api-remotes/client'
 
 usePinnedBrowserLanguages('zh-CN')
 afterEach(cleanup)
@@ -27,7 +28,9 @@ async function bench() {
     }
   }
   new LocaleHolder(ctx)
-  const list = vi.fn(() => Promise.resolve({ ok: true as const, value: { entries: [], managementAvailable: true } }))
+  const list = vi.fn(async (): Promise<{ ok: true; value: PluginInventorySnapshot }> => (
+    { ok: true, value: { entries: [], managementAvailable: true } }
+  ))
   const hostList = vi.fn(() => Promise.resolve({ ok: true as const, value: { plugins: [
     { id: 'native-computer-use-policy', name: 'Computer use', source: 'bundled' as const, enabled: true, required: false },
   ] } }))

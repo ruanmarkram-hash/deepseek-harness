@@ -123,7 +123,7 @@ export class HostedPluginState {
 
   /** Data-only overrides over the native-attested snapshot. */
   overrides(disabled: ReadonlySet<string> = this.disabled): PatchOptions[] {
-    return [...disabled].sort().map(id => ({ id, disabled: true }))
+    return [...new Set([...disabled, ...this.approved.keys()])].sort().map(id => ({ id, disabled: disabled.has(id) }))
   }
 
   /** Read signed rows, including fixed required rows and current enablement. */
