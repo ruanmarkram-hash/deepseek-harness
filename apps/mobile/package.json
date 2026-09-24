@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-mobile",
   "description": "native client shell for authenticated remote DeepSeek Harness sessions",
-  "version": "0.1.7-rc.1",
+  "version": "0.1.7-rc.2",
   "private": true,
   "main": "expo/AppEntry",
   "scripts": {

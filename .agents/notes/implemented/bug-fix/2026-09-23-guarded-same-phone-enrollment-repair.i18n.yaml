@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-23-guarded-same-phone-enrollment-repair.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-23-guarded-same-phone-enrollment-repair.md
-2026-09-23-guarded-same-phone-enrollment-repair.md: 0e8be33148667ed5e92622b6f6c6cf6cf09b0c48
-2026-09-23-guarded-same-phone-enrollment-repair.zh.md: 870dce42f75a6af0f882bf656ae52c05f43209d9
+/agent-note-guarded-same-phone-enrollment-repair:
+  en: 9f122580c8568fc6
+  zh: 92568c3e31c158c1
+/agent-note-guarded-same-phone-enrollment-repair/problem:
+  en: aa92060f55d6a67e
+  zh: b9d2b45da4a8ead7
+/agent-note-guarded-same-phone-enrollment-repair/decision:
+  en: af6d290fdf86fbf5
+  zh: c4b65924bbb077e5
+/agent-note-guarded-same-phone-enrollment-repair/alternatives-considered:
+  en: fbc3a6a8854fd346
+  zh: f7659241f7268b46
+/agent-note-guarded-same-phone-enrollment-repair/consequences:
+  en: aeb377672e71a9ab
+  zh: 8d4ec375b9b81c19

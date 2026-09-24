@@ -1,6 +1,49 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/experimental/computer-use-policy/README.md
-README.md: e7be79012535ad84a8845214fdf0e7c5c028cceb
-README.zh.md: 66c523041ddcef38c2c0381d3fe7286fda443dbf
+/:
+  en: 43d38ee8fc16e86b
+  zh: dd19b373ac4b0889
+/deepseek-ai-dsh-experimental-computer-use-policy:
+  en: bd86ca95d37e9d5f
+  zh: 91970b3b7a5e8517
+/deepseek-ai-dsh-experimental-computer-use-policy/summary:
+  en: c9085042e7e2fa2c
+  zh: 41aa30f8fa6d3f1f
+/deepseek-ai-dsh-experimental-computer-use-policy/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: aec3688fb92d60ae
+/deepseek-ai-dsh-experimental-computer-use-policy/use-this-package:
+  en: 949016d96860ec9b
+  zh: 6c37badf00e89333
+/deepseek-ai-dsh-experimental-computer-use-policy/use-this-package/minimal-configuration:
+  en: 3342e72e676b0743
+  zh: ed6ca91a6ec809d1
+/deepseek-ai-dsh-experimental-computer-use-policy/understand-the-implementation:
+  en: 655f42664cdec2c2
+  zh: 992e913348227a4b
+/deepseek-ai-dsh-experimental-computer-use-policy/further-exploration:
+  en: d2e767979d0c64a0
+  zh: b54e0b1ac812066b
+/deepseek-ai-dsh-experimental-computer-use-policy/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-experimental-computer-use-policy/model-experience/guarded-native-calls:
+  en: 2d964355c5fe4954
+  zh: 94432e54297a779e
+/deepseek-ai-dsh-experimental-computer-use-policy/model-experience/guarded-native-calls/what-the-model-sees:
+  en: 4170bbb9fbf607d2
+  zh: e2d6fa5557f29aca
+/deepseek-ai-dsh-experimental-computer-use-policy/model-experience/guarded-native-calls/token-effect:
+  en: bd4eb50854c52bc0
+  zh: 52c024d027950107
+/deepseek-ai-dsh-experimental-computer-use-policy/model-experience/guarded-native-calls/kv-cache-effect:
+  en: bfadb2c0f7ffae5f
+  zh: 634418336da6802f
+/deepseek-ai-dsh-experimental-computer-use-policy/known-limitations-and-deferred-work:
+  en: 599798d99de4e17c
+  zh: 545bc7c5b3dff22c
+/deepseek-ai-dsh-experimental-computer-use-policy/known-limitations-and-deferred-work/dev-note:
+  en: 90a1b09bce8a1db2
+  zh: 8afd9c88279ec147

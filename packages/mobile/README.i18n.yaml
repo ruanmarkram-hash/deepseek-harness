@@ -1,6 +1,25 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/mobile/README.md
-README.md: 6cd4c05df7ee47cdd85573358b7aec290f9acff9
-README.zh.md: 6901319f7e3e97886804f6bc0b14cd04a348f1e3
+/:
+  en: 0cd4c39f13e858bf
+  zh: 0d85432980283bf8
+/mobile-shared-mobile-product-vocabulary:
+  en: da090a93c52475b1
+  zh: 0beba1e113e27b7a
+/mobile-shared-mobile-product-vocabulary/summary:
+  en: 36cbeed6ac6742a2
+  zh: 37e6ae70cacfa3f8
+/mobile-shared-mobile-product-vocabulary/table-of-contents:
+  en: 09848f4d056e4fc1
+  zh: 8df6139cff0288f6
+/mobile-shared-mobile-product-vocabulary/packages:
+  en: c7e06272cdba9527
+  zh: 7665fdd0c1ac3881
+/mobile-shared-mobile-product-vocabulary/related-documentation:
+  en: a7c479e7abe89b21
+  zh: ed274974f2cb3b4e
+/mobile-shared-mobile-product-vocabulary/dev-note:
+  en: 2882da46c89aff6e
+  zh: 4af7e5c78438c429

@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-remote-host-identity",
   "description": "macOS Keychain Host identity and local remote-enrollment controller for DeepSeek Harness",
-  "version": "0.1.7-rc.1",
+  "version": "0.1.7-rc.2",
   "publishConfig": {
     "access": "public"
   },

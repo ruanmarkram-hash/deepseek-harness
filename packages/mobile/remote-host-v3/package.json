@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-remote-host-v3",
   "description": "Protected Host composition for DeepSeek Harness remote v3 relay routes",
-  "version": "0.1.7-rc.1",
+  "version": "0.1.7-rc.2",
   "publishConfig": {
     "access": "public"
   },

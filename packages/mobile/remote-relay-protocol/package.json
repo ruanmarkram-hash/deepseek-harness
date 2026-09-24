@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-remote-relay-protocol",
   "description": "Authenticated forward-secret transport for trusted DeepSeek Harness remote clients",
-  "version": "0.1.7-rc.1",
+  "version": "0.1.7-rc.2",
   "publishConfig": {
     "access": "public"
   },

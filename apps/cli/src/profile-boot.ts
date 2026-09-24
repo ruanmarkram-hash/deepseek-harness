@@ -28,6 +28,7 @@ import {
   installFailLoud,
   loadOverlayPatches,
   loadProfile,
+  reportSkippedBundles,
   PluginPackages,
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
@@ -175,7 +176,8 @@ export function sealedHostedProfile(): Profile {
     const patchPaths = bundlePatchPaths(packageDir, bundle)
     return { packageName, packageDir, patchPaths, patches: patchPaths.flatMap(path => loadOverlayPatches(NAME, path)) }
   })
-  return { name: 'web', dir: profileDirectory, layers, patchPath: rootConfig, patches: [] }
+  // The sealed composition fails on a missing bundle instead of skipping it.
+  return { name: 'web', dir: profileDirectory, layers, patchPath: rootConfig, patches: [], skippedBundles: [] }
 }
 
 /** The only Web-server facts the launcher needs after a Web profile binds. */
@@ -405,6 +407,7 @@ export function initializeProfileFromDefault(
 export function prepareProfile(name: string, userLayer = true, fromDefaultProfile?: string): Profile {
   if (fromDefaultProfile !== undefined) initializeProfileFromDefault(name, fromDefaultProfile)
   const profile = loadProfile(NAME, name, INSTALL_ANCHOR, undefined, { userLayer })
+  reportSkippedBundles(NAME, profile)
   writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
   return profile
 }

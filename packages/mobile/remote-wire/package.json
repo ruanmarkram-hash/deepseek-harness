@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-remote-wire",
   "description": "Versioned strict envelope vocabulary for trusted remote DSH clients",
-  "version": "0.1.7-rc.1",
+  "version": "0.1.7-rc.2",
   "publishConfig": {
     "access": "public"
   },

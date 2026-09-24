@@ -1,6 +1,22 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-08-20-keychain-host-remote-identity.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-20-keychain-host-remote-identity.md
-2026-08-20-keychain-host-remote-identity.md: f5b0d0b0ed265975859fec282410d52f8a6974b6
-2026-08-20-keychain-host-remote-identity.zh.md: fff9da5d5056a680cca005ace4c68910e1da24bb
+/agent-note-keychain-host-remote-identity:
+  en: 65d1530135983e41
+  zh: 76eed3d93744bef7
+/agent-note-keychain-host-remote-identity/problem:
+  en: 7b5f4d568ec42f83
+  zh: 29c1b8494ad09ba3
+/agent-note-keychain-host-remote-identity/decision:
+  en: 7e8b9381ae6a010c
+  zh: 2c404d96499805b8
+/agent-note-keychain-host-remote-identity/verification:
+  en: 7edf472a24eb7664
+  zh: cfdb8f1daefa32ce
+/agent-note-keychain-host-remote-identity/alternatives-considered:
+  en: 1b1b22c2bd208f58
+  zh: 72484259e8c57fc9
+/agent-note-keychain-host-remote-identity/consequences:
+  en: 4479cf652e2502ca
+  zh: 95a27d598b8d8b54

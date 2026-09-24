@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-22-native-pairing-state-diagnostic.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-22-native-pairing-state-diagnostic.md
-2026-09-22-native-pairing-state-diagnostic.md: 97e41cf5e14090334a0f63359075eaeb35619751
-2026-09-22-native-pairing-state-diagnostic.zh.md: 014adeca465fa2bde19e669052b982935de05624
+/agent-note-signed-host-pairing-state-diagnosis:
+  en: 95e662253d687e62
+  zh: 6e8d93dd2064e45a
+/agent-note-signed-host-pairing-state-diagnosis/problem:
+  en: d3df983d6704f35e
+  zh: 4ba9b836fbe6fb72
+/agent-note-signed-host-pairing-state-diagnosis/decision:
+  en: 24f057d5e8c8e8d0
+  zh: 3ee1cf6582fec146
+/agent-note-signed-host-pairing-state-diagnosis/alternatives-considered:
+  en: 395bbf4a1ffefff8
+  zh: 94a15be334fc6645
+/agent-note-signed-host-pairing-state-diagnosis/consequences:
+  en: 3ddb1ce89ff11a76
+  zh: c5e04c78e662915c

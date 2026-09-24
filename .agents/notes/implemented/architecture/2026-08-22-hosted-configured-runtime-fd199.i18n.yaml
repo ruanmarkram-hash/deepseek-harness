@@ -1,6 +1,22 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-08-22-hosted-configured-runtime-fd199.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-22-hosted-configured-runtime-fd199.md
-2026-08-22-hosted-configured-runtime-fd199.md: b4550bc8399350f59228b78d1db2c7550d69cad0
-2026-08-22-hosted-configured-runtime-fd199.zh.md: afbfc2958e1a42dcc66d16cfc063ecc4845ece10
+/agent-note-the-hosted-configured-runtime-adopts-fd199-for-the-shared-one-host-service:
+  en: 3d2ecbbc77d4b147
+  zh: f46edd349ebaa7e2
+/agent-note-the-hosted-configured-runtime-adopts-fd199-for-the-shared-one-host-service/problem:
+  en: 4db8265f3006b6ca
+  zh: 5c47e2255bc1ad3c
+/agent-note-the-hosted-configured-runtime-adopts-fd199-for-the-shared-one-host-service/decision:
+  en: 2a1df39ac6ba5693
+  zh: cd3d1b3c865c59b3
+/agent-note-the-hosted-configured-runtime-adopts-fd199-for-the-shared-one-host-service/verification:
+  en: 2d887efe1d42c8d5
+  zh: 7ab19b6f3fce31d6
+/agent-note-the-hosted-configured-runtime-adopts-fd199-for-the-shared-one-host-service/alternatives-considered:
+  en: 476291265f81e68b
+  zh: 36c0a01f394e3a7d
+/agent-note-the-hosted-configured-runtime-adopts-fd199-for-the-shared-one-host-service/consequences:
+  en: d22a51cc760e0dc2
+  zh: 8def6237709e14ca

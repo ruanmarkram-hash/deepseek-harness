@@ -1,6 +1,25 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/mobile/remote-relay-protocol/README.md
-README.md: 5eabc31d9033d92306fd0a225a71da5893b7e201
-README.zh.md: 46988c8c80c8c39edef22600c44551143817a705
+/:
+  en: cb066b876fa4ba72
+  zh: 3c6fad2adc5d98f3
+/dsh-remote-relay-protocol:
+  en: f472014426eb3108
+  zh: a80c752b35a9f62e
+/dsh-remote-relay-protocol/summary:
+  en: 73993c71bcaba951
+  zh: 57e4bcda5696962d
+/dsh-remote-relay-protocol/table-of-contents:
+  en: 80db0af68e2d93c7
+  zh: deec5bdfd255c2d4
+/dsh-remote-relay-protocol/surface:
+  en: 0dface932bc7d400
+  zh: 758ffffe8ac3a4de
+/dsh-remote-relay-protocol/known-limitations-and-deferred-work:
+  en: 88292c52ae3a5e09
+  zh: a8215b17c8e6c9ca
+/dsh-remote-relay-protocol/known-limitations-and-deferred-work/dev-note:
+  en: b836f01bd0bceb4a
+  zh: 8b999d990ef7ce29

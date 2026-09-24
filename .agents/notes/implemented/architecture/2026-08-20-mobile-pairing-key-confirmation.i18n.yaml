@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-08-20-mobile-pairing-key-confirmation.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-20-mobile-pairing-key-confirmation.md
-2026-08-20-mobile-pairing-key-confirmation.md: 8e1b93f7a9c1a0368f5ceb3d00e2a872b3da8408
-2026-08-20-mobile-pairing-key-confirmation.zh.md: 6a327ba7b4170895256754bbb8c721aca60fa75e
+/agent-note-mobile-pairing-key-confirmation:
+  en: 229d965bc2485bca
+  zh: bd3276d23ccf30ed
+/agent-note-mobile-pairing-key-confirmation/problem:
+  en: 79888dc96d0c8157
+  zh: b3f0c2ec4a4dabbf
+/agent-note-mobile-pairing-key-confirmation/decision:
+  en: aca274f3574bce83
+  zh: 7425f1366610049c
+/agent-note-mobile-pairing-key-confirmation/alternatives-considered:
+  en: 3a565e6f37909b7c
+  zh: 4db1c574d8ccb4e3
+/agent-note-mobile-pairing-key-confirmation/consequences:
+  en: 7ef4b0600719cc07
+  zh: e6df4c1d4a0a6cc7

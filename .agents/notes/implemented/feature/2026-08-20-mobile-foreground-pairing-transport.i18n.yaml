@@ -1,6 +1,22 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-08-20-mobile-foreground-pairing-transport.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-20-mobile-foreground-pairing-transport.md
-2026-08-20-mobile-foreground-pairing-transport.md: 652d67cecf1c24a38dba4cece3cd0f39d5503770
-2026-08-20-mobile-foreground-pairing-transport.zh.md: e84efe82faa96b113cb1c8d6619598f16d22d826
+/agent-note-foreground-mobile-pairing-transport:
+  en: ddcdab1df3161001
+  zh: fed95b25200b2f5a
+/agent-note-foreground-mobile-pairing-transport/problem:
+  en: 0e07264a9d79623b
+  zh: f89e1384a91f574f
+/agent-note-foreground-mobile-pairing-transport/decision:
+  en: c888ded918c7d6a9
+  zh: 9174b1f4660fc29e
+/agent-note-foreground-mobile-pairing-transport/data-lifetime-and-authority:
+  en: 812c5577db358e84
+  zh: 688bf7ef2b627c92
+/agent-note-foreground-mobile-pairing-transport/alternatives-considered:
+  en: 0c5f90e4df28d270
+  zh: 47ee3ab2ff69e807
+/agent-note-foreground-mobile-pairing-transport/consequences:
+  en: 27966de7195c739f
+  zh: bd3e368bb359333d

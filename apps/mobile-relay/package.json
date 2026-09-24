@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-mobile-relay",
   "description": "Cloudflare Workers relay for short-lived encrypted DSH mobile pairing",
-  "version": "0.1.7-rc.1",
+  "version": "0.1.7-rc.2",
   "private": true,
   "type": "module",
   "scripts": {

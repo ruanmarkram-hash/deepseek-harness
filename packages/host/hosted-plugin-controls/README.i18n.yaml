@@ -1,6 +1,43 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/host/hosted-plugin-controls/README.md
-README.md: f050ac872ff0666ca8900c013915f4aa58173485
-README.zh.md: ef49b5a5859b7c5cde84f89adf5cd6b1c48b7be7
+/:
+  en: c65b96e2bdb5ebfa
+  zh: ad60c171c1eb3ce4
+/deepseek-ai-dsh-hosted-plugin-controls:
+  en: 16a6980a9cfc6d9a
+  zh: 641883afe56178b0
+/deepseek-ai-dsh-hosted-plugin-controls/summary:
+  en: c4cbdda1062f9ae9
+  zh: 81f1308734a1687c
+/deepseek-ai-dsh-hosted-plugin-controls/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 09388d293f9be9cb
+/deepseek-ai-dsh-hosted-plugin-controls/use-this-package:
+  en: 32ec2954b23c3865
+  zh: 589cd77d57571632
+/deepseek-ai-dsh-hosted-plugin-controls/use-this-package/switchable-rows:
+  en: 3b30de6a3d642833
+  zh: 30f39a807fd51f03
+/deepseek-ai-dsh-hosted-plugin-controls/use-this-package/persistence-and-failure:
+  en: 64567429ceb3e037
+  zh: 3c7baef6bbebc69d
+/deepseek-ai-dsh-hosted-plugin-controls/understand-the-implementation:
+  en: bf17b1f45281adbd
+  zh: f1af32cb28cd1244
+/deepseek-ai-dsh-hosted-plugin-controls/further-exploration:
+  en: 65bb56c60a1e6684
+  zh: 86930175ecfefc8d
+/deepseek-ai-dsh-hosted-plugin-controls/model-experience:
+  en: 27c740843fd3d783
+  zh: ec32ff3ec54bf3f2
+/deepseek-ai-dsh-hosted-plugin-controls/model-experience/kv-cache-effect:
+  en: 5409d4cf7c2a2261
+  zh: 3a20fa6d876e8252
+/deepseek-ai-dsh-hosted-plugin-controls/known-limitations-and-deferred-work:
+  en: 8d49bb63629f31f0
+  zh: 04f1ac913931b2ee
+/deepseek-ai-dsh-hosted-plugin-controls/known-limitations-and-deferred-work/dev-note:
+  en: e67f633dc6fe7773
+  zh: e88aeb617ffb74ea

@@ -1,6 +1,22 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-23-hosted-frame-connection-references.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-23-hosted-frame-connection-references.md
-2026-09-23-hosted-frame-connection-references.md: a8b0b39ff4c2f8308bd6e19dde8af623ca6ba19b
-2026-09-23-hosted-frame-connection-references.zh.md: a66a58bc9f96f0b2f409f70145e28b52ed9f12e2
+/agent-note-hosted-frame-connection-references:
+  en: 396dccd1adc23600
+  zh: d54c0ff2439d87fe
+/agent-note-hosted-frame-connection-references/problem:
+  en: 2ef9bce4d42de0de
+  zh: 63ad7e66c26f9ea3
+/agent-note-hosted-frame-connection-references/decision:
+  en: e5c3431c45ff5bcc
+  zh: 265dd791c9fd0f47
+/agent-note-hosted-frame-connection-references/alternatives-considered:
+  en: 655553b795caff5a
+  zh: 7d8f0628ac0845f5
+/agent-note-hosted-frame-connection-references/consequences:
+  en: 69a3fad5dd673114
+  zh: 7a5bf9ba133126fc
+/agent-note-hosted-frame-connection-references/verification:
+  en: ecbfa84bb7e8c646
+  zh: 3352f358a60c2cb7

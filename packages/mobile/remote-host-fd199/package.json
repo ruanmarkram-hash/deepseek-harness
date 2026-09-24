@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-remote-host-fd199",
   "description": "Signed-Host FD199 ownership-handoff client for the configured DSH runtime child",
-  "version": "0.1.7-rc.1",
+  "version": "0.1.7-rc.2",
   "publishConfig": {
     "access": "public"
   },

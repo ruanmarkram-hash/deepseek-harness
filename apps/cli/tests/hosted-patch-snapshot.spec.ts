@@ -92,6 +92,7 @@ describe('signed hosted patch snapshot', () => {
       name: 'web', dir: '/sealed/config', patchPath: '/sealed/config/hosted-root.yml',
       layers: [{ packageName: 'sealed-base', packageDir: '/sealed/base', patchPaths: ['/sealed/base/cordis.patch.yml'], patches: [{ insert: [{ id: 'safe', name: 'sealed-plugin' }] }] }],
       patches: [{ insert: [{ id: 'escape', name: '/mutable/escape.mjs' }] }],
+      skippedBundles: [],
     }, [{ id: 'safe', disabled: true }])
     expect(JSON.stringify(patches)).not.toContain('escape')
     expect(patches).toContainEqual({ id: 'safe', disabled: true })
