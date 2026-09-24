@@ -19,6 +19,65 @@ function migrate(rows: readonly unknown[]) {
 }
 
 describe('released v0 legacy normalization', () => {
+  it.each([
+    { version: 2, mode: 'one-shot', provider: 'spawn' },
+    { version: 2, mode: 'one-shot', provider: 'spawn', label: 'child' },
+    { version: 2, mode: 'one-shot', provider: 'spawn', label: '' },
+    { version: 2, mode: 'continuable', provider: 'spawn', label: 'child' },
+    { version: 2, mode: 'continuable', provider: 'spawn', label: 'child', toolFilter: { allow: [], deny: [] } },
+    {
+      version: 2, mode: 'continuable', provider: 'spawn', label: 'child',
+      agentProvider: 'mock', agentModel: 'model', persona: 'persona',
+      toolFilter: { allow: ['read'], deny: ['write'] },
+    },
+  ])('preserves descriptor v2 composition without inventing reasoning effort: %j', (data) => {
+    const event = { type: 'subagent/descriptor', seq: 0, time: 1, data }
+    const original = structuredClone(event)
+    expect(migrate([event]).events).toEqual([{ ...event, data: { ...data, version: 3 } }])
+    expect(event).toEqual(original)
+  })
+
+  it.each([
+    { agentReasoningEffort: 'high' },
+    { futureField: true },
+    { toolFilter: {} },
+    { toolFilter: { allow: ['read'], future: true } },
+    { toolFilter: { deny: [false] } },
+    { mode: 'one-shot', persona: 'not-supported' },
+    { label: null },
+  ])('refuses malformed or future descriptor v2 fields: %j', (fields) => {
+    expect(() => migrate([{
+      type: 'subagent/descriptor', seq: 0, time: 1,
+      data: { version: 2, mode: 'continuable', provider: 'spawn', label: 'child', ...fields },
+    }])).toThrow()
+  })
+
+  it.each([
+    { agentProvider: 'unpaired' },
+    { agentModel: 'unpaired' },
+    { provider: '' },
+    { label: '' },
+    { persona: '' },
+    { agentProvider: '', agentModel: '' },
+    { toolFilter: { allow: [''] } },
+  ])('refuses valid but unrepresentable descriptor v2 fields as unsupported: %j', (fields) => {
+    const event = {
+      type: 'subagent/descriptor', seq: 0, time: 1,
+      data: { version: 2, mode: 'continuable', provider: 'spawn', label: 'child', ...fields },
+    }
+    const original = structuredClone(event)
+    expect(() => migrate([event])).toThrow(SessionFormatUnsupportedMigrationError)
+    expect(() => migrate([event])).toThrow('without changing its fields')
+    expect(event).toEqual(original)
+  })
+
+  it.each([0, 1, 4, 999])('still refuses unknown descriptor version %s', (version) => {
+    expect(() => migrate([{
+      type: 'subagent/descriptor', seq: 0, time: 1,
+      data: { version, mode: 'continuable', provider: 'spawn', label: 'child' },
+    }])).toThrow(SessionFormatUnsupportedMigrationError)
+  })
+
   it('restores pre-identity user, assistant, and replacement tool-result identities', () => {
     const rows = [
       { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },

@@ -48,6 +48,36 @@ describe.each(['none', 'zstd'] as const)('historical catalog publication (%s)', 
     return { root, ctx, parent, header, descriptor, write, read }
   }
 
+  it('restores descriptor v2 children and parent catalog without changing source generations', async () => {
+    const f = await fixture()
+    const data = {
+      version: 2, mode: 'continuable', provider: 'spawn', label: 'old child',
+      agentProvider: 'mock', agentModel: 'model', persona: 'persona',
+      toolFilter: { allow: ['read'], deny: ['write'] },
+    }
+    const path = await f.write('child', [{ ...f.descriptor, data }], true, 0)
+    const original = await readFile(path)
+    const child = SessionId('child')
+    for (const access of ['read', 'write'] as const) {
+      const handle = await f.ctx.sessionPersistence.open(child, access)
+      try {
+        expect((await handle.read()).events).toMatchObject([
+          { type: 'subagent/descriptor', data: { ...data, version: 3 } },
+        ])
+      } finally {
+        await handle.close()
+      }
+      expect(await readFile(path)).toEqual(original)
+      if (access === 'read') {
+        await expect(readFile(generationLogPath(f.root, undefined, child, 4, compression)))
+          .rejects.toMatchObject({ code: 'ENOENT' })
+      }
+    }
+    expect(await f.read()).toMatchObject([
+      { type: 'subagent/catalog', data: { childId: 'child', mode: 'continuable', label: 'old child' } },
+    ])
+  })
+
   it.each(['read', 'write'] as const)('refuses foreign native V4 delivery through %s access', async (access) => {
     const f = await fixture()
     await f.write(f.parent, [

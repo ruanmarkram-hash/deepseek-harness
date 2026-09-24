@@ -95,11 +95,56 @@ function normalizeReleasedV0Event(
   const steering = normalizeLegacySteering(header, sessionId)
   const retry = normalizeLegacyRetry(steering, sessionId, state.retryIds)
   const compaction = normalizeLegacyCompaction(retry, sessionId, state)
-  const message = normalizeLegacyMessage(compaction, sessionId, state.messageIds)
+  const message = normalizeLegacyDescriptor(normalizeLegacyMessage(compaction, sessionId, state.messageIds))
   if (message.type !== 'assistant/chunk') assertReleasedEventPayload(message, 0)
   const messageId = eventMessageId(message)
   if (messageId !== undefined) state.messageIds.set(message.seq, messageId)
   return message
+}
+
+/** Promote only descriptor v2 compositions representable under the frozen v3 rules. */
+function normalizeLegacyDescriptor(event: SessionFormatEvent): SessionFormatEvent {
+  if (event.type !== 'subagent/descriptor') return event
+  const data = releasedV0Record(event.data, `${event.type} ${event.seq} data`)
+  if (data['version'] !== 2) return event
+  const label = `${event.type} ${event.seq} descriptor v2`
+  const mode = data['mode']
+  if (mode !== 'one-shot' && mode !== 'continuable') throw new SessionFormatError(`${label} has invalid mode`)
+  assertReleasedV0Keys(
+    data,
+    mode === 'one-shot' ? ['mode', 'version', 'provider'] : ['mode', 'version', 'provider', 'label'],
+    mode === 'one-shot' ? ['label'] : ['agentProvider', 'agentModel', 'persona', 'toolFilter'],
+    label,
+  )
+  for (const key of ['provider', 'label', 'agentProvider', 'agentModel', 'persona']) {
+    if (Object.hasOwn(data, key) && typeof data[key] !== 'string') {
+      throw new SessionFormatError(`${label} ${key} must be a string`)
+    }
+  }
+  if (Object.hasOwn(data, 'toolFilter')) {
+    const filter = releasedV0Record(data['toolFilter'], `${label} toolFilter`)
+    assertReleasedV0Keys(filter, [], ['allow', 'deny'], `${label} toolFilter`)
+    if (!Object.hasOwn(filter, 'allow') && !Object.hasOwn(filter, 'deny')) {
+      throw new SessionFormatError(`${label} toolFilter requires allow or deny`)
+    }
+    for (const key of ['allow', 'deny']) {
+      if (!Object.hasOwn(filter, key)) continue
+      const values = filter[key]
+      if (!Array.isArray(values) || values.some(value => typeof value !== 'string')) {
+        throw new SessionFormatError(`${label} toolFilter ${key} must contain strings`)
+      }
+    }
+  }
+  const promoted = { ...event, data: { ...data, version: 3 } }
+  try {
+    assertReleasedEventPayload(promoted, 0)
+  } catch (error) {
+    if (!(error instanceof SessionFormatError)) throw error
+    throw new SessionFormatUnsupportedMigrationError(
+      `${label} composition cannot be represented by descriptor v3 without changing its fields`, { cause: error },
+    )
+  }
+  return promoted
 }
 
 function normalizeLegacyCompactionType(event: SessionFormatEvent): SessionFormatEvent {
