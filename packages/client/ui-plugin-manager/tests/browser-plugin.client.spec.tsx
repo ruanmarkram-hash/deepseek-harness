@@ -61,7 +61,7 @@ function declare(slots: SlotRegistry): () => void {
 
 describe('ui-plugin-manager browser plugin', () => {
   it('declares only the services the page and its Remote methods use', () => {
-    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.pluginManager', 'remote.pluginInventory', 'remote.pluginRegistryProbe', 'configForms'])
+    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.pluginManager', 'remote.pluginInventory', 'remote.pluginRegistryProbe', 'remote.hostPlugins', 'configForms'])
   })
 
   it('registers the sidebar entry and its page, which reads the Host only once rendered and follows Host changes', async () => {
