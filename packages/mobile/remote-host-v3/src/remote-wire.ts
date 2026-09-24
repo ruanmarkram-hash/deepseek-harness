@@ -98,6 +98,18 @@ interface RouteUpsert {
   readonly generation: number
 }
 
+/** Decode shared route coordinates after the caller checks its operation's exact keys. */
+function routeCoordinates(value: Record<string, unknown>): RouteUpsert {
+  return {
+    routeId: identifier(value.routeId),
+    deviceId: identifier(value.deviceId) as RemoteDeviceId,
+    deviceEnrollmentId: identifier(value.deviceEnrollmentId) as RemoteDeviceIncarnation,
+    hostDeviceId: identifier(value.hostDeviceId),
+    hostEnrollmentId: identifier(value.hostEnrollmentId),
+    generation: positiveSequence(value.generation),
+  }
+}
+
 interface DeviceEnrollment {
   readonly deviceId: RemoteDeviceId
   readonly label: string
@@ -729,14 +741,7 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
     this.requireSeed(record)
     this.emptyPayload(record)
     const value = exactObject(metadata(record.metadata), ['routeId', 'deviceId', 'deviceEnrollmentId', 'hostDeviceId', 'hostEnrollmentId', 'generation'])
-    const route: RouteUpsert = {
-      routeId: identifier(value.routeId),
-      deviceId: identifier(value.deviceId) as RemoteDeviceId,
-      deviceEnrollmentId: identifier(value.deviceEnrollmentId) as RemoteDeviceIncarnation,
-      hostDeviceId: identifier(value.hostDeviceId),
-      hostEnrollmentId: identifier(value.hostEnrollmentId),
-      generation: positiveSequence(value.generation),
-    }
+    const route = routeCoordinates(value)
     const existing = this.allocator.get(route.deviceId)
     if (existing !== undefined) {
       if (
@@ -820,10 +825,7 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
     this.emptyPayload(record)
     const value = exactObject(metadata(record.metadata), ['routeId', 'deviceId', 'deviceEnrollmentId', 'hostDeviceId', 'hostEnrollmentId', 'generation', 'connectionEpoch'])
     const input: RemoteHostV3FinalizedEpoch = {
-      routeId: identifier(value.routeId), deviceId: identifier(value.deviceId) as RemoteDeviceId,
-      deviceEnrollmentId: identifier(value.deviceEnrollmentId) as RemoteDeviceIncarnation,
-      hostDeviceId: identifier(value.hostDeviceId), hostEnrollmentId: identifier(value.hostEnrollmentId),
-      generation: positiveSequence(value.generation), connectionEpoch: positiveSequence(value.connectionEpoch),
+      ...routeCoordinates(value), connectionEpoch: positiveSequence(value.connectionEpoch),
     }
     const authorize = (): void => {
       const seed = this.enrollment

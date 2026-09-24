@@ -98,12 +98,11 @@ export function rpcResultSchema<T>(value: z.ZodType<T>): z.ZodType<RpcResult<T>>
 // declared value, so absence never passes for a method that returns data.
 
 /** ClientRequest full form (payload stays wide — the business layer runs the second parse). */
-export const clientRequestSchema = z.object({
-  type: z.literal('client-request'),
-  rpcId: rpcIdSchema,
-  method: z.string(),
-  payload: z.unknown(),
-}) satisfies z.ZodType<ClientRequest>
+export const clientRequestSchema = requestEnvelope('client-request') satisfies z.ZodType<ClientRequest>
+
+function requestEnvelope<T extends 'client-request' | 'server-request'>(type: T) {
+  return z.object({ type: z.literal(type), rpcId: rpcIdSchema, method: z.string(), payload: z.unknown() })
+}
 
 /** ServerResponse full form (result.value stays wide). */
 export const serverResponseSchema = z.object({
@@ -113,12 +112,7 @@ export const serverResponseSchema = z.object({
 }) satisfies z.ZodType<ServerResponse>
 
 /** ServerRequest full form (payload stays wide). */
-export const serverRequestSchema = z.object({
-  type: z.literal('server-request'),
-  rpcId: rpcIdSchema,
-  method: z.string(),
-  payload: z.unknown(),
-}) satisfies z.ZodType<ServerRequest>
+export const serverRequestSchema = requestEnvelope('server-request') satisfies z.ZodType<ServerRequest>
 
 /** ClientResponse full form (result.value stays wide). */
 export const clientResponseSchema = z.object({

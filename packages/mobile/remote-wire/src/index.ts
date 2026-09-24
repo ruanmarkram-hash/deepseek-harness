@@ -5,6 +5,7 @@
  */
 
 import type { HostFrame, MuxFrame, RpcMethodMap } from '@deepseek-ai/dsh-remote-api/api'
+import { hasExactKeys, isRecord } from '@deepseek-ai/dsh-util-values'
 import { RemoteWireError } from './error.ts'
 import type {
   RemoteDeviceControl,
@@ -106,16 +107,6 @@ const DANGEROUS_JSON_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
 
 function failure(code: RemoteWireErrorCode): never {
   throw new RemoteWireError(code)
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
-  const actual = Object.keys(value).sort()
-  const expected = [...keys].sort()
-  return actual.length === expected.length && actual.every((key, index) => key === expected[index])
 }
 
 function boundedString(value: unknown, code: RemoteWireErrorCode): string {

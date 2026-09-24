@@ -9740,6 +9740,9 @@ importers:
 
   packages/mobile/pairing-protocol:
     dependencies:
+      '@deepseek-ai/dsh-util-values':
+        specifier: workspace:*
+        version: link:../../util/values
       '@noble/ciphers':
         specifier: 2.2.0
         version: 2.2.0
@@ -9948,6 +9951,9 @@ importers:
 
   packages/mobile/remote-relay-protocol:
     dependencies:
+      '@deepseek-ai/dsh-util-values':
+        specifier: workspace:*
+        version: link:../../util/values
       '@noble/ciphers':
         specifier: 2.2.0
         version: 2.2.0
@@ -9966,6 +9972,10 @@ importers:
         version: link:../remote-wire
 
   packages/mobile/remote-wire:
+    dependencies:
+      '@deepseek-ai/dsh-util-values':
+        specifier: workspace:*
+        version: link:../../util/values
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:~

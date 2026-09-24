@@ -41,6 +41,8 @@ The independently installed thin Desktop wrapper can POST its existing discovery
 
 Runtime invariant: No companion is published. This package does not maintain a second authoritative session or approval store; controller calls re-read the current services, and pending delivery records are removed with their owned stream lifecycle.
 
+The in-process adapter and sealed Host loopback carrier share [one unary method map](src/api/unary.ts). Each carrier retains its own request handling, streams, downloads, and response delivery.
+
 </details>
 
 -----

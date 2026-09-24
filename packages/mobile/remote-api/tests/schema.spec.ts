@@ -1,9 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import { rpcMessageSchema, rpcIdSchema } from '../src/api/rpc.schema.ts'
-import { sessionEventSchema, contentBlockSchema, sessionPromptRequestSchema } from '../src/api/sessions.schema.ts'
+import { sessionEventSchema, contentBlockSchema, sessionPromptRequestSchema, imageLimitsProjectionSchema } from '../src/api/sessions.schema.ts'
 import { goalCreateRequestSchema } from '../src/api/goals.schema.ts'
 
 describe('released mobile validation boundaries', () => {
+  it('requires every image limit to remain a positive integer', () => {
+    const limits = { maxImageBytes: 1, maxImagesPerMessage: 2, maxMessageImageBytes: 3, maxImagePixels: 4, maxImageDimension: 5, mediaTypes: ['future/type'] }
+    expect(imageLimitsProjectionSchema.parse(limits)).toEqual(limits)
+    for (const key of ['maxImageBytes', 'maxImagesPerMessage', 'maxMessageImageBytes', 'maxImagePixels', 'maxImageDimension']) {
+      for (const value of [undefined, 0, -1, 1.5, '1', Infinity]) {
+        expect(imageLimitsProjectionSchema.safeParse({ ...limits, [key]: value }).success).toBe(false)
+      }
+    }
+  })
+
   it('keeps extensible event data opaque while rejecting malformed envelopes', () => {
     const event = { type: 'future/event', seq: 2, time: 123, data: { future: true }, surfaceOp: { future: true } }
     expect(sessionEventSchema.parse(event)).toEqual(event)

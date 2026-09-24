@@ -10,6 +10,7 @@ import { hkdf } from '@noble/hashes/hkdf.js'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { parseRemoteWireJson, serializeRemoteWireEnvelope } from '@deepseek-ai/dsh-remote-wire'
 import type { RemoteWireEnvelope } from '@deepseek-ai/dsh-remote-wire'
+import { hasExactKeys as exactKeys, isRecord } from '@deepseek-ai/dsh-util-values'
 import { RemoteRelayProtocolError } from './error.ts'
 import {
   MAX_REMOTE_RELAY_CIPHERTEXT_BYTES,
@@ -110,6 +111,18 @@ interface ConnectionInput {
   readonly random: RemoteRelayRandomSource
 }
 
+/** Address an outbound handshake message without changing the sender/recipient ordering. */
+function outboundAddress(
+  coordinates: RemoteRelayRoute, local: RemoteRelayIdentity, peer: RemoteRelayPeerIdentity,
+): Omit<RemoteRelayHello, 'type' | 'ephemeralPublicKey' | 'nonce'> {
+  return {
+    version: REMOTE_RELAY_PROTOCOL_VERSION, routeId: coordinates.routeId,
+    generation: coordinates.generation, connectionEpoch: coordinates.connectionEpoch,
+    senderDeviceId: local.deviceId, senderEnrollmentId: local.enrollmentId,
+    recipientDeviceId: peer.deviceId, recipientEnrollmentId: peer.enrollmentId,
+  }
+}
+
 function destroyDirectionKeys(value: DirectionKeys | undefined): void {
   value?.clientToHost.fill(0)
   value?.hostToClient.fill(0)
@@ -128,16 +141,6 @@ function preflight<T>(socket: RemoteRelaySocket, operation: () => T): T {
     try { socket.close(4403, 'relay-handshake-failed') } catch { /* best-effort cleanup */ }
     throw error
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
-  const actual = Object.keys(value).sort()
-  const expected = [...keys].sort()
-  return actual.length === expected.length && actual.every((key, index) => key === expected[index])
 }
 
 function base64Url(bytes: Uint8Array): string {
@@ -621,10 +624,7 @@ export async function connectRemoteRelayDevice(
   let derived: DirectionKeys | undefined
   try {
     const hello: RemoteRelayHello = {
-      version: REMOTE_RELAY_PROTOCOL_VERSION, type: 'hello', routeId: coordinates.routeId,
-      generation: coordinates.generation, connectionEpoch: coordinates.connectionEpoch,
-      senderDeviceId: local.deviceId, senderEnrollmentId: local.enrollmentId,
-      recipientDeviceId: peer.deviceId, recipientEnrollmentId: peer.enrollmentId,
+      ...outboundAddress(coordinates, local, peer), type: 'hello',
       ephemeralPublicKey: pair.publicKey, nonce: base64Url(randomBytes(input.random, REMOTE_RELAY_NONCE_BYTES)),
     }
     input.socket.send(serializeRemoteRelayMessage(hello))
@@ -634,10 +634,7 @@ export async function connectRemoteRelayDevice(
     const context = handshakeContext(hello, received)
     derived = keys(local, peer, pair, received.ephemeralPublicKey, context, true)
     const readyBase: Omit<RemoteRelayReady, 'nonce' | 'ciphertext'> = {
-      version: REMOTE_RELAY_PROTOCOL_VERSION, type: 'ready', routeId: coordinates.routeId,
-      generation: coordinates.generation, connectionEpoch: coordinates.connectionEpoch,
-      senderDeviceId: local.deviceId, senderEnrollmentId: local.enrollmentId,
-      recipientDeviceId: peer.deviceId, recipientEnrollmentId: peer.enrollmentId,
+      ...outboundAddress(coordinates, local, peer), type: 'ready',
     }
     const nonce = randomBytes(input.random, REMOTE_RELAY_NONCE_BYTES)
     const readyFrame: RemoteRelayReady = {
@@ -754,10 +751,7 @@ export async function acceptRemoteRelayDevice(
     if (received.type !== 'hello') return failure('REMOTE_RELAY_HANDSHAKE_INVALID')
     exactRoute(received, coordinates, peer, local)
     const welcome: RemoteRelayWelcome = {
-      version: REMOTE_RELAY_PROTOCOL_VERSION, type: 'welcome', routeId: coordinates.routeId,
-      generation: coordinates.generation, connectionEpoch: coordinates.connectionEpoch,
-      senderDeviceId: local.deviceId, senderEnrollmentId: local.enrollmentId,
-      recipientDeviceId: peer.deviceId, recipientEnrollmentId: peer.enrollmentId,
+      ...outboundAddress(coordinates, local, peer), type: 'welcome',
       ephemeralPublicKey: pair.publicKey, nonce: base64Url(randomBytes(input.random, REMOTE_RELAY_NONCE_BYTES)),
     }
     const context = handshakeContext(received, welcome)

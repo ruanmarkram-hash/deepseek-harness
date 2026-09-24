@@ -41,6 +41,8 @@ kind: "package-reference"
 
 运行时不变量：不发布 companion。本包不维护第二套权威会话或审批存储；controller 调用重新读取当前服务，待决投递记录随所属流的生命周期移除。
 
+进程内适配器与密封 Host 的回环传输共用[一份一元方法映射](src/api/unary.ts)。各传输继续独立处理请求、事件流、下载和响应投递。
+
 </details>
 
 -----

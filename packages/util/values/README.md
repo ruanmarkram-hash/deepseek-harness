@@ -24,6 +24,10 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
+### Inspect record keys
+
+`isRecord(value)` accepts any non-null object except arrays, including class instances and null-prototype objects; it does not validate property values or JSON safety. `hasExactKeys(record, keys)` compares sorted own enumerable string keys with a sorted copy of the expected list, leaving both inputs unchanged. It ignores inherited, symbol, and non-enumerable properties, never reads property values, and rejects duplicate expected keys.
+
 ### Validate or snapshot JSON data
 
 Use `isJsonValue()` for a predicate and `snapshotJsonValue()` when the caller also needs a detached copy. Both accept only lossless JSON roots: `null`, booleans, finite numbers other than negative zero, strings, dense intrinsic arrays, and plain or null-prototype records with enumerable string keys. Cycles, sparse arrays, symbol or non-enumerable own properties, functions, and class instances are rejected.

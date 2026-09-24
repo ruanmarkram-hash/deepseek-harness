@@ -14,6 +14,7 @@ import {
 } from '@deepseek-ai/dsh-remote-api'
 import { hostFrameSchema, muxFrameSchema } from '@deepseek-ai/dsh-remote-api/api/events.schema'
 import { serverRequestSchema } from '@deepseek-ai/dsh-remote-api/api/rpc.schema'
+import { bindMobileUnaryMethods } from '@deepseek-ai/dsh-remote-api/api/unary'
 
 const LOOPBACK_ORIGIN = 'http://127.0.0.1:3080/'
 const LOOPBACK_HOST = '127.0.0.1'
@@ -35,37 +36,7 @@ export function createLoopbackApiProxy(): ApiProxy {
     .then(response => ({ rpcId: request.rpcId, result: response.result }))
 
   return {
-    sessions: {
-      list: unary('session.list'), search: unary('session.search'), create: unary('session.create'), history: unary('session.history'),
-      models: unary('session.models'), selectModel: unary('session.selectModel'), rename: unary('session.rename'), fork: unary('session.fork'),
-      prompt: unary('session.prompt'), attachment: unary('session.attachment'), updateQueue: unary('session.updateQueue'), cancel: unary('session.cancel'),
-    },
-    subagents: {
-      list: unary('subagent.list'), history: unary('subagent.history'), prompt: unary('subagent.prompt'), interrupt: unary('subagent.interrupt'),
-    },
-    host: {
-      describe: unary('host.describe'), pickDirectory: unary('host.pickDirectory'), listDirectory: unary('host.listDirectory'),
-      createDirectory: unary('host.createDirectory'), openPath: unary('host.openPath'),
-    },
-    workspace: {
-      list: unary('workspace.list'), create: unary('workspace.create'), rename: unary('workspace.rename'), delete: unary('workspace.delete'),
-      insertBefore: unary('workspace.insertBefore'), insertSessionBefore: unary('workspace.insertSessionBefore'), archiveSession: unary('workspace.archiveSession'),
-    },
-    skills: { list: unary('skill.list') },
-    agentPresets: {
-      list: unary('agentPreset.list'), select: unary('agentPreset.select'), read: unary('agentPreset.read'), copy: unary('agentPreset.copy'),
-      openDocument: unary('agentPreset.openDocument'), remove: unary('agentPreset.remove'),
-    },
-    goals: {
-      create: unary('goal.create'), edit: unary('goal.edit'), pause: unary('goal.pause'), resume: unary('goal.resume'),
-      complete: unary('goal.complete'), clear: unary('goal.clear'),
-    },
-    settings: {
-      describe: unary('settings.describe'), openDocument: unary('settings.openDocument'), update: unary('settings.update'),
-      replace: unary('settings.replace'), mutate: unary('settings.mutate'),
-    },
-    credentials: { describe: unary('credentials.describe'), set: unary('credentials.set'), unset: unary('credentials.unset') },
-    llm: { providers: unary('llm.providers'), models: unary('llm.models'), discoverModels: unary('llm.discoverModels') },
+    ...bindMobileUnaryMethods(unary),
     events: {
       mux: (_request, signal) => client.eventsMux(signal),
       host: (_request, signal) => client.eventsHost(signal),

@@ -228,13 +228,17 @@ export const sessionListMetadataProjectionSchema: z.ZodType<SessionListMetadata>
  * serialize identically, so the cast records exactly that widening.
  */
 export const imageLimitsProjectionSchema = z.object({
-  maxImageBytes: z.number().int().positive(),
-  maxImagesPerMessage: z.number().int().positive(),
-  maxMessageImageBytes: z.number().int().positive(),
-  maxImagePixels: z.number().int().positive(),
-  maxImageDimension: z.number().int().positive(),
+  maxImageBytes: positiveImageLimit(),
+  maxImagesPerMessage: positiveImageLimit(),
+  maxMessageImageBytes: positiveImageLimit(),
+  maxImagePixels: positiveImageLimit(),
+  maxImageDimension: positiveImageLimit(),
   mediaTypes: z.array(z.string()),
 }) as z.ZodType<ImageAttachmentLimits>
+
+function positiveImageLimit(): z.ZodNumber {
+  return z.number().int().positive()
+}
 
 /** session.history response value (projections rides the tail page only). */
 export const sessionHistoryValueSchema: z.ZodType<Wire<ResponseValue<'session.history'>>> = z.object({

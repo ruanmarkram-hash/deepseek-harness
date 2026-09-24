@@ -24,6 +24,10 @@ kind: "package-library"
 <a id="use-this-package"></a>
 ## 使用本包
 
+### 检查记录的键
+
+`isRecord(value)` 接受除数组外的任意非 null 对象，包括 class 实例和 null-prototype 对象；它不校验属性值或 JSON 安全性。`hasExactKeys(record, keys)` 将排序后的自有可枚举字符串键与预期列表的排序副本比较，保持两个输入不变。它忽略继承属性、symbol 属性和不可枚举属性，不读取属性值，并拒绝包含重复键的预期列表。
+
 ### 校验 JSON 数据或创建快照
 
 需要 predicate 时使用 `isJsonValue()`，还需要分离副本时使用 `snapshotJsonValue()`。两者只接受无损 JSON 根值：`null`、布尔值、除负零外的有限数字、字符串、稠密的内建数组，以及只含可枚举字符串键的普通或 null-prototype 记录。循环、稀疏数组、自有 symbol 属性或自有不可枚举属性、函数和 class 实例都会被拒绝。

@@ -4,6 +4,28 @@
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }
 
 /**
+ * Test whether a value is a non-null object other than an array, without restricting its prototype.
+ * @param value - candidate record.
+ * @returns whether the value supports record access; this does not validate its properties or JSON safety.
+ */
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Compare a record's own enumerable string keys with a sorted copy of the expected keys.
+ * Inherited, symbol, and non-enumerable properties are ignored; duplicate expected keys fail.
+ * @param value - record whose keys are inspected without reading property values.
+ * @param keys - expected keys, left unchanged by the comparison.
+ * @returns whether both sorted key lists match exactly.
+ */
+export function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(value).sort()
+  const expected = [...keys].sort()
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index])
+}
+
+/**
  * Mark an unreachable closed-union branch.
  * @param value - impossible value; an unhandled typed variant fails at the call site.
  * @param context - optional switch-site label included in the failure message.

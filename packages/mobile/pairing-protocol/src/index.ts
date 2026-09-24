@@ -5,6 +5,7 @@
  * @module @deepseek-ai/dsh-pairing-protocol
  */
 
+import { hasExactKeys, isRecord } from '@deepseek-ai/dsh-util-values'
 import { PairingProtocolError } from './error.ts'
 import {
   MAX_BOOTSTRAP_TTL_MS,
@@ -97,16 +98,6 @@ const MOBILE_CAPABILITY_SET = new Set<string>(MOBILE_PAIRING_CAPABILITIES)
 
 function failure(code: PairingProtocolErrorCode): never {
   throw new PairingProtocolError(code)
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
-  const actual = Object.keys(value).sort()
-  const expected = [...keys].sort()
-  return actual.length === expected.length && actual.every((key, index) => key === expected[index])
 }
 
 function readString(value: unknown, code: PairingProtocolErrorCode): string {
