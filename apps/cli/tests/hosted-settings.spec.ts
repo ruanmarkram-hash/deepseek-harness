@@ -16,12 +16,13 @@ function home(): string {
 const patches: PatchOptions[] = [{ insert: [
   { id: 'agent-default-model', name: 'cordis:model', config: { provider: 'test', model: 'original' } },
   { id: 'permission', name: 'cordis:permission', config: { defaultPreset: 'ask' } },
+  { id: 'progress-narration', name: 'cordis:progress' },
 ] }]
 
-async function start(directory: string) {
+async function start(directory: string, additionalPatches: () => PatchOptions[] = () => []) {
   const root = join(directory, 'sealed.yml')
   writeFileSync(root, '[]\n')
-  const owner = new HostedSettings(directory, patches)
+  const owner = new HostedSettings(directory, patches, additionalPatches)
   const ctx = await boot('hosted-test', root, owner.patches(), async (ctx) => {
     const profile: ProfileContext = {
       name: 'web', home: directory, dir: directory, patchPath: root,
@@ -36,6 +37,7 @@ async function start(directory: string) {
       Config: z.object({ defaultPreset: z.union(['ask', 'read-only']).default('ask').volatile() }),
       apply: () => {},
     }
+    ctx.loader.builtins.progress = { apply: () => {} }
     await owner.install(ctx)
   })
   onTestFinished(async () => { await ctx.fiber.dispose() })
@@ -44,6 +46,14 @@ async function start(directory: string) {
 }
 
 describe('signed Host data-only settings', () => {
+  it('keeps Host plugin switches while saving settings in the same Include composition', async () => {
+    const directory = home()
+    const { ctx } = await start(directory, () => [{ id: 'progress-narration', disabled: true }])
+    expect([...ctx.loader.entries()].find(row => row.options.id === 'progress-narration')?.disabled).toBe(true)
+    await ctx.settings.update('agent-default-model', { model: 'next-model' })
+    expect([...ctx.loader.entries()].find(row => row.options.id === 'progress-narration')?.disabled).toBe(true)
+  })
+
   it('preserves legacy model and permission data, supports edits, and restores without reading home patches', async () => {
     const directory = home()
     const legacy = 'agent-default-model:\n  provider: local\n  model: prior-model\npermission:\n  defaultPreset: read-only\n'

@@ -63,7 +63,7 @@ export const REMOTE_WIRE_METHODS = [
   'subagent.interrupt', 'host.describe', 'host.pickDirectory', 'host.listDirectory',
   'host.createDirectory', 'host.openPath', 'workspace.list', 'workspace.create', 'workspace.rename',
   'workspace.delete', 'workspace.insertBefore', 'workspace.insertSessionBefore',
-  'workspace.archiveSession', 'skill.list', 'agentPreset.list', 'agentPreset.select',
+  'workspace.archiveSession', 'skill.list', 'plugins.list', 'plugins.setEnabled', 'agentPreset.list', 'agentPreset.select',
   'agentPreset.read', 'agentPreset.copy', 'agentPreset.openDocument', 'agentPreset.remove',
   'goal.create', 'goal.edit', 'goal.pause', 'goal.resume', 'goal.complete', 'goal.clear',
   'settings.describe', 'settings.openDocument', 'settings.update', 'settings.replace',

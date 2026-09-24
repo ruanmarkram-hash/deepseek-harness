@@ -77,7 +77,12 @@ export class HostedSettings {
   readonly documentPath: string
   private readonly baseRows: ReturnType<typeof composeEntries>
 
-  constructor(home: string, private readonly sealedPatches: readonly PatchOptions[]) {
+  constructor(
+    home: string,
+    private readonly sealedPatches: readonly PatchOptions[],
+    private readonly additionalPatches: () => PatchOptions[] = () => [],
+    private readonly compositionLockPath?: string,
+  ) {
     this.documentPath = join(home, 'hosted-settings.json')
     this.diskBytes = existsSync(this.documentPath) ? readFileSync(this.documentPath, 'utf8') : undefined
     const legacyPath = join(home, 'settings.yaml')
@@ -87,12 +92,12 @@ export class HostedSettings {
   }
 
   /** Complete fixed composition with data-only overrides. */
-  patches(document = this.document): PatchOptions[] {
+  patches(document = this.document, additional = this.additionalPatches()): PatchOptions[] {
     return [...structuredClone(this.sealedPatches), ...Object.entries(document).map(([id, data]) => {
       const row = this.baseRows.find(candidate => candidate.id === id)
       if (row === undefined) throw new Error(`Hosted settings has no sealed entry ${id}`)
       return { id, config: merge((row.config ?? {}) as DataSection, data) }
-    })]
+    }), ...structuredClone(additional)]
   }
 
   /** Provide the constrained editor and stock forms without its destructive legacy import. */
@@ -106,7 +111,7 @@ export class HostedSettings {
         override: structuredClone(this.document[entry.options.id] ?? {}),
       })),
       edit: async (entry: Entry, change: (current: DataSection, inherited: DataSection) => DataSection): Promise<void> => {
-        await withFileLock(this.documentPath, async () => {
+        const operation = async (): Promise<void> => withFileLock(this.documentPath, async () => {
           const id = entry.options.id
           const fields = EDITABLE_FIELDS[id]
           if (fields === undefined) throw new Error(`Hosted settings entry ${id} is read-only`)
@@ -135,6 +140,8 @@ export class HostedSettings {
             throw error
           }
         })
+        if (this.compositionLockPath === undefined) await operation()
+        else await withFileLock(this.compositionLockPath, operation)
       },
     }
     ctx.provide('configEditor', editor)

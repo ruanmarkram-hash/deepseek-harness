@@ -119,6 +119,8 @@ describe('released mobile API over current Host owners', () => {
       ['host.createDirectory', { path: '/tmp', name: 'child' }, 'directoryPicker', 'createDirectory', { path: '/tmp', name: 'child' }, '/tmp/child', { path: '/tmp/child' }],
       ['host.openPath', { path: '/tmp' }, 'session', 'openWorkspacePath', { request: { path: '/tmp' } }, { opened: true }, { opened: true }],
       ['skill.list', { sessionId: 's' }, 'skills', 'list', { request: { sessionId: 's' } }, { skills: [] }, { skills: [] }],
+      ['plugins.list', {}, 'hostPlugins', 'list', {}, { plugins: [] }, { plugins: [] }],
+      ['plugins.setEnabled', { id: 'computer-use', enabled: false }, 'hostPlugins', 'setEnabled', { id: 'computer-use', enabled: false }, { plugin: { id: 'computer-use', name: 'Computer use', source: 'bundled', enabled: false, required: false } }, { plugin: { id: 'computer-use', name: 'Computer use', source: 'bundled', enabled: false, required: false } }],
       ['settings.describe', {}, 'settings', 'describe', {}, { namespaces: [] }, { namespaces: [] }],
       ['settings.openDocument', {}, 'settings', 'openSettingsDocument', {}, { opened: true }, { opened: true }],
       ['settings.update', { ns: 'fixture', patch: {} }, 'settings', 'update', { ns: 'fixture', patch: {} }, { revision: 1 }, { revision: 1 }],

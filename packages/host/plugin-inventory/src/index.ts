@@ -5,6 +5,7 @@ import type {} from '@deepseek-ai/cordis-plugin-loader'
 // Type-only: the optional agent-preset roster resolved through `ctx.get`.
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import type {} from '@deepseek-ai/dsh-app-boot'
+import type {} from '@deepseek-ai/dsh-hosted-plugin-controls'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 // Typert-generated ./typert and ./remote artifacts import Zod at runtime.
 import type {} from 'zod'
@@ -64,8 +65,8 @@ export class PluginInventoryGateway extends TypertRemoteService {
    * preset's composition rows, because those rows — not the Loader's own
    * entries — are where a deployment that mounts the roster runs its
    * model-facing plugins.
-   * @returns Current non-group Loader entries in Loader order, with optional display metadata
-   * and per-preset compositions when a roster is composed.
+   * @returns Current non-group Loader entries in Loader order, with optional display metadata,
+   * service availability markers, and per-preset compositions when a roster is composed.
    */
   @Remote('list')
   async list(): Promise<PluginInventorySnapshot> {
@@ -96,7 +97,8 @@ export async function readPluginInventory(ctx: Context): Promise<PluginInventory
   }
   const presets = ctx.get('agentPresets')
   const management = ctx.get('pluginManager') === undefined ? {} : { managementAvailable: true }
-  if (presets === undefined) return { entries, ...management }
+  const hosted = ctx.get('hostedPluginControls') === undefined ? {} : { hostedControlsAvailable: true }
+  if (presets === undefined) return { entries, ...management, ...hosted }
   const agentPresets: AgentPresetPluginGroup[] = (await presets.compositionInventory()).map(
     composition => ({
       ...composition,
@@ -110,5 +112,5 @@ export async function readPluginInventory(ctx: Context): Promise<PluginInventory
       }),
     }),
   )
-  return { entries, agentPresets, ...management }
+  return { entries, agentPresets, ...management, ...hosted }
 }

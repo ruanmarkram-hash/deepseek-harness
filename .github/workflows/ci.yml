@@ -566,6 +566,36 @@ jobs:
           Write-Output "::warning::$message"
           $message | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 
+  # Keep the real restricted-token escape regression blocking even while the
+  # complete Windows coverage lane remains observational. A green aggregate
+  # must never hide cross-root deletion by a confined process.
+  windows-sandbox-security:
+    if: github.event_name == 'pull_request'
+    runs-on: windows-latest
+    name: windows sandbox / security boundary
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Enable Developer Mode (symlink support)
+        shell: pwsh
+        run: >-
+          reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
+          /t REG_DWORD /f /v "AllowDevelopmentWithoutDevLicense" /d "1"
+      - uses: pnpm/action-setup@v4
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm-js-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+      - name: Install (immutable)
+        shell: pwsh
+        run: pnpm install --frozen-lockfile
+      - name: Block cross-root deletion from a restricted token
+        shell: pwsh
+        run: pnpm exec vitest run packages/sandbox/sandbox-windows-acl/tests/runner.spec.ts -t 'cross-root delete regression'
+
   windows-coverage:
     if: github.event_name == 'pull_request'
     runs-on: >-
@@ -698,7 +728,7 @@ jobs:
   # Single stable required check for branch protection: require "all checks
   # passed" instead of enumerating matrix legs whose names change as lanes and
   # node versions evolve. Every blocking job in THIS workflow must be listed in
-  # `needs`. Native Windows build and process checks are required; Wine and
+  # `needs`. Native Windows build, process, and restricted-token security checks are required; Wine and
   # the deferred Python runtime targets live in ci-master.yml and do not
   # participate in this PR verdict. `needs` cannot cross workflow files.
   # An explicit status function runs the verdict after failed/skipped needs
@@ -720,7 +750,7 @@ jobs:
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
           || 'ubuntu-latest' }}
-    needs: [node-24, node-24-coverage, node-24-bench, node-24-consumers, node-compat, python-sdk, python-runtime, windows-build, windows-native-tests]
+    needs: [node-24, node-24-coverage, node-24-bench, node-24-consumers, node-compat, python-sdk, python-runtime, windows-build, windows-sandbox-security, windows-native-tests]
     if: ${{ !cancelled() && github.event_name == 'pull_request' }}
     steps:
       - name: Fail if any needed job did not succeed

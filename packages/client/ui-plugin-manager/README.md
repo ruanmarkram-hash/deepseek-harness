@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use the **Plugins** entry in the Web sidebar to manage the profile's installed bundles and the official bundles the installation ships switched off. Switch bundles and their rows on and off, install a bundle after the Host has read what the spec names, watch pnpm's output, stop a run, and enable what it added. Uninstalling asks for confirmation. A plugin that registers a configuration page is edited here, on its own page; Settings keeps the read-only inventory.
+Use the **Plugins** entry in the Web sidebar to manage profile bundles or the signed Host's bundled plugins. In a managed profile, switch bundles and their rows, install a bundle after the Host reads its spec, and remove bundles with confirmation. In a signed Host, switch eligible bundled plugins while required services stay locked. A plugin that registers a configuration page is edited here; Settings keeps the read-only inventory.
 
 ## Table of Contents
 
@@ -25,7 +25,11 @@ Use the **Plugins** entry in the Web sidebar to manage the profile's installed b
 <a id="use-this-package"></a>
 ## Use this package
 
-Select **Plugins** in the sidebar. The page reads the inventory and the bundles through `api-remotes` when first opened; a Host without a managed profile shows the page as unavailable. **Official** comes first and lists the bundles the installation ships for switching on — off until switched on, without an uninstall, and tagged **Experimental** for experimental features — followed by the official plugins that registered a configuration page; **Installed** lists the bundles the profile holds. Cards are listed by name, so switching a bundle on or off does not move its card. A dependency without a bundle patch is not a plugin and is not listed unless the profile selects it, in which case it carries a problem tag. Global configuration remains in the Settings **Plugins** section.
+Select **Plugins** in the sidebar. In a managed profile, the page reads inventory and bundles through `api-remotes`. **Official** comes first and lists the bundles the installation ships for switching on — off until switched on, without an uninstall, and tagged **Experimental** for experimental features — followed by the official plugins that registered a configuration page; **Installed** lists the bundles the profile holds. Cards are listed by name, so switching a bundle on or off does not move its card. A dependency without a bundle patch is not a plugin and is not listed unless the profile selects it, in which case it carries a problem tag. Global configuration remains in the Settings **Plugins** section.
+
+### Signed Host plugins
+
+When the inventory reports no managed profile, the page asks the signed Host for its plugin list. It shows the signed bundled rows and their current enablement. Optional rows can be switched on or off and refresh after the Host applies the change; required rows stay visible with a locked switch and explanation. The signed Host page has no Add or uninstall action. A failed read or toggle shows an error and offers a retry or refresh. This page does not install executable packages into the signed Host.
 
 Installed bundles and their plugin rows display their own title and description in the current UI language on cards and detail pages. Each field falls back from exported locale `meta` to the accessible `package.json` at that plugin address; the final title is the full package or module name, with no package description when both sources omit it. See [Plugin display metadata](../../../docs/cookbook/adding-a-package.md#plugin-display-metadata) for the author format. Bundle cards, details, and component rows display the image declared by their own `package.json.icon`; absent or undecodable images retain the default artwork. Installation previews still use registry or manifest information.
 

@@ -6,14 +6,16 @@ import { join, dirname, relative, sep } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { collectHostedGraph, copyHostedPackages, planHostedLayout } from './hosted-module-closure.mjs'
+import { approvedHostedPlugins, verifyApprovedCopied } from './approved-hosted-plugins.mjs'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const repo = dirname(dirname(dirname(scriptDir)))
 const outDir = process.argv[2]
 const manifestOut = process.argv[3]
 const manifestOnly = process.argv[4] === '--manifest-only'
-if (!outDir || !manifestOut || !outDir.endsWith('/HostedChild/node_modules') || !manifestOut.endsWith('/HostedChild/TreeManifest.plist') || (process.argv[4] !== undefined && !manifestOnly)) {
-  console.error('usage: assemble-hosted-node-modules.mjs <Resources/HostedChild/node_modules> <Resources/HostedChild/TreeManifest.plist> [--manifest-only]')
+const approvalFile = process.argv[4] === '--approved-plugins' ? process.argv[5] : undefined
+if (!outDir || !manifestOut || !outDir.endsWith('/HostedChild/node_modules') || !manifestOut.endsWith('/HostedChild/TreeManifest.plist') || (manifestOnly && process.argv.length !== 5) || (approvalFile && process.argv.length !== 6) || (!manifestOnly && !approvalFile && process.argv[4] !== undefined)) {
+  console.error('usage: assemble-hosted-node-modules.mjs <Resources/HostedChild/node_modules> <Resources/HostedChild/TreeManifest.plist> [--approved-plugins /absolute/approval.json | --manifest-only]')
   process.exit(64)
 }
 
@@ -79,11 +81,12 @@ const roots = [
   // require an experimental provider. Configuration still owns activation.
   '@deepseek-ai/dsh-experimental-computer-use-policy',
 ]
-const graph = collectHostedGraph(roots.map(name => {
+const approved = approvalFile ? await approvedHostedPlugins(approvalFile) : []
+const graph = collectHostedGraph([...roots.map(name => {
   const target = workspaceTargets.get(name)
   if (target === undefined) throw new Error(`required hosted composition root is unavailable: ${name}`)
   return { name, target }
-}))
+}), ...approved.map(({ name, target }) => ({ name, target }))])
 const placements = planHostedLayout(graph, outDir)
 
 // Loader entries are dynamic bare imports.  The signed closure must therefore
@@ -134,6 +137,10 @@ const hostedRoot = join(repo, 'apps/cli/config/hosted-root.yml')
 if (!statSync(hostedRoot).isFile()) throw new Error('missing sealed CLI hosted-root.yml')
 mkdirSync(join(hostedChild, 'config'), { recursive: true })
 cpSync(hostedRoot, join(hostedChild, 'config/hosted-root.yml'), { dereference: true })
+writeFileSync(join(hostedChild, 'config/approved-plugins.json'), JSON.stringify({
+  formatVersion: 1,
+  plugins: approved.map(({ id, name, version, sha256 }) => ({ id, name, version, sha256 })),
+}) + '\n')
 
 // The FD199 transition is dynamically loaded through the copied package, not
 // the top-level CLI bundle. Fail assembly if its published entry still has a
@@ -150,6 +157,7 @@ if (!fd199SourceText.includes("kind: 'releasing'")
 }
 // npm selects package files; the canonical installed graph owns all dependency placements.
 await copyHostedPackages(graph, placements)
+await verifyApprovedCopied(approved, outDir)
 
 // Published runtime code must resolve through a package export inside the
 // sealed closure. A `.../src/foo.ts` specifier works in the development graph

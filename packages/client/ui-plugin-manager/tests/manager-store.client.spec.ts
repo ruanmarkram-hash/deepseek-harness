@@ -87,9 +87,16 @@ function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}
     ...overrides,
   }
   const probe = { fastest: overrides.fastest ?? vi.fn(() => Promise.resolve(ok(null))) }
+  const hosted = {
+    list: overrides.hostedList ?? vi.fn(() => Promise.resolve(ok({ plugins: [
+      { id: 'computer-use', name: 'Computer use', source: 'bundled', enabled: true, required: false },
+      { id: 'remote-auth', name: 'Remote authentication', source: 'bundled', enabled: true, required: true, reason: 'Connection security' },
+    ] }))),
+    setEnabled: overrides.hostedSetEnabled ?? vi.fn(() => Promise.resolve(ok({ plugin: { id: 'computer-use', name: 'Computer use', source: 'bundled', enabled: false, required: false } }))),
+  }
   const ctx = {
     configForms: { describe: () => ({ getSnapshot: () => ({ view: { namespaces: [] } }), subscribe: () => () => {} }), get: vi.fn((id: string) => `form:${id}`) },
-    remote: { pluginManager: plugins, pluginInventory: inventory, pluginRegistryProbe: probe },
+    remote: { pluginManager: plugins, pluginInventory: inventory, pluginRegistryProbe: probe, hostPlugins: hosted },
   } as never
   const controller = new PluginManagerController(ctx)
   onTestFinished(() => { controller.dispose() })
@@ -100,7 +107,7 @@ function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}
     await vi.waitFor(() => { expect(state().install.phase).toBe('starting') })
     return state().install.requestId as PluginInstallRequestId
   }
-  return { plugins, inventory, probe, controller, face, state, started }
+  return { plugins, inventory, probe, hosted, controller, face, state, started }
 }
 
 it('hands a custom page the shared configuration form of its entry', () => {
@@ -224,13 +231,17 @@ describe('PluginManagerController', () => {
     expect(plugins.listBundles).toHaveBeenCalledTimes(2)
   })
 
-  it('reports a Host without a managed profile as unavailable and keeps the last packages across a failed read', async () => {
-    const { inventory, plugins, face, state, controller } = bench()
+  it('reads signed Host plugins when the profile manager is unavailable, and keeps the last packages across a failed read', async () => {
+    const { inventory, plugins, hosted, face, state, controller } = bench()
     await controller.load()
     expect(state().packages).toHaveLength(1)
-    inventory.list.mockResolvedValueOnce(ok({ entries: [] }))
+    inventory.list.mockResolvedValueOnce(ok({ entries: [], hostedControlsAvailable: true }))
     await controller.load()
-    expect(state()).toMatchObject({ status: 'unavailable', packages: [] })
+    expect(state()).toMatchObject({ status: 'ready', hosted: true, packages: [], hostedPlugins: [
+      { id: 'computer-use', enabled: true, required: false },
+      { id: 'remote-auth', enabled: true, required: true },
+    ] })
+    expect(hosted.list).toHaveBeenCalledTimes(1)
     inventory.list.mockResolvedValueOnce(refused('gateway/internal', 'offline'))
     await controller.load()
     expect(state().status).toBe('error')
@@ -244,6 +255,46 @@ describe('PluginManagerController', () => {
     expect(state().status).toBe('error')
     face.refresh()
     await vi.waitFor(() => { expect(state().status).toBe('ready') })
+  })
+
+  it('switches only optional signed Host plugins and refreshes after a successful or failed action', async () => {
+    const { inventory, hosted, face, controller, state } = bench({
+      inventory: vi.fn(() => Promise.resolve(ok({ entries: [], managementAvailable: false, hostedControlsAvailable: true }))),
+    })
+    await controller.load()
+    expect(inventory.list).toHaveBeenCalledTimes(1)
+    face.setEnabled('remote-auth', false)
+    await Promise.resolve()
+    expect(hosted.setEnabled).not.toHaveBeenCalled()
+    face.setEnabled('computer-use', false)
+    await vi.waitFor(() => { expect(hosted.setEnabled).toHaveBeenCalledWith({ id: 'computer-use', enabled: false }) })
+    await vi.waitFor(() => { expect(state().busy).toEqual([]) })
+    expect(hosted.list).toHaveBeenCalledTimes(2)
+    hosted.setEnabled.mockResolvedValueOnce(refused('host/blocked', 'Host refused change') as never)
+    face.setEnabled('computer-use', true)
+    await vi.waitFor(() => { expect(state().notice).toMatchObject({ kind: 'failed', reason: 'Host refused change' }) })
+    await vi.waitFor(() => { expect(hosted.list).toHaveBeenCalledTimes(3) })
+  })
+
+  it('shows a retryable read error when signed Host plugin controls cannot answer', async () => {
+    const { hosted, controller, state } = bench({
+      inventory: vi.fn(() => Promise.resolve(ok({ entries: [], managementAvailable: false, hostedControlsAvailable: true }))),
+      hostedList: vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(ok({ plugins: [] })),
+    })
+    await controller.load()
+    expect(state()).toMatchObject({ hosted: true, status: 'error', hostedPlugins: [] })
+    await controller.load()
+    expect(state()).toMatchObject({ hosted: true, status: 'ready', hostedPlugins: [] })
+    expect(hosted.list).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the unavailable profile page when neither plugin manager nor signed Host controls exist', async () => {
+    const { controller, hosted, state } = bench({
+      inventory: vi.fn(() => Promise.resolve(ok({ entries: [], managementAvailable: false }))),
+    })
+    await controller.load()
+    expect(state()).toMatchObject({ status: 'unavailable', hosted: false, packages: [] })
+    expect(hosted.list).not.toHaveBeenCalled()
   })
 
   it('enables a bundle, marks it busy meanwhile, and says when a restart is needed or a layer overrides it', async () => {

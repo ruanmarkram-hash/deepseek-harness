@@ -43,6 +43,8 @@ Runtime invariant: No companion is published. This package does not maintain a s
 
 The in-process adapter and sealed Host loopback carrier share [one unary method map](src/api/unary.ts). Each carrier retains its own request handling, streams, downloads, and response delivery.
 
+`plugins.list` and `plugins.setEnabled` dispatch through the Host-owned `hostPlugins` service. They exchange sanitized installed rows and exact ids only; package installation has no phone request method.
+
 </details>
 
 -----

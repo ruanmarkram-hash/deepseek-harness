@@ -42,6 +42,7 @@ import {
   workspaceRenameValueSchema,
 } from '../api/workspace.schema.ts'
 import { skillListValueSchema } from '../api/skills.schema.ts'
+import { pluginsListValueSchema, pluginsSetEnabledValueSchema } from '../api/plugins.schema.ts'
 import {
   agentPresetCopyValueSchema, agentPresetListValueSchema, agentPresetOpenDocumentValueSchema,
   agentPresetReadValueSchema, agentPresetRemoveValueSchema, agentPresetSelectValueSchema,
@@ -125,6 +126,10 @@ export interface IApiClient {
   skills: {
     list(payload: RequestPayload<'skill.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'skill.list'>>>
   }
+  plugins: {
+    list(payload: RequestPayload<'plugins.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'plugins.list'>>>
+    setEnabled(payload: RequestPayload<'plugins.setEnabled'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'plugins.setEnabled'>>>
+  }
   agentPresets: {
     list(payload: RequestPayload<'agentPreset.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentPreset.list'>>>
     select(payload: RequestPayload<'agentPreset.select'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentPreset.select'>>>
@@ -200,6 +205,8 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'workspace.insertSessionBefore': workspaceInsertSessionBeforeValueSchema,
   'workspace.archiveSession': workspaceArchiveSessionValueSchema,
   'skill.list': skillListValueSchema,
+  'plugins.list': pluginsListValueSchema,
+  'plugins.setEnabled': pluginsSetEnabledValueSchema,
   'agentPreset.list': agentPresetListValueSchema,
   'agentPreset.select': agentPresetSelectValueSchema,
   'agentPreset.read': agentPresetReadValueSchema,
@@ -456,6 +463,11 @@ export abstract class AbstractApiClient implements IApiClient {
 
   readonly skills: IApiClient['skills'] = {
     list: (payload, signal) => this.callUnary('skill.list', payload, signal),
+  }
+
+  readonly plugins: IApiClient['plugins'] = {
+    list: (payload, signal) => this.callUnary('plugins.list', payload, signal),
+    setEnabled: (payload, signal) => this.callUnary('plugins.setEnabled', payload, signal),
   }
 
   // Annotated like every sibling, and load-bearing rather than cosmetic:

@@ -30,6 +30,7 @@ import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { LocalizedText, PluginLocalizedMeta } from '@deepseek-ai/dsh-package-manifest'
 import type { SettingsDescribeFace, ConfigForms } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { PluginView } from '@deepseek-ai/dsh-hosted-plugin-controls/types'
 import type { ConfigLedger } from './config-ledger.ts'
 import { shortName } from './presentation.ts'
 
@@ -236,6 +237,10 @@ export interface PluginManagerState {
   /** `unavailable` when the Host runs without a managed profile; `error` keeps the last packages. */
   readonly status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
   readonly packages: readonly PackageView[]
+  /** Signed Host mode lists fixed bundled rows in place of profile bundles. */
+  readonly hosted?: boolean
+  /** The signed Host's current rows, including required locked entries. */
+  readonly hostedPlugins?: readonly PluginView[]
   /** Package names and row keys with an action crossing the wire. */
   readonly busy: readonly string[]
   readonly notice: ManagerNotice | null
@@ -473,7 +478,7 @@ export class PluginManagerController {
     private readonly ctx: ClientContext,
   ) {
     this.store = createSnapshotStore<PluginManagerState>({
-      status: 'idle', packages: [], busy: [], notice: null,
+      status: 'idle', packages: [], hosted: false, hostedPlugins: [], busy: [], notice: null,
       install: IDLE_INSTALL, confirm: null, highlight: null,
     })
   }
@@ -560,6 +565,15 @@ export class PluginManagerController {
       enableInstalled: () => { void this.enableInstalled() },
       clearHighlight: () => { if (this.getSnapshot().highlight !== null) this.patch({ highlight: null }) },
       setEnabled: (packageName, enabled) => {
+        if (this.getSnapshot().hosted === true) {
+          const plugin = this.getSnapshot().hostedPlugins?.find(row => row.id === packageName)
+          if (plugin === undefined || plugin.required) return
+          void this.run(packageName, { packageName: plugin.name, action: enabled ? 'enable' : 'disable' }, async () => {
+            const result = await this.ctx.remote.hostPlugins.setEnabled({ id: packageName, enabled })
+            if (!result.ok) throw new RemoteAnswerError(result.error.message)
+          })
+          return
+        }
         void this.run(packageName, { packageName, action: enabled ? 'enable' : 'disable' }, async () => {
           this.applied(await this.ctx.remote.pluginManager.setBundleEnabled(packageName, enabled), packageName)
         })
@@ -682,7 +696,20 @@ export class PluginManagerController {
           continue
         }
         if (inventory.value.managementAvailable !== true) {
-          this.patch({ status: 'unavailable', packages: [] })
+          if (inventory.value.hostedControlsAvailable !== true) {
+            this.patch({ status: 'unavailable', hosted: false, hostedPlugins: [], packages: [] })
+            continue
+          }
+          try {
+            const hosted = await this.ctx.remote.hostPlugins.list()
+            if (generation !== this.generation) return
+            this.patch(hosted.ok
+              ? { status: 'ready', hosted: true, hostedPlugins: hosted.value.plugins, packages: [] }
+              : { status: 'error', hosted: true, hostedPlugins: [], packages: [] })
+          } catch {
+            if (generation !== this.generation) return
+            this.patch({ status: 'error', hosted: true, hostedPlugins: [], packages: [] })
+          }
           continue
         }
         const [bundles, plugins] = await Promise.all([
@@ -696,6 +723,8 @@ export class PluginManagerController {
         }
         this.patch({
           status: 'ready',
+          hosted: false,
+          hostedPlugins: [],
           packages: sortPackages(bundles.value.map(bundle => packageView(bundle, plugins.value))),
         })
       } while (this.shouldRerun())

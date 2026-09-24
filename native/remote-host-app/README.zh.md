@@ -12,6 +12,8 @@ app 内含已签名原生 child、`DSHRemoteHostKeychain.xpc`、固定版本的 
 
 闭包组装器从每个声明生产依赖的已安装包解析该依赖，在普通嵌套 `node_modules` 中保留并存的第三方版本，并让第一方包保持签名根目录中的单一身份。缺少必需依赖、第一方身份冲突、依赖边改变或可选依赖意外获得提供者都会使组装失败。离线执行 `npm pack --dry-run --ignore-scripts --json --workspaces=false` 会在不运行包生命周期脚本的情况下选择发布文件，保留声明的运行时资源及隐式入口文件，并由 npm 排除未发布文件。依赖图负责依赖放置，每个复制文件必须是包目录内的常规文件，且封存目录树不含符号链接。
 
+可选的 Mac 本地构建参数 `--approved-plugins /absolute/approval.json` 列出精确的 Cordis 行 ID、包名、版本、源目录，以及已发布依赖闭包的 SHA-256 指纹。组装器在签名前拒绝缺失的包、链接、已更改的字节和复制后不匹配的文件。它只将 `{id,name,version,sha256}` 描述信息写入 `HostedChild/config/approved-plugins.json`；源路径和批准文件都留在 app 与仓库之外。不带此参数的构建会写入空描述列表。已批准插件代码在 Host child 中运行并拥有其 session 和 tool 权限，因此批准文件只应包含经 Mac 用户审查且信任的包。
+
 `CFBundleIconFile` 指定 `DeepSeek.icns` 资源，该文件在签名前从 `DeepSeek-HOST.icns` 变体复制到 Host 中。启动器尺寸的鲸鱼下方带有小号 `HOST` 标签。[Desktop 图标打包参考](../../apps/desktop/README.zh.md) 负责说明图稿生成和验证流程。
 
 ## 配对与激活

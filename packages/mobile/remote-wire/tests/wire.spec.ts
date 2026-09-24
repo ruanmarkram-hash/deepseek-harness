@@ -108,6 +108,8 @@ describe('trusted remote v3 envelopes', () => {
 
   it('admits only names still present in the host request map and stream map', () => {
     expect(parseRemoteWireEnvelope(request({ method: 'workspace.archiveSession' }))).toMatchObject({ method: 'workspace.archiveSession' })
+    expect(parseRemoteWireEnvelope(request({ method: 'plugins.list', payload: {} }))).toMatchObject({ method: 'plugins.list' })
+    expect(parseRemoteWireEnvelope(request({ method: 'plugins.setEnabled', payload: { id: 'computer-use', enabled: false } }))).toMatchObject({ method: 'plugins.setEnabled' })
     expect(parseRemoteWireEnvelope({ version: 3, type: 'event', connectionEpoch: 7, cursor: 3, eventId: ID, requestId: ID, event: 'approval/requested', payload: {} })).toMatchObject({ event: 'approval/requested' })
     expect(code(() => parseRemoteWireEnvelope(request({ method: 'computer.use' })))).toBe('REMOTE_WIRE_UNKNOWN_METHOD')
     expect(code(() => parseRemoteWireEnvelope({ version: 3, type: 'event', connectionEpoch: 7, cursor: 3, eventId: ID, requestId: ID, event: 'screen/frame', payload: {} }))).toBe('REMOTE_WIRE_UNKNOWN_EVENT')

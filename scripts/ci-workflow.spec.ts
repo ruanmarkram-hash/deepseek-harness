@@ -340,8 +340,9 @@ describe('CI workflow', () => {
     expect(serialGate).toBeDefined()
     expect(serialGate!.env).toMatchObject({ DSH_COVERAGE_TEST_TIMEOUT_MS: '90000' })
 
-    // windows-coverage is temporarily non-blocking while Windows ACP
-    // half-close tests are stabilized; observational stays out too.
+    // Full Windows coverage is temporarily non-blocking while Windows ACP
+    // half-close tests are stabilized; the cross-root sandbox regression must
+    // still be a required verdict input.
     expect(aggregate.needs).not.toContain('windows')
     expect(aggregate.needs).toContain('windows-build')
     // The benchmark lane is a required verdict input and runs alone so its
@@ -360,6 +361,15 @@ describe('CI workflow', () => {
       run: 'pnpm run check:ci:bench',
     })
     expect(aggregate.needs).not.toContain('windows-coverage')
+    expect(aggregate.needs).toContain('windows-sandbox-security')
+    const windowsSecurity = workflowJob(workflow, 'windows-sandbox-security')
+    expect(windowsSecurity['runs-on']).toBe('windows-latest')
+    expect(windowsSecurity).not.toHaveProperty('continue-on-error', true)
+    expect(windowsSecurity.steps).toContainEqual({
+      name: 'Block cross-root deletion from a restricted token',
+      shell: 'pwsh',
+      run: "pnpm exec vitest run packages/sandbox/sandbox-windows-acl/tests/runner.spec.ts -t 'cross-root delete regression'",
+    })
     expect(aggregate.needs).toContain('windows-native-tests')
     expect(aggregate.needs).not.toContain('windows-observational')
     expect(aggregate.needs).not.toContain('serial-windows')

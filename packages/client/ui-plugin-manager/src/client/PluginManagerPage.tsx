@@ -32,6 +32,7 @@ import {
 import { managementText, noticeText, packageText, registryText, rowText, type Translate } from './presentation.ts'
 import type { PluginPackageRef, PluginRowRef, PluginsSubject } from './slot-contract.ts'
 import type { ConfigPageForm } from './slot-contract.ts'
+import type { PluginView } from '@deepseek-ai/dsh-hosted-plugin-controls/types'
 import css from './PluginManagerPage.module.css'
 
 /** Full component props assembled by the main slot renderer. */
@@ -1138,6 +1139,71 @@ function ConfirmDialog({ name, t, onConfirm, onCancel }: {
   )
 }
 
+/** Render signed Host rows using the Host's exact-ID controls. */
+function HostedPlugins({ plugins, busy, status, noticeLine, t, onRefresh, onSetEnabled, onDismissNotice, noticeSeq }: {
+  readonly plugins: readonly PluginView[]
+  readonly busy: readonly string[]
+  readonly status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
+  readonly noticeLine: string | null
+  readonly noticeSeq?: number
+  readonly t: Translate
+  readonly onRefresh: () => void
+  readonly onSetEnabled: (id: string, enabled: boolean) => void
+  readonly onDismissNotice: () => void
+}): ReactNode {
+  const listed = [...plugins].sort((left, right) => Number(left.required) - Number(right.required) || left.name.localeCompare(right.name))
+  return (
+    <section className={css.page} data-plugin-panel data-hosted-plugins aria-busy={status === 'loading'}>
+      <header className={css.pageHead}>
+        <div>
+          <h1 className={css.pageTitle}>{t('title')}</h1>
+          <p className={css.pageIntro}>{t('hostedIntro')}</p>
+        </div>
+        <button type="button" className={css.iconButton} aria-label={t('refresh')} title={t('refresh')} disabled={status === 'loading'} onClick={onRefresh}>
+          <span className={css.iconWrap} aria-hidden="true"><IconRefreshOutlineRegular /></span>
+        </button>
+      </header>
+      {status === 'loading' ? <p className={`${css.status} ${css.statusWithDot}`} role="status"><StateDot state="ongoing" />{t('loading')}</p> : null}
+      {status === 'error' ? (
+        <div className={css.failure}>
+          <p className={css.statusWithDot} role="alert"><StateDot state="error" />{t('error')}</p>
+          <Button variant="outline" size="sm" onClick={onRefresh}>{t('retry')}</Button>
+        </div>
+      ) : null}
+      {noticeLine === null ? null : <Toast
+        key={noticeSeq}
+        text={noticeLine}
+        icon={<IconWarningOutlineRegular />}
+        holdMs={toastHoldMs(noticeLine)}
+        onDone={onDismissNotice}
+      />}
+      {status === 'ready' && plugins.length === 0 ? <p className={css.empty}>{t('empty')}</p> : null}
+      {listed.length > 0 ? (
+        <ul className={css.hostedList}>
+          {listed.map(plugin => (
+            <li className={css.hostedRow} key={plugin.id} data-hosted-plugin={plugin.id}>
+              <div className={css.hostedText}>
+                <span className={css.hostedName}>{plugin.name}</span>
+                <code className={css.hostedId}>{plugin.id}</code>
+                {plugin.required ? <span className={css.hostedReason}>{t('hostedRequiredReason')}</span> : null}
+              </div>
+              {plugin.source === 'downloaded' ? <Tag tone="neutral">{t('hostedDownloaded')}</Tag> : null}
+              {plugin.required ? <Tag tone="neutral">{t('hostedRequired')}</Tag> : null}
+              <Switch
+                checked={plugin.enabled}
+                label={t('enableToggle', { name: plugin.name })}
+                disabled={plugin.required || busy.includes(plugin.id)}
+                title={plugin.required ? t('hostedRequiredReason') : undefined}
+                onChange={(enabled) => { onSetEnabled(plugin.id, enabled) }}
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  )
+}
+
 /** Render the plugin manager: the official plugins and installed bundles, their pages, the install dialog, and the confirmation. */
 export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
   const { t, ensure, renderSlot, resolveText } = props
@@ -1163,6 +1229,20 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
     return () => { clearTimeout(timer) }
   }, [highlight, clearHighlight])
   const noticeLine = state.notice === null ? null : noticeText(state.notice, t)
+
+  if (state.hosted === true) return (
+    <HostedPlugins
+      plugins={state.hostedPlugins ?? []}
+      busy={state.busy}
+      status={state.status}
+      noticeLine={noticeLine}
+      {...state.notice === null ? {} : { noticeSeq: state.notice.seq }}
+      t={t}
+      onRefresh={props.refresh}
+      onSetEnabled={props.setEnabled}
+      onDismissNotice={props.dismissNotice}
+    />
+  )
 
   // The page manages what the person installed, what the installation ships for them to switch on, and a
   // selected name the Host cannot read; the installation's other bundles are inspected in the Settings

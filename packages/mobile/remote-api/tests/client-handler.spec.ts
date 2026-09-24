@@ -25,6 +25,7 @@ function scriptedApi(overrides: {
   subagents?: Partial<ApiProxy['subagents']>
   host?: Partial<ApiProxy['host']>
   skills?: Partial<ApiProxy['skills']>
+  plugins?: Partial<ApiProxy['plugins']>
   agentPresets?: Partial<ApiProxy['agentPresets']>
   events?: Partial<ApiProxy['events']>
   goals?: Partial<ApiProxy['goals']>
@@ -93,6 +94,7 @@ function scriptedApi(overrides: {
       archiveSession: r => ok(r, { archivedSessionIds: [r.payload.sessionId] }),
     },
     skills: { list: r => ok(r, { skills: [] }), ...overrides.skills },
+    plugins: { list: r => ok(r, { plugins: [] }), setEnabled: err, ...overrides.plugins },
     agentPresets: {
       list: r => ok(r, { presets: [], authorable: false, hasDocument: false }),
       select: r => ok(r, { agentPreset: r.payload.agentPreset }),

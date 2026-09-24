@@ -13,9 +13,10 @@ import { nativeMobileIdentityProvider, nativeMobileRemoteStateStore } from './na
 import { mobileRemoteSocketFactory } from './mobile-remote-socket'
 import { EMPTY_OWNER_WORKSPACE, applyOwnerEvent, applyOwnerSessionList, replaceOwnerWorkspaceSnapshot, type OwnerSession, type OwnerWorkspace } from './owner-workspace'
 import { MobileRemoteClient, type MobileRemoteState } from './remote'
+import { loadMobilePluginsAfterToggle, setMobilePluginEnabled, type MobilePlugin } from './mobile-plugins'
 
 type Panel = 'conversation' | 'sessions'
-type Sheet = 'none' | 'connection' | 'details' | 'pairing' | 'forget'
+type Sheet = 'none' | 'connection' | 'details' | 'pairing' | 'forget' | 'plugins'
 
 interface PairingSummary {
   readonly expiresAt: string
@@ -156,12 +157,13 @@ export default function App(): React.JSX.Element {
 
   return <ConnectionNoticeContext.Provider value={notice}><SafeAreaView style={styles.page}>
     <StatusBar style="light" />
-    <WorkspacePager draft={draft} onChangeDraft={setDraft} onConnect={() => void connectHost()} onCreateSession={() => void createSession()} onOpenConnection={() => setSheet('connection')} onOpenDetails={() => setSheet('details')} onOpenPairing={() => setSheet('pairing')} onRefresh={() => void refreshSessions()} onSelectSession={id => setWorkspace(current => ({ ...current, selectedSessionId: id }))} onSend={() => void send()} pairing={pairing} panel={panel} remoteState={remoteState} selected={selected} setPanel={setPanel} workspace={workspace} />
+    <WorkspacePager draft={draft} onChangeDraft={setDraft} onConnect={() => void connectHost()} onCreateSession={() => void createSession()} onOpenConnection={() => setSheet('connection')} onOpenDetails={() => setSheet('details')} onOpenPairing={() => setSheet('pairing')} onOpenPlugins={() => setSheet('plugins')} onRefresh={() => void refreshSessions()} onSelectSession={id => setWorkspace(current => ({ ...current, selectedSessionId: id }))} onSend={() => void send()} pairing={pairing} panel={panel} remoteState={remoteState} selected={selected} setPanel={setPanel} workspace={workspace} />
     {sheet !== 'none' && <ModalSheet onClose={() => setSheet('none')}>
       {sheet === 'connection' && <ConnectionSheet onConnect={() => void connectHost()} onForget={() => setSheet('forget')} onPair={() => setSheet('pairing')} pairing={pairing} state={remoteState} />}
       {sheet === 'details' && <HostDetails session={selected} workspace={workspace} />}
       {sheet === 'pairing' && <PairingSheet existing={pairing} state={remoteState} onConnect={() => void connectHost()} onImport={importInvitation} onRemotePair={completeRemotePairing} onOpenForget={() => setSheet('forget')} />}
       {sheet === 'forget' && <ForgetSheet onCancel={() => setSheet('connection')} onForget={() => void forget()} />}
+      {sheet === 'plugins' && <PluginsSheet client={client.current} connected={connected} />}
     </ModalSheet>}
   </SafeAreaView></ConnectionNoticeContext.Provider>
 }
@@ -174,6 +176,7 @@ function WorkspacePager({
   onOpenConnection,
   onOpenDetails,
   onOpenPairing,
+  onOpenPlugins,
   onRefresh,
   onSelectSession,
   onSend,
@@ -191,6 +194,7 @@ function WorkspacePager({
   readonly onOpenConnection: () => void
   readonly onOpenDetails: () => void
   readonly onOpenPairing: () => void
+  readonly onOpenPlugins: () => void
   readonly onRefresh: () => void
   readonly onSelectSession: (id: string) => void
   readonly onSend: () => void
@@ -207,7 +211,7 @@ function WorkspacePager({
   const open = (next: Panel) => { setPanel(next); pager.current?.scrollTo({ x: next === 'sessions' ? width : 0, animated: true }) }
   return <ScrollView horizontal pagingEnabled ref={pager} showsHorizontalScrollIndicator={false} onMomentumScrollEnd={({ nativeEvent }) => setPanel(nativeEvent.contentOffset.x >= width / 2 ? 'sessions' : 'conversation')}>
     <View style={[styles.panel, { width }]}><Conversation draft={draft} onChangeDraft={onChangeDraft} onConnect={onConnect} onOpenDetails={onOpenDetails} onOpenPairing={onOpenPairing} onOpenSessions={() => open('sessions')} onSend={onSend} pairing={pairing} remoteState={remoteState} session={selected} /></View>
-    <View style={[styles.panel, { width }]}><SessionDrawer onClose={() => open('conversation')} onCreateSession={onCreateSession} onOpenConnection={onOpenConnection} onOpenPairing={onOpenPairing} onRefresh={onRefresh} onSelectSession={(id) => { onSelectSession(id); open('conversation') }} remoteState={remoteState} workspace={workspace} /></View>
+    <View style={[styles.panel, { width }]}><SessionDrawer onClose={() => open('conversation')} onCreateSession={onCreateSession} onOpenConnection={onOpenConnection} onOpenPairing={onOpenPairing} onOpenPlugins={onOpenPlugins} onRefresh={onRefresh} onSelectSession={(id) => { onSelectSession(id); open('conversation') }} remoteState={remoteState} workspace={workspace} /></View>
   </ScrollView>
 }
 
@@ -252,18 +256,94 @@ function EmptyConversation({ onConnect, onPair, paired, state }: {
   return <View style={styles.empty}><Image accessibilityIgnoresInvertColors source={deepSeekMark} style={styles.mark} /><Text style={styles.emptyTitle}>{paired ? 'Host invitation verified' : 'Your DSH Host'}</Text><Text style={styles.emptyCopy}>{paired ? 'Connect this protected phone to its signed DSH Host.' : state.kind === 'unconfigured' ? 'Pair this phone locally with your signed DSH Host. No desktop bridge or preview history is used.' : 'The encrypted connection is not currently live.'}</Text>{paired ? <ConnectionAction onConnect={state.kind === 're-pair-required' ? onPair : onConnect} state={state} /> : <Pressable accessibilityRole="button" onPress={onPair} style={styles.pairAction}><Text style={styles.pairActionText}>Pair this phone</Text></Pressable>}</View>
 }
 
-function SessionDrawer({ onClose, onCreateSession, onOpenConnection, onOpenPairing, onRefresh, onSelectSession, remoteState, workspace }: {
+function SessionDrawer({
+  onClose, onCreateSession, onOpenConnection, onOpenPairing, onOpenPlugins,
+  onRefresh, onSelectSession, remoteState, workspace,
+}: {
   readonly onClose: () => void
   readonly onCreateSession: () => void
   readonly onOpenConnection: () => void
   readonly onOpenPairing: () => void
+  readonly onOpenPlugins: () => void
   readonly onRefresh: () => void
   readonly onSelectSession: (id: string) => void
   readonly remoteState: MobileRemoteState
   readonly workspace: OwnerWorkspace
 }): React.JSX.Element {
   const connected = remoteState.kind === 'connected'
-  return <View style={styles.screen}><View style={styles.drawerHeader}><Pressable accessibilityLabel="Close sessions" accessibilityRole="button" onPress={onClose} style={styles.iconButton}><Text style={styles.iconText}>‹</Text></Pressable><Brand /><View style={styles.iconButton} /></View><ScrollView contentContainerStyle={styles.drawer}><Pressable accessibilityRole="button" onPress={onCreateSession} style={styles.newButton}><Text style={styles.newText}>＋ New session</Text></Pressable><View style={styles.drawerRow}><Text style={styles.sectionLabel}>RECENT SESSIONS</Text><Pressable accessibilityRole="button" onPress={onRefresh}><Text style={styles.refresh}>Refresh</Text></Pressable></View>{workspace.sessions.length === 0 ? <Text style={styles.drawerEmpty}>{connected ? 'No sessions received from the Host yet.' : 'Connect a DSH Host to see its live sessions.'}</Text> : workspace.sessions.map(session => <Pressable key={session.id} accessibilityRole="button" onPress={() => onSelectSession(session.id)} style={styles.sessionRow}><Image accessibilityIgnoresInvertColors source={deepSeekMark} style={styles.rowMark} /><View style={styles.rowCopy}><Text numberOfLines={1} style={styles.rowTitle}>{session.title}</Text><Text numberOfLines={1} style={styles.rowDetail}>{session.running ? 'Responding' : `${session.messages.length} live messages`}</Text></View><Text style={styles.chevron}>›</Text></Pressable>)}<View style={styles.drawerFooter}><Pressable accessibilityRole="button" onPress={onOpenConnection} style={styles.connectionCard}><View style={[styles.dot, connected && styles.dotLive]} /><View style={styles.rowCopy}><Text style={styles.rowTitle}>{connected ? 'DSH Host connected' : stateLabel(remoteState)}</Text><Text style={styles.rowDetail}>{connected ? 'Encrypted remote connection' : 'Open connection controls'}</Text></View><Text style={styles.chevron}>›</Text></Pressable></View></ScrollView></View>
+  return <View style={styles.screen}><View style={styles.drawerHeader}><Pressable accessibilityLabel="Close sessions" accessibilityRole="button" onPress={onClose} style={styles.iconButton}><Text style={styles.iconText}>‹</Text></Pressable><Brand /><View style={styles.iconButton} /></View><ScrollView contentContainerStyle={styles.drawer}><Pressable accessibilityRole="button" onPress={onCreateSession} style={styles.newButton}><Text style={styles.newText}>＋ New session</Text></Pressable><Pressable accessibilityLabel="Open plugins" accessibilityRole="button" onPress={onOpenPlugins} style={styles.sessionRow}><Text style={styles.rowTitle}>Plugins</Text><Text style={styles.chevron}>›</Text></Pressable><View style={styles.drawerRow}><Text style={styles.sectionLabel}>RECENT SESSIONS</Text><Pressable accessibilityRole="button" onPress={onRefresh}><Text style={styles.refresh}>Refresh</Text></Pressable></View>{workspace.sessions.length === 0 ? <Text style={styles.drawerEmpty}>{connected ? 'No sessions received from the Host yet.' : 'Connect a DSH Host to see its live sessions.'}</Text> : workspace.sessions.map(session => <Pressable key={session.id} accessibilityRole="button" onPress={() => onSelectSession(session.id)} style={styles.sessionRow}><Image accessibilityIgnoresInvertColors source={deepSeekMark} style={styles.rowMark} /><View style={styles.rowCopy}><Text numberOfLines={1} style={styles.rowTitle}>{session.title}</Text><Text numberOfLines={1} style={styles.rowDetail}>{session.running ? 'Responding' : `${session.messages.length} live messages`}</Text></View><Text style={styles.chevron}>›</Text></Pressable>)}<View style={styles.drawerFooter}><Pressable accessibilityRole="button" onPress={onOpenConnection} style={styles.connectionCard}><View style={[styles.dot, connected && styles.dotLive]} /><View style={styles.rowCopy}><Text style={styles.rowTitle}>{connected ? 'DSH Host connected' : stateLabel(remoteState)}</Text><Text style={styles.rowDetail}>{connected ? 'Encrypted remote connection' : 'Open connection controls'}</Text></View><Text style={styles.chevron}>›</Text></Pressable></View></ScrollView></View>
+}
+
+function PluginsSheet({ client, connected }: {
+  readonly client: MobileRemoteClient | undefined
+  readonly connected: boolean
+}): React.JSX.Element {
+  const [plugins, setPlugins] = useState<MobilePlugin[] | undefined>()
+  const [error, setError] = useState<string | undefined>()
+  const [busyId, setBusyId] = useState<string | undefined>()
+  const [loading, setLoading] = useState(false)
+  const generation = useRef(0)
+  const pendingToggle = useRef<Promise<MobilePlugin> | undefined>(undefined)
+  const active = useRef(true)
+  const refresh = async () => {
+    const current = ++generation.current
+    if (!connected || client === undefined) { setPlugins(undefined); setBusyId(undefined); setLoading(false); setError('Connect to DSH Host to manage plugins.'); return }
+    setLoading(true)
+    setPlugins(undefined)
+    setError(undefined)
+    try {
+      const rows = await loadMobilePluginsAfterToggle(client.request.bind(client), pendingToggle.current)
+      if (generation.current === current) setPlugins(rows)
+    } catch (cause) {
+      if (generation.current === current) setError(cause instanceof Error ? cause.message : 'Could not load Host plugins.')
+    } finally { if (generation.current === current) setLoading(false) }
+  }
+  useEffect(() => {
+    active.current = true
+    void refresh()
+    return () => { generation.current += 1; active.current = false }
+  }, [connected, client])
+  const toggle = async (row: MobilePlugin) => {
+    if (!connected || client === undefined || row.required || busyId !== undefined || pendingToggle.current !== undefined) return
+    const current = generation.current
+    setBusyId(row.id)
+    setError(undefined)
+    const operation = setMobilePluginEnabled(client.request.bind(client), row, !row.enabled)
+    pendingToggle.current = operation
+    try {
+      const committed = await operation
+      if (generation.current === current) setPlugins(rows => rows?.map(item => item.id === committed.id ? committed : item))
+    } catch (cause) {
+      if (generation.current === current) setError(cause instanceof Error ? cause.message : 'Could not update Host plugin.')
+    } finally {
+      if (pendingToggle.current === operation) pendingToggle.current = undefined
+      if (active.current) setBusyId(undefined)
+    }
+  }
+  return <>
+    <Text style={styles.sheetEyebrow}>DSH HOST</Text>
+    <Text style={styles.sheetTitle}>Plugins</Text>
+    <Text style={styles.sheetCopy}>
+      Installed plugins run on your Mac Host. Required plugins keep the Host and phone connection working.
+    </Text>
+    <Pressable accessibilityLabel="Refresh plugins" accessibilityRole="button" disabled={loading || busyId !== undefined} onPress={() => void refresh()} style={styles.secondaryButton}>
+      <Text style={styles.secondaryButtonText}>{loading ? 'Loading…' : 'Refresh'}</Text>
+    </Pressable>
+    {error !== undefined && <View style={styles.errorCard}><Text accessibilityLiveRegion="polite" style={styles.errorCopy}>{error}</Text></View>}
+    <View style={styles.info}>
+      {plugins?.length === 0 && <Text style={styles.safeNote}>No plugins are installed on this Host.</Text>}
+      {plugins?.map(row => <View key={row.id} style={styles.infoCard}>
+        <View style={styles.pluginRow}>
+          <View style={styles.rowCopy}><Text style={styles.rowTitle}>{row.name}</Text><Text style={styles.rowDetail}>{row.source === 'downloaded' ? 'Downloaded' : 'Included with DSH'} · {row.id}</Text></View>
+          <Pressable accessibilityLabel={`${row.name}: ${row.required ? 'required' : row.enabled ? 'on' : 'off'}`} accessibilityRole="switch" accessibilityState={{ checked: row.enabled, disabled: row.required || !connected || busyId !== undefined }} disabled={row.required || !connected || busyId !== undefined} onPress={() => void toggle(row)} style={[styles.pluginToggle, row.enabled && styles.pluginToggleOn, (row.required || !connected) && styles.buttonDisabled]}>
+            <Text style={styles.pluginToggleText}>{row.required ? 'Locked' : busyId === row.id ? 'Saving…' : row.enabled ? 'On' : 'Off'}</Text>
+          </Pressable>
+        </View>
+        {row.required && <Text style={styles.safeNote}>{row.reason ?? 'Required by DSH Host.'}</Text>}
+        {!row.required && row.reason !== undefined && <Text style={styles.safeNote}>{row.reason}</Text>}
+      </View>)}
+    </View>
+  </>
 }
 
 function ConnectionSheet({ onConnect, onForget, onPair, pairing, state }: {
@@ -384,5 +464,9 @@ function stateLabel(state: MobileRemoteState): string { if (state.kind === 'conn
 
 const colors = { accent: '#657BFF', border: '#2C3240', card: '#11151E', ink: '#F4F6FC', muted: '#8E96A8', page: '#080A0E', danger: '#EE9AA5', user: '#222B4A' }
 const styles = StyleSheet.create({
+  pluginRow: { alignItems: 'center', flexDirection: 'row', gap: 10 },
+  pluginToggle: { alignItems: 'center', borderColor: colors.border, borderRadius: 11, borderWidth: 1, justifyContent: 'center', minWidth: 74, padding: 11 },
+  pluginToggleOn: { backgroundColor: colors.accent, borderColor: colors.accent },
+  pluginToggleText: { color: colors.ink, fontSize: 12, fontWeight: '800' },
   approval: { backgroundColor: '#201B18', borderColor: '#674D3D', borderRadius: 13, borderWidth: 1, gap: 4, marginTop: 10, padding: 13 }, assistantBubble: { alignSelf: 'flex-start', backgroundColor: colors.card, borderColor: colors.border, borderRadius: 18, borderTopLeftRadius: 5, borderWidth: 1, maxWidth: '85%', padding: 13 }, backdrop: { flex: 1 }, brand: { alignItems: 'center', flexDirection: 'row', gap: 8 }, brandMark: { height: 25, width: 25 }, brandText: { color: colors.ink, fontSize: 16, fontWeight: '800', letterSpacing: 1 }, buttonDisabled: { backgroundColor: '#555B6C' }, chevron: { color: colors.muted, fontSize: 24 }, close: { alignSelf: 'flex-end', padding: 5 }, closeText: { color: colors.ink, fontSize: 28 }, composer: { alignItems: 'flex-end', backgroundColor: '#151923', borderColor: colors.border, borderRadius: 22, borderWidth: 1, flexDirection: 'row', padding: 7 }, composerDisabled: { opacity: .66 }, composerNote: { color: colors.muted, fontSize: 11, paddingTop: 7, textAlign: 'center' }, composerShell: { borderTopColor: '#1A1E29', borderTopWidth: 1, padding: 12 }, connectionCard: { alignItems: 'center', backgroundColor: colors.card, borderColor: colors.border, borderRadius: 16, borderWidth: 1, flexDirection: 'row', gap: 11, padding: 13 }, conversation: { flexGrow: 1, gap: 12, padding: 16 }, dot: { backgroundColor: '#6F7380', borderRadius: 5, height: 9, width: 9 }, dotLive: { backgroundColor: '#75C58C' }, drawer: { flexGrow: 1, padding: 20 }, drawerEmpty: { color: colors.muted, fontSize: 14, lineHeight: 21, paddingTop: 12 }, drawerFooter: { marginTop: 'auto', paddingTop: 38 }, drawerHeader: { alignItems: 'center', borderBottomColor: '#171C25', borderBottomWidth: 1, flexDirection: 'row', justifyContent: 'space-between', padding: 16 }, drawerRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingTop: 27 }, empty: { alignItems: 'center', backgroundColor: '#10141D', borderColor: colors.border, borderRadius: 22, borderWidth: 1, gap: 11, marginTop: 44, padding: 31 }, emptyCopy: { color: colors.muted, fontSize: 15, lineHeight: 22, textAlign: 'center' }, emptyThread: { color: colors.muted, fontSize: 14, paddingTop: 18, textAlign: 'center' }, emptyTitle: { color: colors.ink, fontSize: 21, fontWeight: '700' }, errorCard: { backgroundColor: '#2A161B', borderColor: '#75414B', borderRadius: 15, borderWidth: 1, gap: 5, marginTop: 15, padding: 14 }, errorCopy: { color: '#E7B7BD', fontSize: 13, lineHeight: 19 }, errorTitle: { color: '#F6C9CF', fontSize: 14, fontWeight: '700' }, fieldInput: { backgroundColor: '#151923', borderColor: colors.border, borderRadius: 13, borderWidth: 1, color: colors.ink, fontSize: 16, marginTop: 8, padding: 13 }, fieldLabel: { color: colors.muted, fontSize: 10, fontWeight: '800', letterSpacing: 1.1, marginTop: 16 }, forgetButton: { alignItems: 'center', backgroundColor: '#4C242D', borderRadius: 13, marginTop: 24, padding: 14 }, forgetButtonText: { color: '#FFD8DE', fontSize: 15, fontWeight: '800' }, header: { alignItems: 'center', borderBottomColor: '#171C25', borderBottomWidth: 1, flexDirection: 'row', justifyContent: 'space-between', padding: 12 }, headerTitle: { alignItems: 'center', flex: 1, gap: 3, paddingHorizontal: 9 }, iconButton: { alignItems: 'center', borderColor: colors.border, borderRadius: 11, borderWidth: 1, height: 37, justifyContent: 'center', width: 40 }, iconText: { color: colors.ink, fontSize: 20, lineHeight: 23 }, info: { gap: 4 }, infoCard: { backgroundColor: colors.card, borderColor: colors.border, borderRadius: 17, borderWidth: 1, gap: 15, marginTop: 23, padding: 15 }, infoLabel: { color: colors.ink, fontSize: 14, fontWeight: '700' }, infoValue: { color: colors.muted, fontSize: 13 }, input: { color: colors.ink, flex: 1, fontSize: 16, maxHeight: 110, minHeight: 38, paddingHorizontal: 8 }, invitationInput: { backgroundColor: '#151923', borderColor: colors.border, borderRadius: 13, borderWidth: 1, color: colors.ink, fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 12, lineHeight: 18, marginTop: 8, minHeight: 124, padding: 13 }, liveLabel: { alignSelf: 'center', color: colors.muted, fontSize: 10, fontWeight: '800', letterSpacing: 1.1 }, mark: { height: 45, width: 45 }, messageText: { color: colors.ink, fontSize: 16, lineHeight: 23 }, newButton: { backgroundColor: colors.accent, borderRadius: 13, padding: 14 }, newText: { color: '#FFF', fontSize: 15, fontWeight: '800' }, offerCode: { color: '#C8D2FF', fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 11, lineHeight: 17 }, overlay: { backgroundColor: 'rgba(0,0,0,.58)', bottom: 0, left: 0, position: 'absolute', right: 0, top: 0 }, page: { backgroundColor: colors.page, flex: 1 }, pairAction: { backgroundColor: colors.accent, borderRadius: 13, marginTop: 8, paddingHorizontal: 20, paddingVertical: 12 }, pairActionText: { color: '#FFF', fontSize: 15, fontWeight: '800' }, panel: { flex: 1 }, primaryButton: { alignItems: 'center', backgroundColor: colors.accent, borderRadius: 13, marginTop: 16, padding: 14 }, primaryButtonText: { color: '#FFF', fontSize: 15, fontWeight: '800' }, publicOffer: { backgroundColor: '#101827', borderColor: '#3A4A77', borderRadius: 16, borderWidth: 1, gap: 10, marginTop: 17, padding: 15 }, publicOfferLabel: { color: '#A8B6FF', fontSize: 10, fontWeight: '800', letterSpacing: 1 }, readyCard: { alignItems: 'center', backgroundColor: '#121D19', borderColor: '#37614A', borderRadius: 16, borderWidth: 1, flexDirection: 'row', gap: 11, marginTop: 17, padding: 15 }, readyDot: { backgroundColor: '#75C58C', borderRadius: 5, height: 10, width: 10 }, refresh: { color: '#A8B6FF', fontSize: 13, fontWeight: '700' }, rowCopy: { flex: 1, gap: 3 }, rowDetail: { color: colors.muted, fontSize: 13, lineHeight: 18 }, rowMark: { height: 29, width: 29 }, rowTitle: { color: colors.ink, fontSize: 15, fontWeight: '700' }, runningText: { color: colors.muted, fontSize: 13, fontStyle: 'italic' }, safeNote: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 10 }, scanCard: { alignItems: 'center', backgroundColor: '#151923', borderColor: colors.border, borderRadius: 15, borderWidth: 1, flexDirection: 'row', gap: 12, marginTop: 17, padding: 14 }, scanGlyph: { color: '#A8B6FF', fontSize: 22 }, scanMark: { alignItems: 'center', borderColor: '#3A4A77', borderRadius: 10, borderWidth: 1, height: 38, justifyContent: 'center', width: 38 }, screen: { backgroundColor: colors.page, flex: 1 }, secondaryButton: { alignItems: 'center', borderColor: '#4B5468', borderRadius: 13, borderWidth: 1, marginTop: 10, padding: 14 }, secondaryButtonText: { color: '#D5DBE8', fontSize: 15, fontWeight: '700' }, sectionLabel: { color: colors.muted, fontSize: 10, fontWeight: '800', letterSpacing: 1.1 }, send: { alignItems: 'center', backgroundColor: colors.accent, borderRadius: 17, height: 35, justifyContent: 'center', width: 35 }, sendDisabled: { backgroundColor: '#3A4050' }, sendText: { color: '#FFF', fontSize: 22, fontWeight: '700', lineHeight: 24 }, sessionRow: { alignItems: 'center', borderBottomColor: '#1B202B', borderBottomWidth: 1, flexDirection: 'row', gap: 11, minHeight: 66, paddingVertical: 9 }, sessionTitle: { color: colors.ink, fontSize: 15, fontWeight: '700' }, sheet: { backgroundColor: '#0E121A', borderColor: colors.border, borderTopLeftRadius: 25, borderTopRightRadius: 25, borderWidth: 1, bottom: 0, left: 0, maxHeight: '88%', padding: 20, position: 'absolute', right: 0 }, sheetCopy: { color: colors.muted, fontSize: 15, lineHeight: 22, marginTop: 8 }, sheetEyebrow: { color: '#A8B6FF', fontSize: 10, fontWeight: '800', letterSpacing: 1.2 }, sheetTitle: { color: colors.ink, fontSize: 27, fontWeight: '700', letterSpacing: -.4, marginTop: 6 }, status: { color: colors.muted, fontSize: 10, fontWeight: '800', letterSpacing: 1 }, userBubble: { alignSelf: 'flex-end', backgroundColor: colors.user, borderRadius: 18, borderTopRightRadius: 5, maxWidth: '85%', padding: 13 }, destructiveButton: { alignItems: 'center', borderColor: '#76414A', borderRadius: 13, borderWidth: 1, marginTop: 12, padding: 14 }, destructiveButtonText: { color: colors.danger, fontSize: 15, fontWeight: '700' },
 })

@@ -191,6 +191,31 @@ describe('PluginManagerPage', () => {
     expect(actions.openInstall).toHaveBeenCalledTimes(1)
   })
 
+  it('lists signed Host plugins, locks required services, and has no installation control', () => {
+    const { actions, set } = renderTab({
+      hosted: true,
+      hostedPlugins: [
+        { id: 'remote-auth', name: 'Remote authentication', source: 'bundled', enabled: true, required: true, reason: 'Connection security' },
+        { id: 'computer-use', name: 'Computer use', source: 'bundled', enabled: true, required: false },
+        { id: 'extra', name: 'Downloaded extension', source: 'downloaded', enabled: false, required: false },
+      ],
+    })
+    expect([...document.querySelectorAll('[data-hosted-plugin]')].map(row => row.getAttribute('data-hosted-plugin'))).toEqual(['computer-use', 'extra', 'remote-auth'])
+    expect(screen.queryByRole('button', { name: en.addPlugin })).toBeNull()
+    expect(screen.getByText(en.hostedIntro)).toBeTruthy()
+    expect(screen.getByText(en.hostedRequiredReason)).toBeTruthy()
+    expect(screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'Remote authentication') })).toHaveProperty('disabled', true)
+    const computerUse = screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'Computer use') })
+    fireEvent.click(computerUse)
+    expect(actions.setEnabled).toHaveBeenCalledWith('computer-use', false)
+    set({ busy: ['computer-use'] })
+    expect(screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'Computer use') })).toHaveProperty('disabled', true)
+    expect(screen.getByText(en.hostedDownloaded)).toBeTruthy()
+    set({ status: 'error' })
+    fireEvent.click(screen.getByRole('button', { name: en.retry }))
+    expect(actions.refresh).toHaveBeenCalled()
+  })
+
   it('keeps the read failure and its retry visible while a detail page is open', () => {
     const { actions, set } = renderTab({ packages: [pkg()] })
     fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'dsh-better-sidebar') }))

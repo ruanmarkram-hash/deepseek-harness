@@ -66,6 +66,13 @@ function metadataFixture(mode: 'native' | 'runtime') {
 }
 
 describe('PluginInventoryGateway', () => {
+  it('identifies signed Host controls only while their service is present', async () => {
+    const { ctx, inventory } = await harness()
+    expect(await inventory.list()).toEqual({ entries: [] })
+    ctx.provide('hostedPluginControls', {} as never)
+    expect(await inventory.list()).toEqual({ entries: [], hostedControlsAvailable: true })
+  })
+
   it.each(['native', 'runtime'] as const)('reads local metadata while the package entry remains disabled with %s resolution', async (mode) => {
     const { dir, baseUrl, resolution, expectUnlinked } = metadataFixture(mode)
     mkdirSync(join(dir, 'locale'), { recursive: true })

@@ -24,6 +24,9 @@
       "path": "../../preset/agent-preset-registry"
     },
     {
+      "path": "../hosted-plugin-controls"
+    },
+    {
       "path": "../../util/brand"
     },
     {

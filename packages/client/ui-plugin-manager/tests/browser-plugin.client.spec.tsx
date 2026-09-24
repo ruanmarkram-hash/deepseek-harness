@@ -28,10 +28,14 @@ async function bench() {
   }
   new LocaleHolder(ctx)
   const list = vi.fn(() => Promise.resolve({ ok: true as const, value: { entries: [], managementAvailable: true } }))
+  const hostList = vi.fn(() => Promise.resolve({ ok: true as const, value: { plugins: [
+    { id: 'native-computer-use-policy', name: 'Computer use', source: 'bundled' as const, enabled: true, required: false },
+  ] } }))
   const remote = new TestRemote(ctx, {
     settings: { describe: vi.fn(async () => ({ ok: true as const, value: { writable: true, hasDocument: true, namespaces: [] } })) },
     pluginInventory: { list },
     pluginRegistryProbe: { fastest: vi.fn(async () => ({ ok: true as const, value: null })) },
+    hostPlugins: { list: hostList, setEnabled: vi.fn() },
     pluginManager: {
       listBundles: vi.fn(() => Promise.resolve({ ok: true as const, value: [] })),
       listPlugins: vi.fn(() => Promise.resolve({ ok: true as const, value: [] })),
@@ -39,7 +43,7 @@ async function bench() {
     },
   })
   await ctx.plugin(settings).await()
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, list, remote }
+  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, list, hostList, remote }
 }
 
 function declare(slots: SlotRegistry): () => void {
@@ -118,5 +122,21 @@ describe('ui-plugin-manager browser plugin', () => {
     b.remote.emit('plugin-manager/changed', [{ reason: 'install' }])
     await Promise.resolve()
     expect(b.list).toHaveBeenCalledTimes(3)
+  })
+
+  it('refreshes signed Host plugin rows after connection reset', async () => {
+    const b = await bench()
+    b.list.mockResolvedValue({ ok: true, value: { entries: [], managementAvailable: false, hostedControlsAvailable: true } })
+    declare(b.slots)
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const entry = b.slots.entries('main')[0]!
+    const face = (entry.inject as unknown as () => PluginManagerFace)()
+    face.ensure()
+    await vi.waitFor(() => { expect(face.hooks.pluginManager.getSnapshot()).toMatchObject({ hosted: true, status: 'ready' }) })
+    expect(b.hostList).toHaveBeenCalledTimes(1)
+    b.ctx.emit('connection/reset')
+    await vi.waitFor(() => { expect(b.hostList).toHaveBeenCalledTimes(2) })
+    await fiber.dispose()
   })
 })

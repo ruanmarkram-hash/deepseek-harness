@@ -63,4 +63,6 @@ The `@deepseek-ai/dsh/profile-boot` export provides the shared profile lifecycle
 
 Ordinary Windows Web publishes only noncredential discovery because Windows does not provide this POSIX ownership contract. POSIX Web retains private bootstrap publication. Native hosted mode always requires the private bootstrap before readiness and refuses startup when its filesystem requirements cannot be met.
 
+The signed native Host composes fixed installation bundles and offers [bounded plugin controls](../../packages/host/hosted-plugin-controls/README.md) for reviewed optional rows. Its owner-only `hosted-plugins.json` saves disabled IDs, and live plugin changes share a composition lock with Hosted Settings edits. Neither file admits plugin names, executable expressions, or downloaded package paths.
+
 The [Web failure matrix](tests/profiles/web/tests/web-failure-matrix.expected.e2e.ts) runs the built CLI through startup failures and native configuration HMR with `awaitWriteFinish` enabled in `test:expected`. It verifies authenticated HTTP responses, diagnostics, recovery, process exits, and disposal without model API calls; the [startup acceptance](tests/profiles/web/tests/web-best-effort-startup.expected.e2e.ts) also covers the shipped required Web dependencies and port conflicts.

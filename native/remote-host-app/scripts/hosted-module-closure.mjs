@@ -109,7 +109,7 @@ const execute = promisify(execFile)
 const publicationCache = new Map()
 
 /** Ask npm for its publication list without running package scripts or accessing the network. */
-async function publishedFiles(target) {
+export async function publishedFiles(target) {
   let pending = publicationCache.get(target)
   if (pending === undefined) {
     pending = (async () => {

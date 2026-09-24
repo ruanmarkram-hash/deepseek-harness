@@ -63,4 +63,6 @@ profile 目录包含一个 `package.json`，其中记录树外插件依赖，以
 
 普通 Windows Web 仅发布不含凭据的发现记录，因为 Windows 不提供此 POSIX 所有权约定。POSIX Web 保留私有 bootstrap 发布。原生托管模式始终要求在就绪前发布私有 bootstrap；无法满足文件系统要求时拒绝启动。
 
+已签名的原生 Host 组合固定的安装包 bundle，并通过[受限插件控制](../../packages/host/hosted-plugin-controls/README.zh.md)切换经过审查的可选条目。仅所有者可读写的 `hosted-plugins.json` 保存已禁用的 ID；运行中的插件改动与 Hosted Settings 编辑共用一个组合锁。这两个文件均不接受插件名称、可执行表达式或下载包路径。
+
 [Web 失败矩阵](tests/profiles/web/tests/web-failure-matrix.expected.e2e.ts)在 `test:expected` 中通过构建后的 CLI 验证启动失败与启用 `awaitWriteFinish` 的原生配置 HMR。它不调用模型 API，而是检查经过认证的 HTTP 响应、诊断、恢复、进程退出与 dispose；[启动验收测试](tests/profiles/web/tests/web-best-effort-startup.expected.e2e.ts)还覆盖随附 Web 的必需依赖与端口冲突。

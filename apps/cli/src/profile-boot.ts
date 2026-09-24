@@ -48,6 +48,7 @@ import {
 } from './web-runtime-registry.ts'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import { HostedSettings } from './hosted-settings.ts'
+import HostedPluginControls, { HostedPluginState } from '@deepseek-ai/dsh-hosted-plugin-controls'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -397,7 +398,8 @@ export function hostedRuntimeOverlay(): PatchOptions[] {
       { id: 'remote-host-fd199', name: '@deepseek-ai/dsh-remote-host-fd199' },
       { id: 'remote-host-fd199-web-owner', name: '@deepseek-ai/dsh-remote-host-fd199/web-owner' },
     ],
-  }, ...['plugin-manager', 'tool-plugin-manager', 'hmr', 'config-editor', 'settings'].map(id => ({ id, disabled: true }))]
+  }, { id: 'typert-loader', config: { packages: ['@deepseek-ai/dsh-hosted-plugin-controls'] } },
+  ...['plugin-manager', 'tool-plugin-manager', 'hmr', 'config-editor', 'settings'].map(id => ({ id, disabled: true }))]
 }
 
 /** Freeze hosted composition without consulting writable profile or home patch layers. */
@@ -534,13 +536,24 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     const sealedPatches = hostedRuntime
       ? hostedProfilePatches(composed.profile, composed.overlays)
       : readProfilePatches(NAME, profileContext, composed.profile)
-    const hostedSettings = hostedRuntime ? new HostedSettings(resolveDshHome(), sealedPatches) : undefined
+    const hostedPlugins = hostedRuntime ? new HostedPluginState(resolveDshHome(), sealedPatches) : undefined
+    const hostedSettings = hostedRuntime
+      ? new HostedSettings(resolveDshHome(), sealedPatches, () => hostedPlugins?.overrides() ?? [], hostedPlugins?.compositionLockPath)
+      : undefined
+    hostedPlugins?.setComposer((overrides) => {
+      if (hostedSettings === undefined) throw new Error('Hosted settings are unavailable')
+      return hostedSettings.patches(undefined, overrides)
+    })
     const patches = hostedSettings?.patches() ?? sealedPatches
     const ctx = await boot(NAME, rootConfig, patches, async (hostCtx) => {
       app.current = hostCtx
       hostCtx.provide('profileContext', profileContext)
       if (hostedRuntime) hostCtx.provide('fd199HostedExit', code => shutdown.shutdown(code))
       await hostedSettings?.install(hostCtx)
+      if (hostedPlugins !== undefined) {
+        hostCtx.provide('hostedPluginState', hostedPlugins)
+        await hostCtx.plugin(HostedPluginControls)
+      }
       // Before any config-tree entry mounts, so plugins resolve all launch-time
       // environment values from the same immutable launch snapshot.
       hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)

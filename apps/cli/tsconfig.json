@@ -87,6 +87,9 @@
       "path": "../../packages/boot/plugin-manager"
     },
     {
+      "path": "../../packages/host/hosted-plugin-controls"
+    },
+    {
       "path": "../../packages/util/atomic-write"
     }
   ]

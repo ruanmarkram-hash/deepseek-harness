@@ -60,6 +60,9 @@ describe('signed hosted patch snapshot', () => {
     expect(hosted.find(row => row.id === 'remote-gateway')?.config).toEqual({
       maxIdempotencyEntriesPerDevice: 2048, maxEventEntriesPerDevice: 4096,
     })
+    expect(hosted.find(row => row.id === 'typert-loader')?.config).toEqual({
+      packages: ['@deepseek-ai/dsh-hosted-plugin-controls'],
+    })
     expect(hosted.some(row => row.name === '@deepseek-ai/dsh-experimental-computer-use-cua-driver-native')).toBe(false)
   })
 

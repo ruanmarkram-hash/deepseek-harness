@@ -43,6 +43,8 @@ kind: "package-reference"
 
 进程内适配器与密封 Host 的回环传输共用[一份一元方法映射](src/api/unary.ts)。各传输继续独立处理请求、事件流、下载和响应投递。
 
+`plugins.list` 与 `plugins.setEnabled` 通过 Host 所属的 `hostPlugins` 服务分派。它们仅交换经过筛选的已安装插件条目和精确 id；手机请求方法不包含软件包安装。
+
 </details>
 
 -----

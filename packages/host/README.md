@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The `host/` group provides the web GUI's plain HTTP server, the SPA dist server that serves the built Web shell, the workspace-directory picking seam with its native, browse, and adaptive composition packages, the open-in-app application probe and launch routes, the read-only plugin inventory projection, and explicit product event reporting. These packages are product packages; the browser transport lives in [`client/`](../client/README.md), and the composed application is [`apps/cli`](../../apps/cli/README.md) booting the [`dsh-base` bundle](../bundle/base/cordis.patch.yml) that serves the web app under `apps/web/`. The picker backends replace one another behind the shared seam.
+The `host/` group provides the web GUI's HTTP and SPA servers, workspace-directory picking, open-in-app routes, plugin inventory, signed Host plugin switches, and product event reporting. These packages are product packages; the browser transport lives in [`client/`](../client/README.md), and the composed application is [`apps/cli`](../../apps/cli/README.md) booting the [`dsh-base` bundle](../bundle/base/cordis.patch.yml) that serves the web app under `apps/web/`. The picker backends replace one another behind the shared seam.
 
 ## Table of Contents
 
@@ -34,6 +34,7 @@ The packages play the host roles; each package README owns its contract and conf
 | [`directory-picker-auto/`](directory-picker-auto/README.md) | Host-adaptive chooser that mounts the matching backend at boot | mounts a backend |
 | [`open-in-app/`](open-in-app/README.md) | Application probe, icon, and launch routes opening the workspace directory in an installed application | consumes `ctx.webServer` |
 | [`plugin-inventory/`](plugin-inventory/README.md) | Read-only projection of current Loader entries | Remote `pluginInventory/list` |
+| [`hosted-plugin-controls/`](hosted-plugin-controls/README.md) | Lists signed Host plugin rows and switches approved optional rows | Remote `hostPlugins` |
 | [`product-telemetry-otel/`](product-telemetry-otel/README.md) | Explicit product usage events over OTLP/HTTP | `ctx.productTelemetry` |
 
 -----

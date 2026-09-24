@@ -298,6 +298,9 @@ importers:
       '@deepseek-ai/dsh-hooks-codex':
         specifier: workspace:*
         version: link:../../packages/hooks/hooks-codex
+      '@deepseek-ai/dsh-hosted-plugin-controls':
+        specifier: workspace:*
+        version: link:../../packages/host/hosted-plugin-controls
       '@deepseek-ai/dsh-http-proxy':
         specifier: workspace:*
         version: link:../../packages/util/http-proxy
@@ -1305,6 +1308,9 @@ importers:
       '@deepseek-ai/dsh-host-plugin-inventory':
         specifier: workspace:*
         version: link:../../host/plugin-inventory
+      '@deepseek-ai/dsh-hosted-plugin-controls':
+        specifier: workspace:*
+        version: link:../../host/hosted-plugin-controls
       '@deepseek-ai/dsh-llm':
         specifier: workspace:*
         version: link:../../llm/llm
@@ -4293,6 +4299,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-slots':
         specifier: workspace:*
         version: link:../ui-slots
+      '@deepseek-ai/dsh-hosted-plugin-controls':
+        specifier: workspace:*
+        version: link:../../host/hosted-plugin-controls
       '@deepseek-ai/dsh-package-manifest':
         specifier: workspace:*
         version: link:../../util/package-manifest
@@ -8852,6 +8861,28 @@ importers:
         specifier: workspace:*
         version: link:../webserver
 
+  packages/host/hosted-plugin-controls:
+    dependencies:
+      '@deepseek-ai/dsh-app-boot':
+        specifier: workspace:*
+        version: link:../../boot/app-boot
+      '@deepseek-ai/dsh-atomic-write':
+        specifier: workspace:*
+        version: link:../../util/atomic-write
+      '@deepseek-ai/dsh-typert-protocol':
+        specifier: workspace:*
+        version: link:../../typert/protocol
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:~
+        version: link:../../../vendor/include
+
   packages/host/open-in-app:
     dependencies:
       '@deepseek-ai/dsh-launch-environment':
@@ -8898,6 +8929,9 @@ importers:
       '@deepseek-ai/dsh-brand':
         specifier: workspace:*
         version: link:../../util/brand
+      '@deepseek-ai/dsh-hosted-plugin-controls':
+        specifier: workspace:*
+        version: link:../hosted-plugin-controls
       '@deepseek-ai/dsh-package-manifest':
         specifier: workspace:*
         version: link:../../util/package-manifest

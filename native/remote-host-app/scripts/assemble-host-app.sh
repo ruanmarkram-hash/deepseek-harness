@@ -20,6 +20,7 @@ hosted_web_dsh_home=''
 hosted_web_patch_relative=''
 hosted_web_port=''
 hosted_web_trusted_host=''
+approved_plugins_file=''
 while (( $# > 0 )); do
   case $1 in
     --signing-identity)
@@ -55,12 +56,19 @@ while (( $# > 0 )); do
     --hosted-web-trusted-host)
       [[ $# -ge 2 && -z $hosted_web_trusted_host && ( $2 =~ '^[A-Za-z0-9]$' || $2 =~ '^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$' ) ]] || { print -u2 'hosted web trusted host is malformed'; exit 64; }
       hosted_web_trusted_host=$2; shift 2 ;;
+    --approved-plugins)
+      [[ $# -ge 2 && -z $approved_plugins_file && $2 == /* && -f $2 && ! -L $2 ]] || { print -u2 'approved plugins must be one absolute regular JSON file'; exit 64; }
+      approved_plugins_file=${2:A}; shift 2 ;;
     *) print -u2 "unknown argument: $1"; exit 64 ;;
   esac
 done
 if [[ -n $hosted_child_node || -n $hosted_child_entrypoint ]]; then
   [[ -n $hosted_child_node && -n $hosted_child_entrypoint ]] || { print -u2 'hosted child Node and entrypoint must be supplied together'; exit 64; }
   [[ -n $hosted_web_dsh_home && -n $hosted_web_patch_relative && -n $hosted_web_port && -n $hosted_web_trusted_host ]] || { print -u2 'hosted child requires a complete install-specific hosted Web configuration'; exit 64; }
+fi
+if [[ -n $approved_plugins_file && -z $hosted_child_node ]]; then
+  print -u2 'approved plugins require the hosted child runtime'
+  exit 64
 fi
 [[ -n $identity && -n $output ]] || { print -u2 'signing identity and output are required'; exit 64; }
 if [[ -n $sealed_gateway_node || -n $sealed_gateway_entrypoint ]]; then
@@ -159,9 +167,16 @@ if [[ -n $hosted_child_node ]]; then
   chmod -N "$output/Contents/Resources/HostedChild/HostedWebConfiguration.plist"
   chmod go-w "$output/Contents/Resources/HostedChild/HostedWebConfiguration.plist"
   plutil -lint "$output/Contents/Resources/HostedChild/HostedWebConfiguration.plist"
-  node "$root/scripts/assemble-hosted-node-modules.mjs" \
-    "$output/Contents/Resources/HostedChild/node_modules" \
-    "$output/Contents/Resources/HostedChild/TreeManifest.plist"
+  if [[ -n $approved_plugins_file ]]; then
+    node "$root/scripts/assemble-hosted-node-modules.mjs" \
+      "$output/Contents/Resources/HostedChild/node_modules" \
+      "$output/Contents/Resources/HostedChild/TreeManifest.plist" \
+      --approved-plugins "$approved_plugins_file"
+  else
+    node "$root/scripts/assemble-hosted-node-modules.mjs" \
+      "$output/Contents/Resources/HostedChild/node_modules" \
+      "$output/Contents/Resources/HostedChild/TreeManifest.plist"
+  fi
   sign_hosted_macho_files "$output/Contents/Resources/HostedChild/node_modules"
   node "$root/scripts/assemble-hosted-node-modules.mjs" \
     "$output/Contents/Resources/HostedChild/node_modules" \

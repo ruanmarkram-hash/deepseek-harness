@@ -66,6 +66,8 @@ export function createMobileApi(ctx: Context): ApiProxy {
       case 'host.createDirectory': return { path: await call('directoryPicker', 'createDirectory', payload) }
       case 'host.openPath': return call('session', 'openWorkspacePath', { request: payload })
       case 'skill.list': return call('skills', 'list', { request: payload })
+      case 'plugins.list': return call('hostPlugins', 'list')
+      case 'plugins.setEnabled': return call('hostPlugins', 'setEnabled', payload)
       case 'settings.describe': return call('settings', 'describe')
       case 'settings.openDocument': return call('settings', 'openSettingsDocument')
       case 'settings.update': case 'settings.replace': case 'settings.mutate': return call('settings', method.slice(9), payload)

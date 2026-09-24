@@ -66,6 +66,8 @@ export interface AgentPresetPluginGroup {
 export interface PluginInventorySnapshot {
   /** Whether this Host exposes persistent current-profile management. */
   readonly managementAvailable?: boolean
+  /** Whether this Host exposes signed, exact-ID plugin controls. */
+  readonly hostedControlsAvailable?: boolean
   readonly entries: readonly PluginInventoryEntry[]
   /**
    * Per-preset compositions, present only when an agent-preset roster is

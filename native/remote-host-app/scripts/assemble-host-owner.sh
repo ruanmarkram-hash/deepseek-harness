@@ -21,7 +21,7 @@ while (( $# > 0 )); do
     --output)
       [[ $# -ge 2 && -z $output ]] || { print -u2 'output must be supplied exactly once'; exit 64; }
       output=${2:A}; shift 2 ;;
-    --provisioning-activation|--sealed-gateway-node|--sealed-gateway-entrypoint|--hosted-child-node|--hosted-child-entrypoint|--hosted-web-dsh-home|--hosted-web-patch-relative|--hosted-web-port|--hosted-web-trusted-host)
+    --provisioning-activation|--sealed-gateway-node|--sealed-gateway-entrypoint|--hosted-child-node|--hosted-child-entrypoint|--hosted-web-dsh-home|--hosted-web-patch-relative|--hosted-web-port|--hosted-web-trusted-host|--approved-plugins)
       [[ $# -ge 2 ]] || { print -u2 "missing value for $1"; exit 64; }
       shift 2 ;;
     *) print -u2 "unknown argument: $1"; exit 64 ;;

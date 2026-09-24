@@ -24,6 +24,7 @@ export function bindMobileUnaryMethods(
     host: { describe: unary('host.describe'), pickDirectory: unary('host.pickDirectory'), listDirectory: unary('host.listDirectory'), createDirectory: unary('host.createDirectory'), openPath: unary('host.openPath') },
     workspace: { list: unary('workspace.list'), create: unary('workspace.create'), rename: unary('workspace.rename'), delete: unary('workspace.delete'), insertBefore: unary('workspace.insertBefore'), insertSessionBefore: unary('workspace.insertSessionBefore'), archiveSession: unary('workspace.archiveSession') },
     skills: { list: unary('skill.list') },
+    plugins: { list: unary('plugins.list'), setEnabled: unary('plugins.setEnabled') },
     agentPresets: { list: unary('agentPreset.list'), select: unary('agentPreset.select'), read: unary('agentPreset.read'), copy: unary('agentPreset.copy'), openDocument: unary('agentPreset.openDocument'), remove: unary('agentPreset.remove') },
     goals: { create: unary('goal.create'), edit: unary('goal.edit'), pause: unary('goal.pause'), resume: unary('goal.resume'), complete: unary('goal.complete'), clear: unary('goal.clear') },
     settings: { describe: unary('settings.describe'), openDocument: unary('settings.openDocument'), update: unary('settings.update'), replace: unary('settings.replace'), mutate: unary('settings.mutate') },
