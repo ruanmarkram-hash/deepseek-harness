@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest'
-import { SessionFormatUnsupportedMigrationError } from '@deepseek-ai/dsh-session-format'
+import { describe, expect, it, vi } from 'vitest'
+import { SessionFormatEventCollector, SessionFormatUnsupportedMigrationError } from '@deepseek-ai/dsh-session-format'
 import {
   sessionFormatV0ToV1,
 } from '../src/index.ts'
 import { restoreV0ToV1 } from '../src/testing/restore.ts'
+import * as validation from '../src/validation.ts'
 
 const header = {
   type: 'session',
@@ -44,12 +45,37 @@ describe('released v0 legacy normalization', () => {
     { toolFilter: { allow: ['read'], future: true } },
     { toolFilter: { deny: [false] } },
     { mode: 'one-shot', persona: 'not-supported' },
+    { mode: 'future-mode' },
     { label: null },
   ])('refuses malformed or future descriptor v2 fields: %j', (fields) => {
     expect(() => migrate([{
       type: 'subagent/descriptor', seq: 0, time: 1,
       data: { version: 2, mode: 'continuable', provider: 'spawn', label: 'child', ...fields },
     }])).toThrow()
+  })
+
+  it('preserves unexpected validator failures instead of classifying them as unsupported history', () => {
+    const failure = new Error('validator failed unexpectedly')
+    const sourceHeader = { ...header, isSeeded: false }
+    const stage = sessionFormatV0ToV1.createStage({
+      sourceHeader,
+      targetHeader: sessionFormatV0ToV1.migrateHeader(sourceHeader),
+      sourceInheritedEventCount: 0,
+      sourceKind: 'decoded',
+    })
+    const output = new SessionFormatEventCollector()
+    const validate = vi.spyOn(validation, 'assertReleasedEventPayload').mockImplementation(() => { throw failure })
+    try {
+      expect(() => {
+        stage.transformEvent({
+          type: 'subagent/descriptor', seq: 0, time: 1,
+          data: { version: 2, mode: 'one-shot', provider: 'spawn' },
+        }, output)
+      }).toThrow(failure)
+      expect(output.values).toEqual([])
+    } finally {
+      validate.mockRestore()
+    }
   })
 
   it.each([
