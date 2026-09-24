@@ -211,6 +211,72 @@ afterEach(async () => {
 })
 
 describe('SessionProjectionCache write policy', () => {
+  it('does not let a delayed creation checkpoint replace a newer turn-end checkpoint', { timeout: 15_000 }, async () => {
+    const { ctx, root } = await harness()
+    const originalFlush = ctx.sessions.flush.bind(ctx.sessions)
+    let releaseInitial = () => {}
+    const initialHeld = new Promise<void>((resolve) => { releaseInitial = resolve })
+    let first = true
+    const flush = vi.spyOn(ctx.sessions, 'flush').mockImplementation(async (session) => {
+      if (first) {
+        first = false
+        await initialHeld
+      }
+      return originalFlush(session)
+    })
+    const id = SessionId('ordered-checkpoints')
+    const bothWritten = new Promise<void>((resolve) => {
+      let count = 0
+      const dispose = ctx.on('domain/changed', (change) => {
+        if (change.domain !== projectionCacheDomainSpec.name
+          || change.table !== 'sessions' || change.key !== id || change.operation !== 'put') return
+        count += 1
+        if (count === 2) {
+          dispose()
+          resolve()
+        }
+      })
+    })
+    try {
+      const session = ctx.sessions.create(id)
+      mark(session, ['latest'])
+      const end = endTurn(session)
+      // The second cut must wait outside the log flush while the first is held.
+      // Without serialization, the turn-end flush starts immediately here.
+      expect(flush).toHaveBeenCalledTimes(1)
+      releaseInitial()
+      await bothWritten
+      expect((await storedRows(root, id))?.['cache-test/marks'])
+        .toEqual({ ver: 1, seq: end.seq, val: { marks: ['latest'] } })
+    } finally { releaseInitial() }
+  })
+
+  it('drains queued checkpoints before closing the storage domain', { timeout: 15_000 }, async () => {
+    const { ctx, root, fiber } = await harness()
+    const originalFlush = ctx.sessions.flush.bind(ctx.sessions)
+    let releaseInitial = () => {}
+    const initialHeld = new Promise<void>((resolve) => { releaseInitial = resolve })
+    let first = true
+    vi.spyOn(ctx.sessions, 'flush').mockImplementation(async (session) => {
+      if (first) {
+        first = false
+        await initialHeld
+      }
+      return originalFlush(session)
+    })
+    const id = SessionId('ordered-teardown')
+    try {
+      const session = ctx.sessions.create(id)
+      mark(session, ['final'])
+      const end = endTurn(session)
+      const disposing = fiber.dispose()
+      releaseInitial()
+      await disposing
+      expect((await storedRows(root, id))?.['cache-test/marks'])
+        .toEqual({ ver: 1, seq: end.seq, val: { marks: ['final'] } })
+    } finally { releaseInitial() }
+  })
+
   it('writes a durable checkpoint at turn/end (mandatory point)', async () => {
     const { ctx, root } = await harness()
     // The interval cannot substitute for the mandatory turn/end trigger.

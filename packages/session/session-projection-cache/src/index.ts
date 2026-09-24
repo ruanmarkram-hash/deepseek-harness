@@ -108,6 +108,8 @@ export class SessionProjectionCache extends Service {
 
   private table?: KvTable<SessionId, CheckpointRecord>
   private readonly dirty = new Map<Session, DirtyState>()
+  /** Preserve checkpoint cut order even when an earlier log flush is slower. */
+  private readonly writeTail = new Map<Session, Promise<void>>()
 
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'sessionProjectionCache')
@@ -116,7 +118,12 @@ export class SessionProjectionCache extends Service {
   /** Open the domain and install the write-behind listeners. */
   protected async [Service.init](): Promise<void> {
     const domain = await this.ctx.storageDomain.open(projectionCacheDomainSpec)
-    this.ctx.effect(() => () => domain.close(), 'sessionProjectionCache.domainClose')
+    this.ctx.effect(() => async () => {
+      // Later cuts may still be waiting behind a slow earlier log flush.
+      // Admit those writes to the domain before close starts rejecting them.
+      await Promise.allSettled(this.writeTail.values())
+      await domain.close()
+    }, 'sessionProjectionCache.domainClose')
     this.table = domain.table('sessions')
     this.installWritePath()
   }
@@ -247,28 +254,37 @@ export class SessionProjectionCache extends Service {
   /**
    * Durably checkpoint one live session NOW (all mandatory points call
    * this; tests and carriers may too). The registry cut is snapshotted at
-   * this boundary (states are live references), then the session's record is
-   * replaced on the domain's write chain. NOT fail-soft — callers on the
+   * this boundary, then the session's record is replaced on the domain's
+   * write chain. NOT fail-soft — callers on the
    * fail-soft paths contain it.
    * @param session - the live session to checkpoint.
    * @returns resolution after durability and event emission.
    */
   async write(session: Session): Promise<void> {
     const rows = this.ctx.sessionProjections.checkpoint(session)
+    const identity = identityOf(session.header, session.inheritedEventCount)
     this.markClean(session)
-    // Durability barrier: the checkpoint cut was taken above, so flushing
-    // AFTER it guarantees every event inside the cut is durably logged
-    // before the cache row lands — a crash can leave the cache behind the
-    // log (longer tail replay) but never ahead of it (phantom values folded
-    // from events no stored log contains). At detach the store entry is
-    // already gone; persistence's own retirement drain covers that path and
-    // any residual overreach is caught by the cold read's anchored floor.
-    if (this.ctx.sessions.get(session.id) === session) await this.ctx.sessions.flush(session)
-    await this.put(
-      session.id,
-      identityOf(session.header, session.inheritedEventCount),
-      rows,
-    )
+    const previous = this.writeTail.get(session)
+    const commit = async (): Promise<void> => {
+      // Durability barrier: the checkpoint cut was taken above, so flushing
+      // AFTER it guarantees every event inside the cut is durably logged
+      // before the cache row lands. Serializing the whole flush-and-put path
+      // also prevents a delayed creation cut from overwriting a newer cut.
+      // At detach the store entry is already gone; persistence's retirement
+      // drain covers it and the cold read's anchored floor catches overreach.
+      if (this.ctx.sessions.get(session.id) === session) await this.ctx.sessions.flush(session)
+      await this.put(
+        session.id,
+        identity,
+        rows,
+      )
+    }
+    // A failed checkpoint must reject its own caller but not poison the next
+    // mandatory write, which is the cache's self-healing path.
+    const current = previous === undefined ? commit() : previous.catch(() => {}).then(commit)
+    this.writeTail.set(session, current)
+    try { await current }
+    finally { if (this.writeTail.get(session) === current) this.writeTail.delete(session) }
   }
 
   /**
