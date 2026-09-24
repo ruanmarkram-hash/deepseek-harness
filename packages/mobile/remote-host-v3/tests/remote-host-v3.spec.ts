@@ -102,6 +102,26 @@ class SlowTestWire extends TestWire {
   }
 }
 
+class CompletionWire extends TestWire {
+  afterWrite: (() => void) | undefined
+
+  override _write(chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
+    this.sent.push(Buffer.from(chunk))
+    queueMicrotask(() => {
+      callback()
+      this.afterWrite?.()
+    })
+  }
+}
+
+class ObservedBytes extends Uint8Array {
+  constructor(value: Uint8Array, onSize: () => void) {
+    super(value)
+    const length = this.byteLength
+    Object.defineProperty(this, 'byteLength', { get: () => { onSize(); return length } })
+  }
+}
+
 function record(kind: WireKind, metadata?: Record<string, unknown>, payload = new Uint8Array()): Uint8Array {
   const meta = metadata === undefined ? new Uint8Array() : new TextEncoder().encode(JSON.stringify(metadata))
   const output = new Uint8Array(7 + meta.byteLength + payload.byteLength)
@@ -1353,5 +1373,586 @@ describe('deferred-start decision', () => {
     expect(shouldDeferStart({ enabled: true, hostAppPath: '' }, undefined, false)).toBe(false)
     expect(shouldDeferStart({ enabled: true, hostAppPath: '/Applications/DSH Host.app' }, undefined, false)).toBe(false)
     expect(shouldDeferStart({ enabled: false, hostAppPath: '' }, undefined, true)).toBe(false)
+  })
+})
+
+async function wireFixture(devices?: RemoteDeviceDirectory, channel = new TestWire()) {
+  const { allocator, dispose } = await harness()
+  disposers.push(dispose)
+  const provider = new RemoteHostV3InheritedWireProvider(channel, allocator, devices)
+  const control = new AbortController()
+  const iterator = provider.accept(control.signal)[Symbol.asyncIterator]()
+  const pending = iterator.next()
+  void pending.catch(() => {})
+  disposers.push(async () => { control.abort(); await pending.catch(() => {}) })
+  await expect.poll(() => channel.sent.length).toBe(1)
+  return { allocator, provider, channel, control, iterator, pending }
+}
+
+function openConnection(connectionId = CONNECTION, changes: Record<string, unknown> = {}) {
+  return record('connection.open', {
+    connectionId, deviceId: DEVICE, enrollmentId: DEVICE_ENROLLMENT,
+    signingPublicKey: SIGNING, agreementPublicKey: AGREEMENT,
+    routeId: ROUTE, generation: 1, connectionEpoch: 1, ...changes,
+  })
+}
+
+async function openedWireFixture(channel = new TestWire()) {
+  const fixture = await wireFixture(undefined, channel)
+  await create(fixture.allocator)
+  await fixture.allocator.beginConnection(DEVICE)
+  await fixture.allocator.commitConnection(DEVICE, 1)
+  channel.receive(openConnection())
+  const opened = await fixture.pending
+  if (opened.done) throw new Error('fixture did not accept its committed connection')
+  return { ...fixture, connection: opened.value }
+}
+
+describe('private-wire parser rejection', () => {
+  it.each([
+    '[]', '{} trailing', '{"deviceId":"x"} trailing', '{deviceId:1}',
+    '{"deviceId" 1}', '{"deviceId":1 "other":2}', '{"deviceId":null}',
+    '{"deviceId":1e999}', '{"deviceId":"unterminated', '{"deviceId":"bad\\q"}',
+    '{"deviceId":"raw\ncontrol"}', '{"other":"remote_device_0001"}',
+    '{"deviceId":0}', ' {} ',
+  ])('rejects malformed or nonmatching metadata %j before route mutation', async (metadata) => {
+    const { channel, pending, allocator } = await wireFixture()
+    channel.receive(recordWithRawMetadata('epoch.begin', metadata))
+    await expect(pending).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_MALFORMED' })
+    expect(allocator.list()).toEqual([])
+  })
+
+  it.each(['runtime.ready', 'epoch.begun', 'epoch.committed', 'connection.send', 'connection.close', 'device.enrolled', 'epoch.synchronized'] as const)
+  ('rejects outbound-only %s arriving from the native peer', async (kind) => {
+    const { channel, pending } = await wireFixture()
+    channel.receive(record(kind))
+    await expect(pending).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_OUT_OF_ORDER' })
+  })
+
+  it.each(['short-body', 'large-body', 'unknown-kind', 'large-metadata', 'metadata-overrun', 'invalid-utf8'] as const)
+  ('rejects %s framing', async (kind) => {
+    const { channel, pending } = await wireFixture()
+    const bytes = record('epoch.begin', { deviceId: DEVICE })
+    const view = new DataView(bytes.buffer)
+    if (kind === 'short-body') view.setUint32(0, 2)
+    else if (kind === 'large-body') view.setUint32(0, 8 * 1024 * 1024 + 1)
+    else if (kind === 'unknown-kind') bytes[4] = 255
+    else if (kind === 'large-metadata') view.setUint16(5, 16 * 1024 + 1)
+    else if (kind === 'metadata-overrun') view.setUint16(5, bytes.byteLength)
+    else bytes[7] = 255
+    channel.receive(bytes)
+    await expect(pending).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_MALFORMED' })
+  })
+
+  it.each(['', ' ', ' padded', 'x'.repeat(65), 'control\u0000', 0])('rejects invalid enrollment label %j', async (label) => {
+    const { channel, pending } = await wireFixture()
+    channel.receive(deviceEnroll({ label }))
+    await expect(pending).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_MALFORMED' })
+  })
+
+  it.each([0, 'short', '!'.repeat(43)])('rejects invalid public key %j', async (signingPublicKey) => {
+    const { channel, pending } = await wireFixture()
+    channel.receive(deviceEnroll({ signingPublicKey }))
+    await expect(pending).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_MALFORMED' })
+  })
+
+  it.each(['0', 1.5, 0, 2_147_483_648])('rejects invalid route generation %j', async (generation) => {
+    const { channel, pending } = await wireFixture()
+    channel.receive(record('route.upsert', { ...finalizedEpoch(1), connectionEpoch: undefined, generation }))
+    await expect(pending).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_MALFORMED' })
+  })
+
+  it.each(['device.enroll', 'enrollment.seed'] as const)('rejects %s without a trusted device directory', async (kind) => {
+    const { channel, pending } = await wireFixture()
+    channel.receive(kind === 'device.enroll' ? deviceEnroll() : enrollmentSeed())
+    await expect(pending).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_HELPER_UNAVAILABLE' })
+  })
+
+  it.each([
+    { label: 'Changed label' }, { signingPublicKey: AGREEMENT }, { agreementPublicKey: SIGNING },
+  ])('rejects changed enrollment facts %j without reenrolling', async (changes) => {
+    const devices = directoryFixture({ get: () => enrolledDevice(), enroll: vi.fn() })
+    const { channel, pending } = await wireFixture(devices)
+    channel.receive(deviceEnroll(changes))
+    await expect(pending).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_OUT_OF_ORDER' })
+    expect(devices.enroll).not.toHaveBeenCalled()
+  })
+
+  it('preserves exact routes across fragmented prefixes and rejects conflicting upserts', async () => {
+    const { channel, pending, allocator } = await wireFixture()
+    const bytes = routeUpsert()
+    channel.receive(bytes.subarray(0, 2))
+    await flushWireDispatcher()
+    channel.receive(bytes.subarray(2))
+    await expect.poll(() => allocator.list().length).toBe(1)
+    channel.receive(routeUpsert())
+    await flushWireDispatcher()
+    channel.receive(record('route.upsert', { ...finalizedEpoch(1, { routeId: ROUTE_TWO }), connectionEpoch: undefined }))
+    await expect(pending).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_OUT_OF_ORDER' })
+    expect(allocator.get(DEVICE)?.routeId).toBe(ROUTE)
+  })
+
+  it.each(['stop', 'stop-metadata', 'unexpected-payload', 'eof', 'close', 'error'] as const)('settles the accept loop after %s', async (kind) => {
+    const { channel, pending } = await wireFixture()
+    if (kind === 'stop') channel.receive(record('host.stopping'))
+    else if (kind === 'stop-metadata') channel.receive(record('host.stopping', {}))
+    else if (kind === 'unexpected-payload') channel.receive(record('host.stopping', undefined, new Uint8Array([1])))
+    else if (kind === 'eof') channel.eof()
+    else if (kind === 'close') channel.emit('close')
+    else channel.emit('error', new Error('descriptor failed'))
+    await expect(pending).rejects.toMatchObject({
+      code: kind === 'stop-metadata' || kind === 'unexpected-payload' ? 'REMOTE_HOST_V3_WIRE_MALFORMED' : 'REMOTE_HOST_V3_WIRE_CLOSED',
+    })
+    expect(channel.destroyed).toBe(true)
+  })
+})
+
+describe('private-wire connection termination', () => {
+  it('settles a send when its payload size accessor stops the provider during record encoding', async () => {
+    const { provider, control, channel } = await openedWireFixture()
+    const reservation = provider.reserveConnectionSend()
+    const payload = new ObservedBytes(new Uint8Array(), () => { control.abort() })
+    const outcomes: unknown[] = []
+    const sending = provider.writeConnectionSend(CONNECTION, payload, {
+      active: true, generation: 1, abortSignal: new AbortController().signal,
+    }, reservation, { active: true, pendingSends: 0 })
+    void sending.then(() => { outcomes.push('committed') }, (error: unknown) => { outcomes.push(error) })
+    await flushWireDispatcher()
+    expect([...outcomes]).toEqual([expect.objectContaining({ code: 'REMOTE_HOST_V3_WIRE_CLOSED' })])
+    expect(channel.sent).toHaveLength(1)
+    expect(channel.destroyed).toBe(true)
+  })
+
+  it('does not process an inbound chunk after its size accessor stops the provider', async () => {
+    const { channel, allocator, control, pending } = await wireFixture()
+    await flushWireDispatcher()
+    channel.emit('data', new ObservedBytes(routeUpsert(), () => { control.abort() }))
+    await expect(pending).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_CLOSED' })
+    expect(allocator.list()).toEqual([])
+    expect(channel.sent).toHaveLength(1)
+  })
+
+  it('settles a local close and its pending reader when the close descriptor write fails', async () => {
+    const { channel, connection } = await openedWireFixture()
+    const reading = connection.receive(new AbortController().signal)[Symbol.asyncIterator]().next()
+    vi.spyOn(channel, '_write').mockImplementationOnce((_chunk, _encoding, callback) => { callback(new Error('close write failed')) })
+    await Promise.all([
+      expect(connection.close('transport-failed')).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_CLOSED' }),
+      expect(reading).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_CLOSED' }),
+    ])
+    expect(channel.destroyed).toBe(true)
+  })
+
+  it('preserves another provider\'s live reservation when asked to release it', async () => {
+    const first = await openedWireFixture()
+    const second = await openedWireFixture()
+    const reservation = second.provider.reserveConnectionSend()
+    first.provider.releaseOutboundReservation(reservation)
+    expect(reservation.active).toBe(true)
+    const payload = new TextEncoder().encode(JSON.stringify({ version: 3, type: 'stream-ack', connectionEpoch: 1, cursor: 0 }))
+    await expect(second.provider.writeConnectionSend(CONNECTION, payload, {
+      active: true, generation: 1, abortSignal: new AbortController().signal,
+    }, reservation, { active: true, pendingSends: 0 })).resolves.toBeUndefined()
+    expect(second.channel.sent).toHaveLength(2)
+    const available = first.provider.reserveConnectionSend()
+    first.provider.releaseOutboundReservation(available)
+  })
+
+  it.each(['throw', 'stop', 'enqueue-and-throw'] as const)('contains a queued fence getter that will %s during commit', async (action) => {
+    const channel = new SlowTestWire()
+    const { provider, connection, control } = await openedWireFixture(channel)
+    const write = vi.spyOn(channel, 'write')
+    channel.stall()
+    const preceding = provider.writeConnectionClose(CONNECTION_TWO, 'transport-failed')
+    let failing = false
+    const fence = {
+      get active() {
+        if (failing) {
+          if (action === 'stop') control.abort()
+          else {
+            if (action === 'enqueue-and-throw') void provider.writeConnectionClose(CONNECTION, 'transport-failed').catch(() => {})
+            throw new Error('fence failed')
+          }
+        }
+        return true
+      },
+      generation: 1, abortSignal: new AbortController().signal,
+    }
+    const outcomes: unknown[] = []
+    const sending = connection.send({ version: 3, type: 'stream-ack', connectionEpoch: 1, cursor: 0 }, fence)
+    void sending.then((result) => { outcomes.push(result) })
+    failing = true
+    channel.release()
+    await preceding
+    try {
+      await flushWireDispatcher()
+      expect(channel.destroyed).toBe(true)
+      expect([...outcomes]).toEqual([{ status: 'not-committed' }])
+      expect(write).toHaveBeenCalledOnce()
+      await expect(provider.writeConnectionClose(CONNECTION, 'transport-failed')).rejects.toMatchObject({
+        code: action === 'stop' ? 'REMOTE_HOST_V3_WIRE_CLOSED' : 'REMOTE_HOST_V3_WIRE_WRITE_FAILED',
+      })
+    } finally {
+      control.abort()
+      await sending
+    }
+  })
+
+  it('does not admit a connection when its durable lookup synchronously stops the gateway', async () => {
+    const { allocator, channel, control, pending } = await wireFixture()
+    await create(allocator)
+    await allocator.beginConnection(DEVICE)
+    await allocator.commitConnection(DEVICE, 1)
+    await flushWireDispatcher()
+    const lookup = allocator.get.bind(allocator)
+    vi.spyOn(allocator, 'get').mockImplementation((device) => {
+      const route = lookup(device)
+      control.abort()
+      return route
+    })
+    channel.receive(openConnection())
+    await expect(pending).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_CLOSED' })
+    await flushWireDispatcher()
+    expect(channel.sent).toHaveLength(1)
+    expect(channel.destroyed).toBe(true)
+  })
+
+  it('tolerates repeated retirement callbacks before and after gateway shutdown', async () => {
+    const { provider, connection, control, channel } = await openedWireFixture()
+    await connection.close('transport-failed')
+    provider.retireConnection(CONNECTION, 'closed', { active: false, pendingSends: 0 })
+    expect(channel.destroyed).toBe(false)
+    control.abort()
+    provider.retireConnection(CONNECTION, 'closed', { active: false, pendingSends: 0 })
+    expect(channel.destroyed).toBe(true)
+  })
+
+  it('releases capacity when payload serialization synchronously revokes the caller fence', async () => {
+    const { channel, connection } = await openedWireFixture()
+    const caller = new AbortController()
+    const envelope = {
+      version: 3 as const, type: 'response' as const, connectionEpoch: 1, requestId: REQUEST,
+      result: { ok: true as const, get value() { caller.abort(); return {} } },
+    }
+    await expect(connection.send(envelope, { active: true, generation: 1, abortSignal: caller.signal }))
+      .resolves.toEqual({ status: 'not-committed' })
+    expect(channel.sent).toHaveLength(1)
+    await expect(connection.send({ ...envelope, result: { ok: true, value: {} } }, {
+      active: true, generation: 1, abortSignal: new AbortController().signal,
+    })).resolves.toEqual({ status: 'committed-before-fence' })
+  })
+
+  it('refuses a queued send whose capacity reservation was released before submission', async () => {
+    const { provider, channel } = await openedWireFixture()
+    const reservation = provider.reserveConnectionSend()
+    provider.releaseOutboundReservation(reservation)
+    const lifetime = { active: true, pendingSends: 0 }
+    await expect(provider.writeConnectionSend(CONNECTION, new Uint8Array(), {
+      active: true, generation: 1, abortSignal: new AbortController().signal,
+    }, reservation, lifetime)).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_CLOSED' })
+    expect(lifetime.pendingSends).toBe(0)
+    expect(channel.sent).toHaveLength(1)
+    const replacement = provider.reserveConnectionSend()
+    provider.releaseOutboundReservation(replacement)
+  })
+
+  it('ignores a captured data callback after an earlier descriptor listener stops the gateway', async () => {
+    const { channel, control, pending, allocator } = await wireFixture()
+    await flushWireDispatcher()
+    channel.prependOnceListener('data', () => { control.abort() })
+    channel.receive(routeUpsert())
+    await expect(pending).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_CLOSED' })
+    expect(allocator.list()).toEqual([])
+    expect(channel.sent).toHaveLength(1)
+  })
+
+  it.each([0, 1, 2, 3, 4, 5, 6])('observes caller cancellation %i microtasks after descriptor completion', async (depth) => {
+    const channel = new CompletionWire()
+    const { connection } = await openedWireFixture(channel)
+    const caller = new AbortController()
+    channel.afterWrite = () => {
+      const abortAfter = (remaining: number): void => {
+        if (remaining === 0) caller.abort()
+        else queueMicrotask(() => { abortAfter(remaining - 1) })
+      }
+      abortAfter(depth)
+    }
+    const result = await connection.send({
+      version: 3, type: 'response', connectionEpoch: 1, requestId: REQUEST,
+      result: { ok: true, value: {} },
+    }, { active: true, generation: 1, abortSignal: caller.signal })
+    expect(result.status).toBe(depth <= 3 ? 'not-committed' : 'committed-before-fence')
+    expect(channel.sent).toHaveLength(2)
+  })
+
+  it.each([0, 1, 2, 3, 4])('settles a local close when the gateway stops %i microtasks after descriptor completion', async (depth) => {
+    const channel = new CompletionWire()
+    const { connection, control } = await openedWireFixture(channel)
+    channel.afterWrite = () => {
+      const abortAfter = (remaining: number): void => {
+        if (remaining === 0) control.abort()
+        else queueMicrotask(() => { abortAfter(remaining - 1) })
+      }
+      abortAfter(depth)
+    }
+    const closing = connection.close('transport-failed')
+    if (depth === 0) await expect(closing).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_CLOSED' })
+    else await expect(closing).resolves.toBeUndefined()
+    expect(sent(channel, 1)).toMatchObject({ kind: 'connection.close' })
+  })
+
+  it('removes an aborted receive waiter before the next frame reaches a replacement reader', async () => {
+    const { channel, connection } = await openedWireFixture()
+    const abandoned = new AbortController()
+    const first = connection.receive(abandoned.signal)[Symbol.asyncIterator]().next()
+    abandoned.abort()
+    await expect(first).resolves.toMatchObject({ done: true })
+
+    const replacement = new AbortController()
+    const deliveries: unknown[] = []
+    const second = connection.receive(replacement.signal)[Symbol.asyncIterator]().next()
+    void second.then((value) => { deliveries.push(value) })
+    const envelope = { version: 3, type: 'stream-ack', connectionEpoch: 1, cursor: 0 }
+    try {
+      channel.receive(record('connection.frame', { connectionId: CONNECTION }, new TextEncoder().encode(JSON.stringify(envelope))))
+      await flushWireDispatcher()
+      expect([...deliveries]).toEqual([{ done: false, value: envelope }])
+    } finally {
+      replacement.abort()
+      await second
+    }
+  })
+
+  it('initializes the inherited transport only once for repeated accept iterators', async () => {
+    const { provider, channel } = await wireFixture()
+    await expect(provider.accept(AbortSignal.abort())[Symbol.asyncIterator]().next()).resolves.toMatchObject({ done: true })
+    expect(channel.sent).toHaveLength(1)
+  })
+
+  it('fails closed when another send reserves the entire outbound byte budget', async () => {
+    const { provider, pending } = await wireFixture()
+    const reservation = provider.reserveConnectionSend()
+    expect(() => provider.reserveConnectionSend()).toThrow('outbound queue overflowed')
+    await expect(pending).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_OVERFLOW' })
+    expect(reservation.active).toBe(false)
+    provider.releaseOutboundReservation(reservation)
+  })
+
+  it('releases reserved capacity when an otherwise valid envelope exceeds the private record budget', async () => {
+    const { connection, channel } = await openedWireFixture()
+    const value = Array.from({ length: 8 }, () => '')
+    const envelope = { version: 3 as const, type: 'response' as const, connectionEpoch: 1, requestId: REQUEST, result: { ok: true as const, value } }
+    let remaining = 8 * 1024 * 1024 - Buffer.byteLength(JSON.stringify(envelope))
+    for (let index = 0; index < value.length; index += 1) {
+      const bytes = Math.min(1024 * 1024, remaining)
+      value[index] = 'x'.repeat(bytes)
+      remaining -= bytes
+    }
+    expect(Buffer.byteLength(JSON.stringify(envelope))).toBe(8 * 1024 * 1024)
+    const fence = { active: true, generation: 1, abortSignal: new AbortController().signal }
+    await expect(connection.send(envelope, fence)).resolves.toEqual({ status: 'not-committed' })
+    expect(channel.sent).toHaveLength(1)
+    await expect(connection.send({ ...envelope, result: { ok: true, value: {} } }, fence))
+      .resolves.toEqual({ status: 'committed-before-fence' })
+  })
+
+  it('rejects an allocator response that did not reserve its promised epoch', async () => {
+    const { allocator, channel, pending } = await wireFixture()
+    const route = await create(allocator)
+    vi.spyOn(allocator, 'beginConnection').mockResolvedValueOnce(route)
+    channel.receive(record('epoch.begin', { deviceId: DEVICE }))
+    await expect(pending).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_OUT_OF_ORDER' })
+    expect(channel.sent).toHaveLength(1)
+  })
+
+  it('does not serialize a send after another operation consumed its outbound capacity', async () => {
+    const { provider, connection, iterator } = await openedWireFixture()
+    provider.reserveConnectionSend()
+    const next = iterator.next()
+    const envelope = {
+      version: 3 as const, type: 'response' as const, connectionEpoch: 1,
+      requestId: REQUEST, result: { ok: true as const, value: {} },
+    }
+    await expect(connection.send(envelope, { active: true, generation: 1, abortSignal: new AbortController().signal }))
+      .resolves.toEqual({ status: 'not-committed' })
+    await expect(next).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_OVERFLOW' })
+  })
+
+  it('does not commit a send when its caller aborts while the descriptor write is pending', async () => {
+    const channel = new SlowTestWire()
+    const { connection } = await openedWireFixture(channel)
+    channel.stall()
+    const control = new AbortController()
+    const sending = connection.send({
+      version: 3, type: 'response', connectionEpoch: 1, requestId: REQUEST,
+      result: { ok: true, value: {} },
+    }, { active: true, generation: 1, abortSignal: control.signal })
+    await expect.poll(() => channel.sent.length).toBe(2)
+    control.abort()
+    channel.release()
+    await expect(sending).resolves.toEqual({ status: 'not-committed' })
+  })
+
+  it('drains earlier work before settling repeated end notifications', async () => {
+    const { allocator, channel, pending } = await wireFixture()
+    let finish!: () => void
+    const held = new Promise<void>((resolve) => { finish = resolve })
+    const createRoute = allocator.create.bind(allocator)
+    const createSpy = vi.spyOn(allocator, 'create').mockImplementation(async (input) => { await held; return createRoute(input) })
+    channel.receive(routeUpsert())
+    await expect.poll(() => createSpy).toHaveBeenCalledOnce()
+    channel.emit('end')
+    channel.emit('close')
+    finish()
+    await expect(pending).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_CLOSED' })
+    expect(allocator.get(DEVICE)?.routeId).toBe(ROUTE)
+  })
+
+  it('limits live connections before another connection can be accepted', async () => {
+    const { channel, iterator } = await openedWireFixture()
+    const pending = iterator.next()
+    channel.receive(joinRecords(Array.from({ length: 64 }, (_, index) => openConnection(`remote_connection_${String(index).padStart(4, '0')}`))))
+    await pending
+    await expect.poll(() => channel.destroyed).toBe(true)
+    await expect(iterator.next()).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_OVERFLOW' })
+  })
+
+  it('bounds unconsumed accepted connections independently of live connection count', async () => {
+    const { channel, iterator } = await openedWireFixture()
+    channel.receive(joinRecords(Array.from({ length: 65 }, (_, index) => {
+      const id = `remote_connection_${String(index).padStart(4, '0')}`
+      return joinRecords([openConnection(id), record('connection.closed', { connectionId: id })])
+    })))
+    await expect.poll(() => channel.sent.length).toBe(2)
+    expect(sent(channel, 1)).toMatchObject({ kind: 'connection.close', metadata: { reason: 'protocol-rejected' } })
+    channel.eof()
+    await expect.poll(() => channel.destroyed).toBe(true)
+    await expect(iterator.next()).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_CLOSED' })
+  })
+
+  it('fails closed after too many local closes remain unacknowledged', async () => {
+    const { channel, iterator, connection } = await openedWireFixture()
+    await connection.close('transport-failed')
+    for (let index = 0; index < 64; index += 1) {
+      const next = iterator.next()
+      channel.receive(openConnection(`remote_connection_${String(index).padStart(4, '0')}`))
+      const opened = await next
+      if (opened.done) throw new Error('expected admitted connection')
+      if (index === 63) {
+        await expect(opened.value.close('transport-failed')).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_OVERFLOW' })
+      } else {
+        await opened.value.close('transport-failed')
+      }
+    }
+    expect(channel.destroyed).toBe(true)
+  })
+
+  it('bounds peer-close retention when old-lifetime writes are still pending', async () => {
+    const channel = new SlowTestWire()
+    const { iterator, connection } = await openedWireFixture(channel)
+    await connection.close('transport-failed')
+    for (let index = 0; index < 63; index += 1) {
+      const next = iterator.next()
+      channel.receive(openConnection(`remote_connection_${String(index).padStart(4, '0')}`))
+      const opened = await next
+      if (opened.done) throw new Error('expected admitted connection')
+      await opened.value.close('transport-failed')
+    }
+    const next = iterator.next()
+    channel.receive(openConnection(CONNECTION_TWO))
+    const opened = await next
+    if (opened.done) throw new Error('expected admitted connection')
+    channel.stall()
+    const sending = opened.value.send({
+      version: 3, type: 'response', connectionEpoch: 1, requestId: REQUEST, result: { ok: true, value: {} },
+    }, { active: true, generation: 1, abortSignal: new AbortController().signal })
+    const stopped = iterator.next()
+    channel.receive(record('connection.closed', { connectionId: CONNECTION_TWO }))
+    await expect(stopped).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_OVERFLOW' })
+    await expect(sending).resolves.toEqual({ status: 'not-committed' })
+    channel.release()
+  })
+
+  it.each([
+    { routeId: ROUTE_TWO }, { enrollmentId: DEVICE_TWO_ENROLLMENT },
+    { generation: 2 }, { connectionEpoch: 2 }, { deviceId: DEVICE_TWO },
+  ])('refuses a connection whose durable facts differ: %j', async (changes) => {
+    const { channel, pending, allocator } = await wireFixture()
+    await create(allocator)
+    await allocator.beginConnection(DEVICE)
+    await allocator.commitConnection(DEVICE, 1)
+    channel.receive(openConnection(CONNECTION, changes))
+    await expect(pending).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_OUT_OF_ORDER' })
+  })
+
+  it('refuses an open connection while its epoch remains pending', async () => {
+    const { channel, pending, allocator } = await wireFixture()
+    await create(allocator)
+    await allocator.beginConnection(DEVICE)
+    channel.receive(openConnection())
+    await expect(pending).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_OUT_OF_ORDER' })
+  })
+
+  it.each(['invalid-utf8', 'wrong-epoch', 'unknown-close', 'duplicate-open'] as const)('terminates on %s', async (kind) => {
+    const { channel, iterator } = await openedWireFixture()
+    const pending = iterator.next()
+    if (kind === 'duplicate-open') channel.receive(openConnection())
+    else if (kind === 'unknown-close') channel.receive(record('connection.closed', { connectionId: CONNECTION_TWO }))
+    else channel.receive(record('connection.frame', { connectionId: CONNECTION }, kind === 'invalid-utf8'
+      ? new Uint8Array([255])
+      : new TextEncoder().encode(JSON.stringify({ version: 3, type: 'stream-ack', connectionEpoch: 2, cursor: 0 }))))
+    await expect(pending).rejects.toMatchObject({ code: kind === 'invalid-utf8' ? 'REMOTE_HOST_V3_WIRE_MALFORMED' : 'REMOTE_HOST_V3_WIRE_OUT_OF_ORDER' })
+  })
+
+  it('cancels a waiting receive without delivering another frame', async () => {
+    const { connection } = await openedWireFixture()
+    const control = new AbortController()
+    const iterator = connection.receive(control.signal)[Symbol.asyncIterator]()
+    const next = iterator.next()
+    control.abort()
+    await expect(next).resolves.toMatchObject({ done: true })
+    await expect(connection.receive(AbortSignal.abort())[Symbol.asyncIterator]().next()).resolves.toMatchObject({ done: true })
+    await connection.close('transport-failed')
+    await connection.close('transport-failed')
+  })
+
+  it('rejects sends after local cancellation and terminal reservations after shutdown', async () => {
+    const { connection, provider, control, iterator } = await openedWireFixture()
+    const envelope = { version: 3 as const, type: 'response' as const, connectionEpoch: 1, requestId: REQUEST, result: { ok: true as const, value: {} } }
+    await expect(connection.send(envelope, { active: false, generation: 1, abortSignal: new AbortController().signal }))
+      .resolves.toEqual({ status: 'not-committed' })
+    await expect(connection.send(envelope, { active: true, generation: 1, abortSignal: AbortSignal.abort() }))
+      .resolves.toEqual({ status: 'not-committed' })
+    const pending = iterator.next()
+    control.abort()
+    await expect(pending).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_CLOSED' })
+    expect(() => provider.reserveConnectionSend()).toThrow('Gateway stopped')
+    await expect(provider.writeConnectionClose(CONNECTION, 'transport-failed')).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_CLOSED' })
+    await expect(provider.accept(new AbortController().signal)[Symbol.asyncIterator]().next()).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_CLOSED' })
+  })
+
+  it('settles startup when the inherited descriptor write callback fails', async () => {
+    const { allocator, dispose } = await harness()
+    disposers.push(dispose)
+    const channel = new TestWire()
+    vi.spyOn(channel, 'write').mockImplementation((...args: unknown[]) => {
+      const callback = args.at(-1)
+      if (typeof callback !== 'function') throw new Error('write callback missing')
+      const complete = callback as (error: Error) => void
+      complete(new Error('write failed'))
+      return false
+    })
+    const provider = new RemoteHostV3InheritedWireProvider(channel, allocator)
+    await expect(provider.accept(new AbortController().signal)[Symbol.asyncIterator]().next())
+      .rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_WRITE_FAILED' })
+    expect(channel.destroyed).toBe(true)
+  })
+
+  it('contains a storage failure and closes the inherited descriptor', async () => {
+    const { channel, allocator, pending } = await wireFixture()
+    vi.spyOn(allocator, 'create').mockRejectedValueOnce(new Error('storage failed'))
+    channel.receive(routeUpsert())
+    await expect(pending).rejects.toMatchObject({ code: 'REMOTE_HOST_V3_WIRE_MALFORMED' })
+    expect(channel.destroyed).toBe(true)
   })
 })

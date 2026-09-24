@@ -44,6 +44,8 @@ runtime 先发送空的 `runtime.ready`。FD199 托管 child 随后必须先接�
 
 畸形 UTF-8/JSON、未知或方向错误 kind、metadata 或 payload overflow、未知 connection id、epoch mismatch、partial-record EOF 和普通 EOF 都会关闭完整 private pipe。adapter 此后不会再 yield connection。在 parse 之前，serialized descriptor dispatcher 会在 copy 前检查 raw chunk 的长度，最多保留 32 个 raw chunk，以及一条 8 MiB record 加其 four-byte length prefix；它按 offset view 从单个 raw chunk 流式分派最多 1,024 条完整 record，并只 compact 其 trailing partial record。因此密集的有效 chunk 不会分配无界 decoded-record array，也不会反复 copy 逐渐缩小的 suffix。overflow 会关闭 pipe，而不会保留无界 pending task list。每个 opened connection 最多保留 32 个未消费 frame 和它们原始 payload byte 的 8 MiB；超过任一 budget 的 slow consumer 会以 `protocol-rejected` 被关闭，而无关 connection 保持有界且存活。每个 queued send 都会捕获该具体 connection lifetime，并在物理 pipe write 前立即检查该 lifetime 和 gateway fence。peer close、local close、overflow 与 revoke 都会先使该 lifetime 失效，随后 output 不会越过它们。local close、overflow、revoke，或有 pending send 的 peer-closed connection 最多保留 64 个 tombstone 中的一个；它会阻止 id reuse，直到旧 queued send settled，且所有 local close write 与 Host acknowledgement 完成。outbound record 通过全局 budget 串行化：64 条 record 以及一条 8 MiB record 加 prefix；每个 user-controlled send 会在 JSON serialization 前 reserve 有界容量，因此 concurrent burst 不会分配无界 payload string。descriptor 在任一 budget 上 stalled 会关闭 pipe 并拒绝所有 pending write。`committed-before-fence` 只表示在 gateway fence 仍有效时 record 已进入该 inherited Host-app pipe；它不声称 mobile delivery。
 
+取消待完成的接收操作会在后续帧分派前移除该读取方，因此替代读取方可以接收下一帧。出站容量预留属于创建它的提供方；其他提供方不能释放或使其失效。如果排队发送在最终检查发送许可时抛出异常，提供方会以 `REMOTE_HOST_V3_WIRE_WRITE_FAILED` 关闭私有管道并拒绝待完成的写入。如果该检查同步关闭管道，则不会再向描述符写入。
+
 <a id="configuration"></a>
 
 ## 配置

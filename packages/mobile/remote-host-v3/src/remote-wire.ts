@@ -134,7 +134,6 @@ interface PendingWrite {
   readonly resolve: () => void
   readonly reject: (error: RemoteHostV3Error) => void
   readonly canCommit?: () => boolean
-  settled: boolean
 }
 
 /** A pessimistic one-record reservation made before an envelope is serialized. */
@@ -187,7 +186,6 @@ class AsyncQueue<T> {
   }
 
   close(error?: RemoteHostV3Error): void {
-    if (this.ended !== undefined) return
     this.ended = error ?? new RemoteHostV3Error('REMOTE_HOST_V3_WIRE_CLOSED', 'Private Remote Wire closed')
     this.values.splice(0)
     this.pendingBytes = 0
@@ -204,8 +202,8 @@ class AsyncQueue<T> {
     if (this.ended !== undefined) throw this.ended
     return new Promise<IteratorResult<T>>((resolve, reject) => {
       const abort = () => {
-        const index = this.waiters.findIndex(waiter => waiter.resolve === resolve)
-        if (index >= 0) this.waiters.splice(index, 1)
+        // Settlement removes this listener before native AbortSignal can dispatch it.
+        this.waiters.splice(this.waiters.indexOf(waiter), 1)
         resolve({ value: undefined as never, done: true })
       }
       const waiter = {
@@ -225,12 +223,11 @@ class AsyncQueue<T> {
 }
 
 /** @param value - Candidate strict JSON metadata. @param keys - Exact accepted key names. */
-function exactObject(value: unknown, keys: readonly string[]): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw malformed('Remote Wire metadata must be an object')
+function exactObject(value: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> {
   const actual = Object.keys(value).sort()
   const expected = [...keys].sort()
   if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) throw malformed('Remote Wire metadata keys are invalid')
-  return value as Record<string, unknown>
+  return value
 }
 
 /** @param value - Candidate opaque id. @returns validated id text. */
@@ -263,7 +260,6 @@ function positiveSequence(value: unknown): number {
 
 /** @param value - Candidate payload. @returns decoded strict UTF-8 JSON text. */
 function payloadText(value: Bytes): string {
-  if (value.byteLength > REMOTE_HOST_V3_WIRE_MAX_RECORD_BYTES - 3) throw malformed('Remote Wire payload is oversized')
   try {
     return UTF8.decode(value)
   } catch {
@@ -273,7 +269,6 @@ function payloadText(value: Bytes): string {
 
 /** @param value - Candidate metadata bytes. @returns strict decoded JSON object. */
 function metadata(value: Bytes): Record<string, unknown> {
-  if (value.byteLength > REMOTE_HOST_V3_WIRE_MAX_METADATA_BYTES) throw malformed('Remote Wire metadata is oversized')
   try {
     return parseFlatMetadata(UTF8.decode(value))
   } catch (error) {
@@ -373,7 +368,8 @@ function consumeOne(buffer: Bytes, offset: number): { readonly record?: RemoteHo
   const total = 4 + bodyLength
   if (remaining < total) return { next: offset }
   const start = offset + 4
-  const kind = KIND_BY_BYTE.get(buffer[start] ?? -1)
+  // The complete record and minimum body length above guarantee this byte exists.
+  const kind = KIND_BY_BYTE.get(buffer[start] as number)
   if (kind === undefined) throw malformed('Remote Wire kind is invalid')
   const metadataLength = new DataView(buffer.buffer, buffer.byteOffset + start + 1, 2).getUint16(0)
   if (metadataLength > REMOTE_HOST_V3_WIRE_MAX_METADATA_BYTES || metadataLength > bodyLength - 3) throw malformed('Remote Wire metadata length is invalid')
@@ -467,14 +463,12 @@ class InheritedWireConnection implements TrustedRemoteConnection {
     }
   }
 
-  frame(envelope: RemoteWireEnvelope, bytes: number): 'accepted' | 'overflow' | 'closed' {
-    if (this.state !== 'open') return 'closed'
+  frame(envelope: RemoteWireEnvelope, bytes: number): 'accepted' | 'overflow' {
     return this.received.push(envelope, bytes) ? 'accepted' : 'overflow'
   }
 
   /** Abort this one remote connection when its bounded inbound queue overflows. */
   async overflow(): Promise<void> {
-    if (this.state !== 'open') return
     this.state = 'overflowed'
     this.lifetime.active = false
     this.received.close(new RemoteHostV3Error('REMOTE_HOST_V3_WIRE_OVERFLOW', 'Remote Wire connection receive queue overflowed'))
@@ -488,7 +482,6 @@ class InheritedWireConnection implements TrustedRemoteConnection {
   }
 
   ended(): void {
-    if (this.state === 'closed') return
     this.state = 'closed'
     this.lifetime.active = false
     this.received.close()
@@ -594,7 +587,7 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
    * @returns the active reservation that a send must consume or release.
    */
   reserveConnectionSend(): OutboundReservation {
-    if (this.closed) throw this.terminal ?? new RemoteHostV3Error('REMOTE_HOST_V3_WIRE_CLOSED', 'Private Remote Wire is closed')
+    if (this.terminal !== undefined) throw this.terminal
     const bytes = REMOTE_HOST_V3_WIRE_MAX_OUTBOUND_BYTES - this.outboundBytes - this.reservedOutboundBytes
     if (this.outboundItems + this.outboundReservations.size >= REMOTE_HOST_V3_WIRE_MAX_OUTBOUND_ITEMS || bytes <= 0) {
       const failure = new RemoteHostV3Error('REMOTE_HOST_V3_WIRE_OVERFLOW', 'Private Remote Wire outbound queue overflowed')
@@ -614,30 +607,26 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
    */
   releaseOutboundReservation(reservation: OutboundReservation): void {
     if (!reservation.active) return
+    if (!this.outboundReservations.delete(reservation)) return
     reservation.active = false
-    if (this.outboundReservations.delete(reservation)) this.reservedOutboundBytes -= reservation.bytes
+    this.reservedOutboundBytes -= reservation.bytes
   }
 
   private async start(): Promise<void> {
-    if (this.closed) throw this.terminal ?? new RemoteHostV3Error('REMOTE_HOST_V3_WIRE_CLOSED', 'Private Remote Wire is closed')
+    if (this.terminal !== undefined) throw this.terminal
     if (this.started) return
     this.started = true
     this.channel.on('data', this.onData)
     this.channel.once('end', this.onEnd)
     this.channel.once('error', this.onError)
     this.channel.once('close', this.onClose)
-    try {
-      await this.write('runtime.ready')
-    } catch (error) {
-      const failure = error instanceof RemoteHostV3Error ? error : new RemoteHostV3Error('REMOTE_HOST_V3_WIRE_WRITE_FAILED', 'Could not initialize private Remote Wire')
-      this.shutdown(failure)
-      throw failure
-    }
+    await this.write('runtime.ready')
   }
 
   private readonly onData = (chunk: Uint8Array): void => {
     if (this.closed) return
     const chunkBytes = chunk.byteLength
+    if (this.terminal !== undefined) return
     const bufferedItems = this.buffer.byteLength === 0 ? 0 : 1
     if (this.ingressTerminal !== undefined || this.ingressItems + bufferedItems >= REMOTE_HOST_V3_WIRE_MAX_INGRESS_ITEMS
       || chunkBytes > REMOTE_HOST_V3_WIRE_MAX_INGRESS_BYTES - this.buffer.byteLength - this.ingressBytes) {
@@ -659,7 +648,6 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
   /** Drain at most one bounded raw chunk at a time, never retaining one closure per descriptor event. */
   private async drainIngress(): Promise<void> {
     const isClosed = () => this.closed
-    if (this.drainingIngress || this.closed) return
     this.drainingIngress = true
     try {
       while (!this.closed) {
@@ -698,8 +686,8 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
     } catch (error) {
       this.shutdown(error instanceof RemoteHostV3Error ? error : malformed('Private Remote Wire handler failed'))
     } finally {
+      // The serialized loop drains every chunk; handler failures close ingress before this point.
       this.drainingIngress = false
-      if (!isClosed() && this.ingress.length > 0) void this.drainIngress()
     }
   }
 
@@ -731,9 +719,6 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
       case 'device.enrolled':
       case 'epoch.synchronized':
         throw outOfOrder(`Remote Wire kind ${record.kind} has the wrong direction`)
-      default:
-        record.kind satisfies never
-        throw malformed('Remote Wire kind is invalid')
     }
   }
 
@@ -946,7 +931,6 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
     const envelope = parseRemoteWireJson(payloadText(record.payload))
     if (envelope.connectionEpoch !== connection.route.connectionEpoch) throw outOfOrder('Remote Wire frame epoch does not match its open connection')
     const accepted = connection.frame(envelope, record.payload.byteLength)
-    if (accepted === 'closed') throw outOfOrder('Remote Wire frame arrived after connection close')
     if (accepted === 'overflow') await connection.overflow()
   }
 
@@ -1005,12 +989,6 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
   /** Hold a peer-closed id until all old-lifetime queued sends have settled. */
   private retirePeerClosed(id: string, lifetime: ConnectionLifetime): void {
     this.connections.delete(id)
-    const tombstone = this.closingTombstones.get(id)
-    if (tombstone !== undefined) {
-      tombstone.peerClosed = true
-      this.reapTombstone(id, tombstone.lifetime)
-      return
-    }
     if (lifetime.pendingSends === 0 || this.closed) return
     if (this.closingTombstones.size >= REMOTE_HOST_V3_WIRE_MAX_CLOSING_TOMBSTONES) {
       this.shutdown(new RemoteHostV3Error('REMOTE_HOST_V3_WIRE_OVERFLOW', 'Private Remote Wire has too many stale connection sends'))
@@ -1053,7 +1031,7 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
     reservation?: OutboundReservation,
     canCommit?: () => boolean,
   ): Promise<void> {
-    if (this.closed) throw this.terminal ?? new RemoteHostV3Error('REMOTE_HOST_V3_WIRE_CLOSED', 'Private Remote Wire is closed')
+    if (this.terminal !== undefined) throw this.terminal
     const encoded = encode(kind, value, payload)
     const reservedItems = this.outboundReservations.size - (reservation?.active ? 1 : 0)
     const reservedBytes = this.reservedOutboundBytes - (reservation?.active ? reservation.bytes : 0)
@@ -1068,7 +1046,7 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
     }
     if (reservation !== undefined) this.releaseOutboundReservation(reservation)
     return new Promise<void>((resolve, reject) => {
-      this.outbound.push({ bytes: encoded, resolve, reject, ...(canCommit === undefined ? {} : { canCommit }), settled: false })
+      this.outbound.push({ bytes: encoded, resolve, reject, ...(canCommit === undefined ? {} : { canCommit }) })
       this.outboundItems += 1
       this.outboundBytes += encoded.byteLength
       if (!this.drainingOutbound) void this.drainOutbound()
@@ -1077,23 +1055,22 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
 
   /** Serialize bounded writes without a promise chain that retains arbitrary records. */
   private async drainOutbound(): Promise<void> {
-    const isClosed = () => this.closed
-    if (this.drainingOutbound || this.closed) return
     this.drainingOutbound = true
     try {
       while (!this.closed) {
         const pending = this.outbound.shift()
         if (pending === undefined) break
         this.currentOutbound = pending
-        if (pending.canCommit !== undefined && !pending.canCommit()) {
-          this.currentOutbound = undefined
-          this.outboundItems -= 1
-          this.outboundBytes -= pending.bytes.byteLength
-          pending.settled = true
-          pending.reject(new RemoteHostV3Error('REMOTE_HOST_V3_WIRE_CLOSED', 'Connection send lifetime ended before private-pipe commit'))
-          continue
-        }
         try {
+          const canCommit = pending.canCommit === undefined || pending.canCommit()
+          if (this.currentOutbound !== pending) return
+          if (!canCommit) {
+            this.currentOutbound = undefined
+            this.outboundItems -= 1
+            this.outboundBytes -= pending.bytes.byteLength
+            pending.reject(new RemoteHostV3Error('REMOTE_HOST_V3_WIRE_CLOSED', 'Connection send lifetime ended before private-pipe commit'))
+            continue
+          }
           await new Promise<void>((resolve, reject) => {
             this.channel.write(pending.bytes, (error) => {
               if (error == null) resolve()
@@ -1109,13 +1086,11 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
           this.currentOutbound = undefined
           this.outboundItems -= 1
           this.outboundBytes -= pending.bytes.byteLength
-          pending.settled = true
           pending.resolve()
         }
       }
     } finally {
       this.drainingOutbound = false
-      if (!isClosed() && this.outbound.length > 0) void this.drainOutbound()
     }
   }
 
@@ -1124,12 +1099,7 @@ export class RemoteHostV3InheritedWireProvider implements RemoteHostV3RuntimePip
     this.currentOutbound = undefined
     this.outboundItems = 0
     this.outboundBytes = 0
-    for (const item of pending) {
-      if (!item.settled) {
-        item.settled = true
-        item.reject(error)
-      }
-    }
+    for (const item of pending) item.reject(error)
   }
 
   private shutdown(error: RemoteHostV3Error): void {
