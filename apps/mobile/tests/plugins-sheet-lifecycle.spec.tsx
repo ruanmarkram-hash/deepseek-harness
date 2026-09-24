@@ -50,6 +50,7 @@ let container: HTMLDivElement | undefined
 
 async function mount(): Promise<void> {
   const require = createRequire(import.meta.url)
+  /* oxlint-disable typescript/no-deprecated -- Metro's require(PNG) needs a temporary Node asset loader. */
   const previous = require.extensions['.png']
   require.extensions['.png'] = (module) => { module.exports = 1 }
   try {
@@ -62,6 +63,7 @@ async function mount(): Promise<void> {
     if (previous === undefined) delete require.extensions['.png']
     else require.extensions['.png'] = previous
   }
+  /* oxlint-enable typescript/no-deprecated */
   await act(async () => { platform.onState?.({ kind: 'connected', connectionEpoch: 1 }) })
 }
 
