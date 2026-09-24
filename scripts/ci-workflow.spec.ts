@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 
 function evaluateRunsOn(selector: unknown, context: Record<string, unknown>): unknown {
   if (typeof selector !== 'string') throw new TypeError('Runner selector must be a string')
-  return runInNewContext(selector.trim().slice(3, -2), context, { timeout: 1000 })
+  return runInNewContext(selector.trim().slice(3, -2), { github: { repository: 'deepseek-harness/deepseek-harness' }, ...context }, { timeout: 1000 })
 }
 
 const root = resolve(import.meta.dirname, '..')
@@ -14,6 +14,29 @@ const runnerPrivatePnpmDestination = /^\$\{\{ runner\.temp \}\}\/setup-pnpm-\$\{
 const nativeWindowsPnpmDestination = '${{ runner.temp }}/setup-pnpm-js-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}'
 
 describe('CI workflow', () => {
+  it('uses hosted fork runners for every enterprise PR lane', () => {
+    const workflow = loadWorkflow('.github/workflows/ci.yml')
+    for (const jobName of ['node-24', 'node-24-coverage', 'node-24-consumers', 'windows-build', 'windows-coverage', 'windows-native-tests']) {
+      const job = workflowJob(workflow, jobName)
+      for (const mode of ['', 'selfhosted', 'blacksmith']) {
+        expect(evaluateRunsOn(job['runs-on'], {
+          vars: { DSH_CI_FAILOVER_LINUX: mode, DSH_CI_FAILOVER_WINDOWS: mode },
+          github: { repository: 'fork/deepseek-harness' },
+        })).toBe(jobName.startsWith('windows-') ? 'windows-latest' : 'ubuntu-24.04')
+      }
+    }
+  })
+
+  it('checks maintained Desktop and mobile relay sources without legacy shell commands', () => {
+    const desktop = workflowJob(loadWorkflow('.github/workflows/desktop-ci.yml'), 'check')
+    const mobile = workflowJob(loadWorkflow('.github/workflows/mobile-ci.yml'), 'check')
+    expect(desktop.steps).toContainEqual({ run: 'pnpm exec vitest run apps/desktop' })
+    expect(desktop.steps).toContainEqual({ run: 'pnpm --filter @deepseek-ai/dsh-desktop run build' })
+    expect(mobile.steps).toContainEqual({ run: 'pnpm exec vitest run packages/mobile apps/mobile/tests' })
+    expect(mobile.steps).toContainEqual({ run: 'pnpm --filter @deepseek-ai/dsh-mobile-relay run test' })
+    expect(mobile.steps).toContainEqual({ run: 'pnpm exec tsc --project apps/mobile-relay/tsconfig.json --noEmit' })
+  })
+
   it('prepares confinement before Node compatibility smokes', () => {
     const job = workflowJob(loadWorkflow('.github/workflows/ci.yml'), 'node-compat')
     if (!Array.isArray(job.steps)) throw new TypeError('Node compatibility job must define steps')
@@ -284,7 +307,7 @@ describe('CI workflow', () => {
     expect(report?.run).toContain('Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append')
 
     // serial-windows: master-only standby, self-hosted, non-blocking, lives in ci-master.
-    expect(serialWindows.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
+    expect(serialWindows.if).toBe("github.repository == 'deepseek-harness/deepseek-harness' && github.event_name == 'push' && github.ref == 'refs/heads/master'")
     expect(serialWindows['runs-on']).toEqual(['self-hosted', 'dsh-win-ci', 'windows'])
     expect(serialWindows.name).toBe('serial / windows (self-hosted standby)')
     // Its store must share the ReFS workspace volume for clone; the install
@@ -369,7 +392,7 @@ describe('CI workflow', () => {
       return evaluateRunsOn(expression, {
         vars,
         fromJSON: JSON.parse,
-        github: { event: { pull_request: { user: { login } } } },
+        github: { repository: 'deepseek-harness/deepseek-harness', event: { pull_request: { user: { login } } } },
       })
     }
     for (const [name, selector, variable, pool, hosted] of [
@@ -515,7 +538,7 @@ describe('CI workflow', () => {
       if (!isRecord(job)) throw new TypeError(`${name} must be defined`)
       expect(job.concurrency).toBeUndefined()
       // Standby drills remain post-merge work, but share run cancellation.
-      expect(job.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
+      expect(job.if).toBe("github.repository == 'deepseek-harness/deepseek-harness' && github.event_name == 'push' && github.ref == 'refs/heads/master'")
     }
 
     // Pin the post-merge runtime, Wine, and standby inventory.
@@ -1078,7 +1101,7 @@ describe('Issue lifecycle workflow', () => {
     expect(preflightStep?.run).toContain('if [ -f .github/issue-management/selective-preflight.json ]; then')
     expect(preflightStep?.run).toContain('node .github/issue-management/policy.mjs pr-preflight')
     expect(preflightStep?.if).toBeUndefined()
-    expect(policyJob.if).toBeUndefined()
+    expect(policyJob.if).toBe("${{ github.repository == 'deepseek-harness/deepseek-harness' }}")
     expect(validateStep?.if).toBe("${{ steps.preflight.outputs.legacy-automated != 'true' }}")
 
     expect(tokenStep).toMatchObject({

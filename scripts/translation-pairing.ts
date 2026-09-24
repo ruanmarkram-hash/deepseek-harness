@@ -164,6 +164,8 @@ export const TRANSLATION_SCOPE_GLOB_EXCLUDES = [
   '**/__pycache__/**',
   '**/.pytest_cache/**',
   'apps/web/dist/**',
+  'native/remote-host-app/dist/**',
+  'native/remote-host-app/desktop-shell/release/**',
   '.artifacts/**',
   'python/sdk-runtime/src/deepseek_harness_runtime/runtime/**',
   'vendor/**',
@@ -176,6 +178,8 @@ function isTranslationSourceExcluded(file: string): boolean {
       || segment.startsWith('.doc-typecheck-')
     || segment.startsWith('.node-next-types-'))
     || file.startsWith('apps/web/dist/')
+    || file.startsWith('native/remote-host-app/dist/')
+    || file.startsWith('native/remote-host-app/desktop-shell/release/')
     || file.startsWith('python/sdk-runtime/src/deepseek_harness_runtime/runtime/')
 }
 

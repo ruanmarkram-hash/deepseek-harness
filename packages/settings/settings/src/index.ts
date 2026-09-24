@@ -219,6 +219,12 @@ function inheritedConfig(runtime: Fiber['runtime'] & object, inherited: unknown)
   }
 }
 
+/** Application-owned legacy settings import policy. */
+export interface SettingsFormsOptions {
+  /** Disable automatic legacy-file migration when an application owns its own validated import. */
+  importLegacyDocument?: boolean
+}
+
 /** Project Config schemas into forms and own optional instance-level UI policy. */
 export class SettingsForms extends Service {
   static inject = ['configEditor', 'profileContext']
@@ -227,12 +233,14 @@ export class SettingsForms extends Service {
   private scheduled = false
   private readonly presentations = new Map<Fiber, { auto?: boolean }>()
 
-  constructor(private readonly ownerContext: Context) {
+  constructor(private readonly ownerContext: Context, options: SettingsFormsOptions = {}) {
     super(ownerContext, 'settings')
     const ctx = ownerContext
     ctx.effect(() => () => { this.closed = true })
     ctx.on('app-boot/config-reload', () => { this.invalidate() })
-    void ctx.root.loader.await().then(() => this.importLegacyDocument()).catch((error: unknown) => { ctx.logger.error(error) })
+    if (options.importLegacyDocument !== false) {
+      void ctx.root.loader.await().then(() => this.importLegacyDocument()).catch((error: unknown) => { ctx.logger.error(error) })
+    }
   }
 
   /** Move the sections of the removed `settings.yaml` into the active profile once the Loader has settled every entry.

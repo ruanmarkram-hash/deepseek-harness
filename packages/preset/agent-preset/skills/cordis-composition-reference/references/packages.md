@@ -184,6 +184,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | `@deepseek-ai/dsh-experimental-client-ui-voice-input` | no | Record speech and insert editable text into the conversation draft |
 | `@deepseek-ai/dsh-experimental-computer-use-cua-driver-mcp` | yes | Experimental computer use through an installed Cua Driver MCP executable |
 | `@deepseek-ai/dsh-experimental-computer-use-cua-driver-native` | no | Experimental computer-use provider embedding the Cua Driver native npm SDK |
+| `@deepseek-ai/dsh-experimental-computer-use-policy` | no | Per-call approval and single-Agent lease around the official native computer-use provider |
 | `@deepseek-ai/dsh-experimental-inspector` | yes | Experimental cross-realm CDP hub for Host debugging and Client Runtime inspection |
 | `@deepseek-ai/dsh-experimental-ptc-runtime-python` | yes | CPython subprocess implementation of the DeepSeek Harness PTC execution seam |
 | `@deepseek-ai/dsh-experimental-speech-to-text` | yes | Experimental speech recognition with independently selectable providers |
@@ -297,6 +298,17 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | `@deepseek-ai/dsh-mcp-client` | yes | MCP client bridge: connects to MCP servers and registers their tools on ctx.tools |
 | `@deepseek-ai/dsh-mcp-resources` | no | Scoped MCP resource discovery and reading through shared model tools |
 
+## mobile
+
+| Package | Config | Description |
+|---|---|---|
+| `@deepseek-ai/dsh-remote-api` | no | Released mobile wire compatibility over current Host controllers |
+| `@deepseek-ai/dsh-remote-devices` | no | Host-owned durable trusted-device directory for DeepSeek Harness remote clients |
+| `@deepseek-ai/dsh-remote-gateway` | yes | Host-owned trusted-device gateway for the DSH remote v3 protocol |
+| `@deepseek-ai/dsh-remote-host-fd199` | no | Signed-Host FD199 ownership-handoff client for the configured DSH runtime child |
+| `@deepseek-ai/dsh-remote-host-identity` | no | macOS Keychain Host identity and local remote-enrollment controller for DeepSeek Harness |
+| `@deepseek-ai/dsh-remote-host-v3` | yes | Protected Host composition for DeepSeek Harness remote v3 relay routes |
+
 ## plan
 
 | Package | Config | Description |
@@ -310,6 +322,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | `@deepseek-ai/dsh-agent-preset` | yes | Declare an Agent capability composition in Cordis YAML |
 | `@deepseek-ai/dsh-agent-preset-registry` | yes | Declarative Agent preset registry and profile-backed editing |
 | `@deepseek-ai/dsh-persona` | yes | Composition-authored deployment persona section for the DeepSeek Harness |
+| `@deepseek-ai/dsh-progress-narration` | no | Scoped progress narration in the current Agent Session |
 
 ## ptc-runtime
 
@@ -370,7 +383,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 
 | Package | Config | Description |
 |---|---|---|
-| `@deepseek-ai/dsh-settings` | no | Abstract user-settings seam (ctx.settings) for the DeepSeek Harness |
+| `@deepseek-ai/dsh-settings` | yes | Abstract user-settings seam (ctx.settings) for the DeepSeek Harness |
 
 ## shell
 

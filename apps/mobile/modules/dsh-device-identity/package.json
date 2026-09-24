@@ -1,0 +1,10 @@
+{
+  "name": "@deepseek-ai/dsh-mobile-device-identity",
+  "version": "0.1.0",
+  "private": true,
+  "description": "iOS Keychain-only Curve25519 identity for DSH Mobile",
+  "license": "MIT",
+  "peerDependencies": {
+    "expo-modules-core": "~57.0.11"
+  }
+}

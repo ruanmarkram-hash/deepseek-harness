@@ -223,6 +223,15 @@ describe('experimental workspace constraints', () => {
 })
 
 describe('dsh family version coherence', () => {
+  it.each(['mobile', 'mobile-relay'])('requires apps/%s to stay private', (app) => {
+    const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }
+    const dir = `apps/${app}`
+    const manifest = { name: `@deepseek-ai/dsh-${app}`, version, private: true }
+    expect(checkWorkspaceManifest({ dir, manifest })).toEqual([])
+    expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, private: false } }))
+      .toContain(`${dir}/package.json: ${manifest.name}: package.json must set "private": true`)
+  })
+
   it('rejects a package carrying a stale shared version', () => {
     expect(checkDshFamilyVersion(
       { name: '@deepseek-ai/dsh-http-proxy', version: '0.1.2-alpha.5' },
@@ -255,6 +264,16 @@ describe('dsh family version coherence', () => {
 })
 
 describe('package payload constraints', () => {
+  it.each(['lib/web-owner.js', 'lib/protocol-*.js'])(
+    'includes the hosted handoff runtime payload %s and rejects its omission', (file) => {
+      const dir = 'packages/mobile/remote-host-fd199'
+      const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
+      expect(checkWorkspaceManifest({ dir, manifest })).toEqual([])
+      expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, files: manifest.files!.filter(entry => entry !== file) } }))
+        .toEqual([expect.stringContaining('package.json files must be')])
+    },
+  )
+
   it.each(['./art/icon.svg', 'art/icon.svg'])('includes declared icon %s in the canonical payload', (icon) => {
     expect(expectedDshPackageFiles({ icon, exports: { './locale/*.json': './locale/*.json' } })).toEqual([
       'art/icon.svg', 'locale/*.json', 'lib/index.js', 'lib/types/**/*.d.ts',

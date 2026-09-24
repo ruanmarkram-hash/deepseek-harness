@@ -42,6 +42,14 @@ afterEach(() => {
 })
 
 describe('release families', () => {
+  it('excludes mobile product applications from the release', () => {
+    const members = releaseFamily('dsh').members(resolve(import.meta.dirname, '../..'))
+    const names = members.map(member => member.name)
+    expect(names).not.toContain('@deepseek-ai/dsh-desktop')
+    expect(names).not.toContain('@deepseek-ai/dsh-mobile')
+    expect(names).not.toContain('@deepseek-ai/dsh-mobile-relay')
+  })
+
   it('publishes all current experimental packages', () => {
     const members = releaseFamily('dsh').members(resolve(import.meta.dirname, '../..'))
 
@@ -60,6 +68,7 @@ describe('release families', () => {
       '@deepseek-ai/dsh-experimental-client-ui-voice-input',
       '@deepseek-ai/dsh-experimental-computer-use-cua-driver-mcp',
       '@deepseek-ai/dsh-experimental-computer-use-cua-driver-native',
+      '@deepseek-ai/dsh-experimental-computer-use-policy',
       '@deepseek-ai/dsh-experimental-inspector',
       '@deepseek-ai/dsh-experimental-ptc-runtime-python',
       '@deepseek-ai/dsh-experimental-speech-to-text-sensevoice',

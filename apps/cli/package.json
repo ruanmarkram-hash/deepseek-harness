@@ -33,6 +33,7 @@
     "@deepseek-ai/dsh-client-ui-agent-preset": "workspace:*",
     "@deepseek-ai/dsh-client-ui-cordis": "workspace:*",
     "@deepseek-ai/dsh-cmdline": "workspace:*",
+    "@deepseek-ai/dsh-client-connection": "workspace:*",
     "@deepseek-ai/dsh-command-compact": "workspace:*",
     "@deepseek-ai/dsh-command-goal": "workspace:*",
     "@deepseek-ai/dsh-compaction-basic": "workspace:*",
@@ -99,9 +100,19 @@
     "@deepseek-ai/dsh-plugin-manager": "workspace:*",
     "@deepseek-ai/dsh-atomic-write": "workspace:*",
     "@deepseek-ai/dsh-agent-preset": "workspace:*",
-    "@deepseek-ai/dsh-experimental-voice-input-bundle": "workspace:*"
+    "@deepseek-ai/dsh-experimental-voice-input-bundle": "workspace:*",
+    "@deepseek-ai/dsh-remote-devices": "workspace:*",
+    "@deepseek-ai/dsh-remote-gateway": "workspace:*",
+    "@deepseek-ai/dsh-remote-api": "workspace:*",
+    "@deepseek-ai/dsh-remote-host-fd199": "workspace:*",
+    "@deepseek-ai/dsh-remote-host-v3": "workspace:*",
+    "@deepseek-ai/dsh-progress-narration": "workspace:*",
+    "@deepseek-ai/dsh-computer-use": "workspace:*",
+    "@deepseek-ai/dsh-config-editor": "workspace:*",
+    "@deepseek-ai/dsh-settings": "workspace:*"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-experimental-computer-use-policy": "workspace:*",
     "@agentclientprotocol/sdk": "1.4.0",
     "@deepseek-ai/dsh-acp": "workspace:*",
     "@deepseek-ai/dsh-agent": "workspace:*",

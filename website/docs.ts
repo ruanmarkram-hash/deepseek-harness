@@ -351,6 +351,7 @@ const subsystemGroups = [
     ['sidebar-right.md', '右侧 Sidebar', 'Right Sidebar'],
     ['conversation.md', 'Conversation 组装', 'Conversation assembly'],
     ['typert.md', 'Typert', 'Typert'],
+    ['mobile.md', '移动端远程接入', 'Mobile remote access'],
     ['storage.md', '存储', 'Storage'],
     ['workspace.md', '工作区', 'Workspaces'],
     ['settings.md', '用户设置', 'User settings'],

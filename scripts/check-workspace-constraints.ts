@@ -57,6 +57,8 @@ const experimentalPackageDirectory = /^packages\/experimental\/[^/]+$/
 const experimentalPackageNamePrefix = '@deepseek-ai/dsh-experimental-'
 /** Ordinary directories whose packages this repository publishes: one release member each. */
 const standardReleaseMemberDirectory = /^(?:packages\/(?!experimental\/)[^/]+\/[^/]+|apps\/(?!desktop(?:-host)?$)[^/]+|vendor\/[^/]+)$/
+/** Mobile product artifacts and relay deployments never publish to npm. */
+const mobileApplicationDirectories = new Set(['apps/mobile', 'apps/mobile-relay'])
 /** Installable application assembled by electron-builder rather than published to npm. */
 const desktopApplicationDirectory = 'apps/desktop'
 const localArtifactDirs = new Set(['node_modules'])
@@ -174,6 +176,8 @@ export function readWorkspaceManifests(repositoryRoot: string): WorkspaceManifes
 }
 
 const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
+  // The hosted handoff exports its Web owner beside the shared wire chunk.
+  '@deepseek-ai/dsh-remote-host-fd199': ['lib/web-owner.js', 'lib/protocol-*.js'],
   // Owned Worker bundles import this public bootstrap before their business entry.
   '@deepseek-ai/dsh-app-boot': ['lib/worker/profile-resolution-bootstrap.js'],
   // Statically linked client libraries keep their stylesheets next to the emitted
@@ -350,7 +354,8 @@ export function checkExperimentalManifest(
 }
 
 function isReleaseMemberDirectory(dir: string): boolean {
-  return standardReleaseMemberDirectory.test(dir) || isPublicExperimentalPackageDirectory(dir)
+  return !mobileApplicationDirectories.has(dir)
+    && (standardReleaseMemberDirectory.test(dir) || isPublicExperimentalPackageDirectory(dir))
 }
 
 /**
@@ -441,7 +446,8 @@ export function checkWorkspaceManifest({ dir, manifest }: WorkspaceManifest): st
     }
   }
 
-  if (dir.startsWith('apps/') && dir !== desktopApplicationDirectory && manifest.name?.startsWith('@deepseek-ai/')) {
+  if (dir.startsWith('apps/') && dir !== desktopApplicationDirectory
+    && !mobileApplicationDirectories.has(dir) && manifest.name?.startsWith('@deepseek-ai/')) {
     const expectedFiles = appPackageFiles[manifest.name]
     if (expectedFiles === undefined) {
       errors.push(`${label}: app package has no publication files policy`)

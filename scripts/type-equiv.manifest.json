@@ -2251,6 +2251,16 @@
       "doc": "docs/subsystems/product-telemetry.md",
       "symbol": "ProductTelemetryRecord",
       "source": "packages/host/product-telemetry-otel/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/mobile.md",
+      "symbol": "RemoteDeviceChange",
+      "source": "packages/mobile/remote-devices/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/mobile.md",
+      "symbol": "RemoteGatewayAuditEntry",
+      "source": "packages/mobile/remote-gateway/src/types.ts"
     }
   ]
 }

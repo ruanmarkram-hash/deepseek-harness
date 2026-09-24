@@ -26,29 +26,28 @@
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.zh.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
-<a id="ctxconfigeditor--configeditor"></a>
+<a id="ctxconfigeditor--configeditorservice"></a>
 
-### `ctx.configEditor` — `ConfigEditor`
+### `ctx.configEditor` — `ConfigEditorService`
 
-Persist complete raw configs and apply them through the normal Loader path.
+Data/configuration operations shared by profile and signed-application editors.
 
 ```ts cordis-catalog
-/** Addressable profile rows; nested Includes have independent configuration ownership.
- * @returns Active entries with unique profile patch ids.
+/** Addressable entries whose ids are unique in the owning composition.
+ * @returns The entries this editor owns.
  */
 entries(): Entry[]
 
-/** Read inherited and explicit profile values for the active entries.
- * @returns Detached layer values alongside their Loader entries.
+/** Inherited and explicit configuration values alongside their active entries.
+ * @returns Each owned entry with its inherited and explicit configuration.
  */
 configuration(): Array<{ entry: Entry; inherited: Record<string, unknown>; override: Record<string, unknown> }>
 
-/** Validate, persist, and reconcile a plugin's next config; ordinary fields keep normal lifecycle rules.
- * @param entry Current Loader entry, also used to detect replacement during the write.
- * @param change Derive a raw config from the current entry and its inherited layer.
- * @returns Fulfillment after Loader reconciliation completes.
+/** Validate and apply a config change using the editor's persistence and trust policy.
+ * @param entry The current entry to configure.
+ * @param change Derives a raw config from current and inherited values.
  */
-async edit( entry: Entry, change: (current: Record<string, unknown>, inherited: Record<string, unknown>) => Record<string, unknown>, ): Promise<void>
+edit( entry: Entry, change: (current: Record<string, unknown>, inherited: Record<string, unknown>) => Record<string, unknown>, ): Promise<void>
 ```
 
 Source: [`packages/boot/config-editor/src/index.ts`](../../packages/boot/config-editor/src/index.ts)

@@ -36,6 +36,13 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
   'packages/util/launch-environment': 'The package only resolves host environment values; model-facing consumers own any rendered use.',
   'packages/util/workspace-path': 'The package only formats Workspace paths for browser UI; it never constructs model input.',
   'packages/util/values': 'The package only validates, snapshots, compares, freezes, or rejects caller-owned values; consumers own every model-facing use.',
+  'packages/mobile/pairing-protocol': 'The package validates encrypted mobile pairing transport metadata and registers no model-facing context.',
+  'packages/mobile/remote-wire': 'The package parses remote-client envelopes and registers no model-facing context.',
+  'packages/mobile/remote-relay-protocol': 'The package encrypts and authenticates transport frames outside model request assembly.',
+  'packages/mobile/remote-devices': 'The Host device directory stores public identity metadata and registers no model-facing context.',
+  'packages/mobile/remote-host-identity': 'The Host identity service keeps static remote keys and enrollment values outside model request assembly.',
+  'packages/mobile/remote-gateway': 'The Host remote gateway dispatches trusted client traffic and registers no model-facing context.',
+  'packages/mobile/remote-host-fd199': 'The hosted-runtime handoff transfers configured graph ownership and registers no prompt, schema, model request, or model-visible session event.',
 }
 
 /**
@@ -44,6 +51,7 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
  * blocks. A package moves on or off this list with its context behavior.
  */
 const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
+  'packages/mobile/remote-api': { kind: 'none', reason: 'The released mobile adapter dispatches existing controller calls and registers no model-facing contribution.' },
   'packages/experimental/speech-to-text': { kind: 'none', reason: 'Routes transient recognition without adding model requests or Session events.' },
   'packages/experimental/api-speech-to-text': { kind: 'none', reason: 'Transports audio and preparation state; ordinary user submission owns model-visible text.' },
   'packages/experimental/speech-to-text-sensevoice': { kind: 'none', reason: 'Local recognition returns transient text without modifying model context.' },

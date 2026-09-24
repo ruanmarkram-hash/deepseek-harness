@@ -3843,6 +3843,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'StartedToolCall',
       'ToolResultNode',
       'UseDisclosure',
+      'Wire',
     ],
     standardProps: [
       'useResource: UseResource',

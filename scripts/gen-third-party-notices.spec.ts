@@ -175,6 +175,24 @@ describe('virtualManifest', () => {
     }
   })
 
+  it('skips empty optional-platform directories while selecting the requested version', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-notices-optional-platform-'))
+    try {
+      const name = '@scope/pkg'
+      const version = '3.0.0'
+      const store = join(root, 'store')
+      mkdirSync(join(store, `${name.replace('/', '+')}@${version}-unsupported`, 'node_modules'), { recursive: true })
+      const manifestDir = join(store, `${name.replace('/', '+')}@${version}`, 'node_modules', name)
+      mkdirSync(manifestDir, { recursive: true })
+      writeFileSync(join(manifestDir, 'package.json'), JSON.stringify({ name, version, license: 'BSD-3-Clause' }))
+
+      expect(virtualManifest(store, name, version)).toMatchObject({ name, version, license: 'BSD-3-Clause' })
+      expect(virtualManifest(store, name, '4.0.0')).toBeUndefined()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('selects the requested version when the store retains historical copies', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-notices-version-'))
     try {

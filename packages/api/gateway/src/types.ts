@@ -4,6 +4,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
 import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import type { RemoteEventHostInfo } from './stream-protocol.ts'
 
@@ -138,6 +139,21 @@ export type TypertGatewayErrorCode =
 export interface TypertGateway {
   /** Carrier adapter shared by WebSocket and in-process transports. */
   readonly wireStream: TypertGatewayWireStream
+
+  /**
+   * Dispatch a unary Remote call or Client event result through the shared carrier validation and hosted fence.
+   * @param endpoint - canonical Remote endpoint or Gateway-owned result name.
+   * @param payload - decoded carrier payload.
+   * @param signal - caller cancellation.
+   * @param peer - Peer the call speaks for; absent means the operator's in-process carrier.
+   * @returns the carrier-safe result or Remote failure envelope.
+   */
+  wireRpc(
+    endpoint: string,
+    payload: unknown,
+    signal: AbortSignal,
+    peer?: PeerScope,
+  ): Promise<Awaited<ReturnType<ConnectionRpcHandler>>>
 
   /**
    * Register the application-selected forwarded-event source.

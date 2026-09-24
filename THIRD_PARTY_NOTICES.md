@@ -49,6 +49,8 @@ External packages installed for runtime use or distributed inside the prebuilt b
 | [`@lexical/utils`](https://github.com/facebook/lexical) | MIT |
 | [`@modelcontextprotocol/client`](https://github.com/modelcontextprotocol/typescript-sdk) | MIT |
 | [`@modelcontextprotocol/sdk`](https://github.com/modelcontextprotocol/typescript-sdk) | MIT |
+| [`@noble/ciphers`](https://github.com/paulmillr/noble-ciphers) | MIT |
+| [`@noble/curves`](https://github.com/paulmillr/noble-curves) | MIT |
 | [`@noble/hashes`](https://github.com/paulmillr/noble-hashes) | MIT |
 | [`@octokit/webhooks`](https://github.com/octokit/webhooks.js) | MIT |
 | [`@openai/codex`](https://github.com/openai/codex) | Apache-2.0 |
@@ -88,6 +90,11 @@ External packages installed for runtime use or distributed inside the prebuilt b
 | [`eventsource-parser`](https://github.com/rexxars/eventsource-parser) | MIT |
 | [`exceljs`](https://github.com/exceljs/exceljs) | MIT |
 | [`execa`](https://github.com/sindresorhus/execa) | MIT |
+| [`expo`](https://github.com/expo/expo) | MIT |
+| [`expo-camera`](https://github.com/expo/expo) | MIT |
+| [`expo-crypto`](https://github.com/expo/expo) | MIT |
+| [`expo-modules-core`](https://github.com/expo/expo) | MIT |
+| [`expo-status-bar`](https://github.com/expo/expo) | MIT |
 | [`fast-xml-parser`](https://github.com/NaturalIntelligence/fast-xml-parser) | MIT |
 | [`fflate`](https://github.com/101arrowz/fflate) | MIT |
 | [`immer`](https://github.com/immerjs/immer) | MIT |
@@ -117,6 +124,8 @@ External packages installed for runtime use or distributed inside the prebuilt b
 | [`picomatch`](https://github.com/micromatch/picomatch) | MIT |
 | [`react`](https://github.com/facebook/react) | MIT |
 | [`react-dom`](https://github.com/facebook/react) | MIT |
+| [`react-native`](https://github.com/react/react-native) | MIT |
+| [`react-native-web`](https://github.com/necolas/react-native-web) | MIT |
 | [`readable-stream`](https://github.com/nodejs/readable-stream) | MIT |
 | [`resolve.exports`](https://github.com/lukeed/resolve.exports) | MIT |
 | [`semver`](https://github.com/npm/node-semver) | ISC |
@@ -178,6 +187,8 @@ External packages **directly declared** for development, tests, types, or toolin
 | Package | License |
 | --- | --- |
 | [`@braintree/sanitize-url`](https://github.com/braintree/sanitize-url) | MIT |
+| [`@cloudflare/vitest-pool-workers`](https://github.com/cloudflare/workers-sdk) | MIT |
+| [`@cloudflare/workers-types`](https://github.com/cloudflare/workerd) | MIT OR Apache-2.0 |
 | [`@electron/get`](https://github.com/electron/get) | MIT |
 | [`@electron/notarize`](https://github.com/electron/notarize) | MIT |
 | [`@lexical/headless`](https://github.com/facebook/lexical) | MIT |
@@ -249,6 +260,7 @@ External packages **directly declared** for development, tests, types, or toolin
 | [`vitepress-plugin-mermaid`](https://github.com/emersonbottero/vitepress-plugin-mermaid) | MIT |
 | [`vitest`](https://github.com/vitest-dev/vitest) | MIT |
 | [`vue`](https://github.com/vuejs/core) | MIT |
+| [`wrangler`](https://github.com/cloudflare/workers-sdk) | MIT OR Apache-2.0 |
 
 `eslint-plugin-sonarjs` (LGPL-3.0-only) and `lightningcss` (MPL-2.0) run only as development tooling; their code is not linked into or distributed with any DeepSeek Harness artifact.
 

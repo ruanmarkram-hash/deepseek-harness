@@ -69,7 +69,8 @@ const nonLinuxWebWorkerTests = process.platform === 'linux'
       'packages/experimental/webworker-runtime/tests/node/sandbox-stack.spec.ts',
     ]
 
-const platformUnsupportedTests = [...windowsUnsupportedTests, ...nonLinuxWebWorkerTests]
+// Worker-specific tests run in apps/mobile-relay's Cloudflare Vitest pool.
+const platformUnsupportedTests = [...windowsUnsupportedTests, ...nonLinuxWebWorkerTests, 'apps/mobile-relay/tests/**']
 
 const windowsUnsupportedCoveragePackages = process.platform === 'win32'
   ? [...windowsUnsupportedPackages, 'packages/subprocess/*']

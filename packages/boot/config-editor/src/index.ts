@@ -14,8 +14,30 @@ import { isMap, isSeq, parseDocument, Scalar, visit } from 'yaml'
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Persistent edits to the active profile's plugin configuration. */
-    configEditor: ConfigEditor
+    configEditor: ConfigEditorService
   }
+}
+
+/** Data/configuration operations shared by profile and signed-application editors. */
+export interface ConfigEditorService {
+  /** Application-owned document for these configuration edits. */
+  readonly documentPath: string
+  /** Addressable entries whose ids are unique in the owning composition.
+   * @returns The entries this editor owns.
+   */
+  entries(): Entry[]
+  /** Inherited and explicit configuration values alongside their active entries.
+   * @returns Each owned entry with its inherited and explicit configuration.
+   */
+  configuration(): Array<{ entry: Entry; inherited: Record<string, unknown>; override: Record<string, unknown> }>
+  /** Validate and apply a config change using the editor's persistence and trust policy.
+   * @param entry The current entry to configure.
+   * @param change Derives a raw config from current and inherited values.
+   */
+  edit(
+    entry: Entry,
+    change: (current: Record<string, unknown>, inherited: Record<string, unknown>) => Record<string, unknown>,
+  ): Promise<void>
 }
 
 function flatten(rows: EntryOptions[]): EntryOptions[] {

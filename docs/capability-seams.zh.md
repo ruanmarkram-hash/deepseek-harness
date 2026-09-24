@@ -126,6 +126,18 @@ flowchart LR
   pkg_storage_domain["storage-domain"]
   svc_storageDomain["ctx.storageDomain<br/>Domain data facility"]
   pkg_workspace["workspace"]
+  pkg_remote_api["remote-api"]
+  svc_apiProxy["ctx.apiProxy<br/>Mobile API compatibility"]
+  pkg_remote_gateway["remote-gateway"]
+  pkg_remote_host_fd199["remote-host-fd199"]
+  pkg_remote_host_v3["remote-host-v3"]
+  pkg_remote_devices["remote-devices"]
+  svc_remoteDevices["ctx.remoteDevices<br/>Trusted remote-device directory"]
+  pkg_remote_host_identity["remote-host-identity"]
+  svc_remoteEnrollment["ctx.remoteEnrollment<br/>Local remote-enrollment controller"]
+  svc_remoteGateway["ctx.remoteGateway<br/>Authenticated remote Host gateway"]
+  svc_remoteHostIdentity["ctx.remoteHostIdentity<br/>Secure-store-backed Host identity"]
+  svc_remoteHostV3["ctx.remoteHostV3<br/>Remote V3 route controller"]
   svc_messageFeedback["ctx.messageFeedback<br/>Lifecycle-bound message feedback"]
   pkg_command_feedback["command-feedback"]
   svc_sessionFeedback["ctx.sessionFeedback<br/>Session-level feedback recorder"]
@@ -355,6 +367,12 @@ flowchart LR
   pkg_ptc_runtime --> svc_ptcRuntime
   pkg_ptc_runtime_node --> svc_ptcRuntime
   pkg_pwsh_local --> svc_shell
+  pkg_remote_api --> svc_apiProxy
+  pkg_remote_devices --> svc_remoteDevices
+  pkg_remote_gateway --> svc_remoteGateway
+  pkg_remote_host_identity --> svc_remoteEnrollment
+  pkg_remote_host_identity --> svc_remoteHostIdentity
+  pkg_remote_host_v3 --> svc_remoteHostV3
   pkg_sandbox --> svc_sandbox
   pkg_sandbox_local --> svc_sandbox
   pkg_sandbox_policy --> svc_sandboxPolicy
@@ -424,6 +442,9 @@ flowchart LR
   svc_agents --> pkg_acp
   svc_agents --> pkg_agent_loop
   svc_agents --> pkg_subagent_in_process_driver
+  svc_apiProxy --> pkg_remote_gateway
+  svc_apiProxy --> pkg_remote_host_fd199
+  svc_apiProxy --> pkg_remote_host_v3
   svc_approval --> pkg_acp
   svc_approval --> pkg_tool_bash
   svc_approval --> pkg_tools
@@ -477,6 +498,11 @@ flowchart LR
   svc_profileContext --> pkg_plugin_manager
   svc_ptcRuntime --> pkg_tools
   svc_ptcRuntime --> pkg_workflow_ptc
+  svc_remoteDevices --> pkg_remote_gateway
+  svc_remoteDevices --> pkg_remote_host_identity
+  svc_remoteDevices --> pkg_remote_host_v3
+  svc_remoteGateway --> pkg_remote_host_v3
+  svc_remoteHostV3 --> pkg_remote_host_fd199
   svc_sandbox --> pkg_bash_sandbox
   svc_sandbox --> pkg_terminal_bash
   svc_sandboxPolicy --> pkg_bash_sandbox
@@ -609,6 +635,12 @@ flowchart LR
 | `ctx.sessionTelemetry` | `seam` | [`session-telemetry`](../packages/session/session-telemetry) | [`session-telemetry-otel`](../packages/session/session-telemetry-otel) | - | - | 该 seam 捕获会话记录、进行脱敏并交给一个后端；没有其他组件消费该服务，其输出会离开当前进程。 |
 | `ctx.storage` | `seam` | [`storage`](../packages/storage/storage) | [`storage-json`](../packages/storage/storage-json), [`storage-sqlite`](../packages/storage/storage-sqlite) | [`storage-domain`](../packages/storage/storage-domain) | - | 各后端以不同名称并列注册；数据形态（领域优先）挂载到枢纽上，并将类型化操作转换为不透明的 KV 单元原语。 |
 | `ctx.storageDomain` | `core` | [`storage-domain`](../packages/storage/storage-domain) | - | [`workspace`](../packages/workspace/workspace) | - | 等待所有已配置后端就绪，然后将领域形态发布为一个受生命周期约束的服务，用于类型化持久状态。 |
+| `ctx.apiProxy` | `core` | [`remote-api`](../packages/mobile/remote-api) | - | [`remote-gateway`](../packages/mobile/remote-gateway), [`remote-host-fd199`](../packages/mobile/remote-host-fd199), [`remote-host-v3`](../packages/mobile/remote-host-v3) | - | 通过当前 Host 控制器与已认证的 Gateway 连接提供现有移动协议。 |
+| `ctx.remoteDevices` | `core` | [`remote-devices`](../packages/mobile/remote-devices) | - | [`remote-gateway`](../packages/mobile/remote-gateway), [`remote-host-identity`](../packages/mobile/remote-host-identity), [`remote-host-v3`](../packages/mobile/remote-host-v3) | - | 持久保存公开登记元数据，并在持久化后发布设备变更；私钥与中继凭据保留在目录之外。 |
+| `ctx.remoteEnrollment` | `core` | [`remote-host-identity`](../packages/mobile/remote-host-identity) | - | - | - | 根据 Host 身份签发并确认仅限本地的登记路由，不挂载网络登记端点。 |
+| `ctx.remoteGateway` | `core` | [`remote-gateway`](../packages/mobile/remote-gateway) | - | [`remote-host-v3`](../packages/mobile/remote-host-v3) | - | 将已认证并解密的连接接入 Host API；不挂载监听器，只发出不含载荷的审计记录。 |
+| `ctx.remoteHostIdentity` | `core` | [`remote-host-identity`](../packages/mobile/remote-host-identity) | - | - | - | 发布 Host 的公开身份；私钥操作由注入的原生安全存储提供方负责。 |
+| `ctx.remoteHostV3` | `core` | [`remote-host-v3`](../packages/mobile/remote-host-v3) | - | [`remote-host-fd199`](../packages/mobile/remote-host-fd199) | - | 持久保存公开路由坐标，并将经认证的继承运行时管道与已认证网关组合。 |
 | `ctx.messageFeedback` | `core` | [`message-feedback`](../packages/feedback/message-feedback) | - | - | - | 拥有权威 Session 日志中的逐 assistant 消息反馈、目标校验、逐条目 compare-and-set 及 Host 一元 Remote 契约。反馈不进入模型历史；日志导出遵循消费方策略。 |
 | `ctx.sessionFeedback` | `core` | [`command-feedback`](../packages/feedback/command-feedback) | - | - | - | 通过 Host 一元 Remote 契约在 live Session 上把一条带分类的 Session 级评价记录为仅写日志的 feedback/record 事件；/feedback 命令共用同一个生产方。 |
 | `ctx.workspaceRegistry` | `core` | [`workspace`](../packages/workspace/workspace) | - | [`api-workspace-controller`](../packages/api/workspace-controller), [`api-session-controller`](../packages/api/session-controller) | - | 通过领域设施拥有带 WorkspaceId 品牌类型的记录；稳定的 sessionIds 账户驱动 Host RPC 与 GUI 投影。 |

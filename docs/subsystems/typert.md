@@ -316,6 +316,21 @@ interface TypertGateway {
   /** Carrier adapter shared by WebSocket and in-process transports. */
   readonly wireStream: TypertGatewayWireStream
   /**
+   * Dispatch a unary Remote call or Client event result through the shared carrier validation and hosted fence.
+   * @param endpoint - canonical Remote endpoint or Gateway-owned result name.
+   * @param payload - decoded carrier payload.
+   * @param signal - caller cancellation.
+   * @param peer - Peer the call speaks for; absent means the operator's in-process carrier.
+   * @returns the carrier-safe result or Remote failure envelope.
+   */
+  wireRpc(
+    endpoint: string,
+    payload: unknown,
+    signal: AbortSignal,
+    peer?: PeerScope,
+  ): Promise<Awaited<ReturnType<ConnectionRpcHandler>>>
+
+  /**
    * Register the application-selected forwarded-event source.
    * @param source - stream factory installed by the Remote assembly.
    * @param host - stable Host facts included in each Client generation's opening frame.
@@ -458,6 +473,7 @@ registerRemoteEvents( source: TypertRemoteEventSource, host: RemoteEventHostInfo
 
 /**
  * Invoke one live Remote method through strict generated reflection or SRC markers.
+ * Hosted FD199 compositions fence the complete unary operation; streams remain unfenced.
  * @param request - decoded endpoint and exact named wire arguments.
  * @returns the business result without output decoding.
  * @throws {@link TypertGatewayError} for dispatch, provider, or boundary failures; lookup-policy and business errors retain identity.
@@ -470,6 +486,16 @@ async invoke(request: InvokeRemoteRequest): Promise<unknown>
  * @returns a cancellation-aware iterable over the business results.
  */
 async stream(request: InvokeRemoteRequest): Promise<AsyncIterable<unknown>>
+
+/**
+ * Dispatch a unary Remote call or Client event result through shared validation and the hosted fence.
+ * @param endpoint - canonical Remote endpoint or Gateway-owned result name.
+ * @param payload - decoded carrier payload.
+ * @param signal - caller cancellation.
+ * @param peer - Peer the call speaks for; absent means the operator's in-process carrier.
+ * @returns the carrier-safe result or Remote failure envelope.
+ */
+wireRpc( endpoint: string, payload: unknown, signal: AbortSignal, peer?: PeerScope, ): Promise<ConnectionRpcResult>
 ```
 
 Source: [`packages/api/gateway/src/index.ts`](../../packages/api/gateway/src/index.ts)

@@ -8,6 +8,12 @@
     "src"
   ],
   "references": [
+    { "path": "../../packages/client/connection/tsconfig.host.json" },
+    { "path": "../../packages/boot/config-editor" },
+    { "path": "../../packages/settings/settings" },
+    { "path": "../../packages/mobile/remote-api" },
+    { "path": "../../packages/preset/progress-narration" },
+    { "path": "../../packages/experimental/computer-use-policy" },
     {
       "path": "../../vendor/cordis"
     },
@@ -52,6 +58,12 @@
     },
     {
       "path": "../../packages/util/home-paths"
+    },
+    {
+      "path": "../../packages/util/atomic-write"
+    },
+    {
+      "path": "../../packages/mobile/remote-host-fd199"
     },
     {
       "path": "../../packages/mcp/mcp-client"

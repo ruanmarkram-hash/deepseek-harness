@@ -1,6 +1,6 @@
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { Context, Service, symbols } from '@deepseek-ai/cordis'
 import { z } from 'zod'
 import { apply as applyConnection, inject as connectionInject } from '@deepseek-ai/dsh-client-connection'
@@ -1394,6 +1394,174 @@ describe('TypertGatewayService', () => {
       await connectionFiber.dispose()
     }
     expect(routes).toHaveLength(0)
+  })
+})
+
+class HostedFence {
+  calls = 0
+  active = 0
+  closed = false
+  readonly rejection = new Error('the current Web FD199 lifecycle is unavailable or closed')
+
+  async runDesktopOperation<T>(operation: () => Promise<T>): Promise<T> {
+    this.calls += 1
+    if (this.closed) throw this.rejection
+    this.active += 1
+    try {
+      return await operation()
+    } finally {
+      this.active -= 1
+    }
+  }
+}
+
+class HostedFenceFeed extends Service {
+  readonly typertRemote = bindTypertRemote(this, 'hostedFenceFeed')
+
+  constructor(ctx: Context) {
+    super(ctx, 'hostedFenceFeed')
+  }
+
+  @Remote({ mode: 'stream' })
+  *follow(): Iterable<string> {
+    yield 'readable'
+  }
+}
+
+async function setupHostedFence(): Promise<{
+  ctx: Context
+  service: GoalService
+  handler: FakeRpcHandler
+}> {
+  const { ctx, service } = await setup()
+  onTestFinished(() => ctx.fiber.dispose())
+  await ctx.plugin(FakeConnectionService)
+  const handler = rawConnection(ctx).handler
+  if (handler === undefined) throw new Error('fixture Connection did not retain the /api interceptor')
+  return { ctx, service, handler }
+}
+
+describe('hosted FD199 desktop write fence', () => {
+  it('keeps direct and carrier unary calls available without a hosted fence', async () => {
+    const { ctx, service, handler } = await setupHostedFence()
+    await expect(ctx.typertGateway.invoke({
+      namespace: 'goals', method: 'passthrough', args: { value: 'direct' },
+    })).resolves.toBe('direct')
+    await expect(handler('goals/passthrough', { args: { value: 'rpc' } }, new AbortController().signal))
+      .resolves.toEqual({ ok: true, value: 'rpc' })
+    await expect(ctx.typertGateway.wireRpc('goals/passthrough', { args: { value: 'in-process' } }, new AbortController().signal))
+      .resolves.toEqual({ ok: true, value: 'in-process' })
+    expect(service.calls).toEqual(['passthrough', 'passthrough', 'passthrough'])
+  })
+
+  it('resolves a late-mounted fence for every unary entry path and holds it until settlement', async () => {
+    const { ctx, service, handler } = await setupHostedFence()
+    const fence = new HostedFence()
+    ctx.provide('fd199DesktopWriteFence', fence)
+    let finish!: (value: string) => void
+    service.nextResult = new Promise<string>((resolve) => { finish = resolve })
+    const pending = ctx.typertGateway.invoke({
+      namespace: 'goals', method: 'passthrough', args: { value: 'direct' },
+    })
+    await vi.waitFor(() => { expect(service.calls).toEqual(['passthrough']) })
+    expect(fence.calls).toBe(1)
+    expect(fence.active).toBe(1)
+    finish('settled')
+    await expect(pending).resolves.toBe('settled')
+    expect(fence.active).toBe(0)
+    service.nextResult = undefined
+    await expect(handler('goals/passthrough', { args: { value: 'rpc' } }, new AbortController().signal))
+      .resolves.toEqual({ ok: true, value: 'rpc' })
+    expect(fence.calls).toBe(2)
+    expect(fence.active).toBe(0)
+  })
+
+  it('rejects direct and carrier unary calls before executing when the fence closes', async () => {
+    const { ctx, service, handler } = await setupHostedFence()
+    const fence = new HostedFence()
+    fence.closed = true
+    ctx.provide('fd199DesktopWriteFence', fence)
+    await expect(ctx.typertGateway.invoke({
+      namespace: 'goals', method: 'passthrough', args: { value: 'direct' },
+    })).rejects.toBe(fence.rejection)
+    await expect(handler('goals/passthrough', { args: { value: 'rpc' } }, new AbortController().signal))
+      .resolves.toMatchObject({ ok: false, error: { code: 'gateway/internal', message: fence.rejection.message } })
+    await expect(ctx.typertGateway.wireRpc('goals/passthrough', { args: { value: 'in-process' } }, new AbortController().signal))
+      .resolves.toMatchObject({ ok: false, error: { code: 'gateway/internal', message: fence.rejection.message } })
+    expect(fence.calls).toBe(3)
+    expect(service.calls).toEqual([])
+  })
+
+  it.each([null, {}, { runDesktopOperation: false }])('fails closed for malformed hosted registration %j', async (fence) => {
+    const { ctx, service, handler } = await setupHostedFence()
+    ctx.provide('fd199DesktopWriteFence', fence)
+    await expect(ctx.typertGateway.invoke({
+      namespace: 'goals', method: 'passthrough', args: { value: 'direct' },
+    })).rejects.toBeInstanceOf(TypeError)
+    await expect(handler('goals/passthrough', { args: { value: 'rpc' } }, new AbortController().signal))
+      .resolves.toMatchObject({ ok: false, error: { code: 'gateway/internal' } })
+    await expect(handler('$events/result', { args: {} }, new AbortController().signal))
+      .resolves.toMatchObject({ ok: false, error: { code: 'gateway/internal' } })
+    expect(service.calls).toEqual([])
+  })
+
+  it('preserves business failures and carrier cancellation while releasing the fence', async () => {
+    const { ctx, service, handler } = await setupHostedFence()
+    const fence = new HostedFence()
+    ctx.provide('fd199DesktopWriteFence', fence)
+    const error = new Error('business failure')
+    service.businessError = error
+    await expect(ctx.typertGateway.invoke({
+      namespace: 'goals', method: 'fail', args: { request: null },
+    })).rejects.toBe(error)
+    const control = new AbortController()
+    control.abort(new Error('caller cancelled'))
+    await expect(handler('goals/fail', { args: { request: null } }, control.signal))
+      .resolves.toMatchObject({ ok: false, error: { code: 'gateway/cancelled' } })
+    expect(fence.active).toBe(0)
+    expect(fence.calls).toBe(2)
+  })
+
+  it('fences Client event results while ordinary and forwarded read streams stay open', async () => {
+    const { ctx, handler } = await setupHostedFence()
+    const fence = new HostedFence()
+    fence.closed = true
+    ctx.provide('fd199DesktopWriteFence', fence)
+    await ctx.plugin(HostedFenceFeed)
+    const stream = await ctx.typertGateway.stream({
+      namespace: 'hostedFenceFeed', method: 'follow', args: {},
+    })
+    const items: unknown[] = []
+    for await (const item of stream) items.push(item)
+    expect(items).toEqual(['readable'])
+    const unregister = ctx.typertGateway.registerRemoteEvents(signal => (async function* () {
+      await new Promise<void>((resolve) => {
+        if (signal.aborted) resolve()
+        else signal.addEventListener('abort', () => { resolve() }, { once: true })
+      })
+    })(), { home: '/home/fixture' })
+    const control = new AbortController()
+    const events = await ctx.typertGateway.wireStream.open(
+      '$events', { args: {} }, { async *[Symbol.asyncIterator]() {} }, undefined, control.signal,
+    )
+    const iterator = events[Symbol.asyncIterator]()
+    try {
+      const ready = await iterator.next()
+      expect(ready).toMatchObject({ done: false, value: { type: 'ready' } })
+      expect(fence.calls).toBe(0)
+      const clientId: unknown = Reflect.get(ready.value as object, 'clientId')
+      const result = { args: { clientId, eventId: 'missing', outcome: { kind: 'next' } } }
+      await expect(handler('$events/result', result, control.signal))
+        .resolves.toMatchObject({ ok: false, error: { code: 'gateway/internal', message: fence.rejection.message } })
+      fence.closed = false
+      await expect(ctx.typertGateway.wireRpc('$events/result', result, control.signal))
+        .resolves.toEqual({ ok: true, value: undefined })
+      expect(fence.calls).toBe(2)
+    } finally {
+      control.abort()
+      await iterator.return?.()
+      await unregister()
+    }
   })
 })
 

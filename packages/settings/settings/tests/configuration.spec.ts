@@ -6,6 +6,19 @@ import { parse } from 'yaml'
 import z from '@deepseek-ai/schemastery'
 import { configurationFixture as fixture } from './configuration-fixture.ts'
 
+it('leaves legacy data untouched when the owning application imports it', async () => {
+  const { ctx, home, start } = await fixture({ hmr: false, importLegacyDocument: false })
+  await ctx.fiber.dispose()
+  const legacy = join(home, 'settings.yaml')
+  const content = 'default-model:\n  model: owned-import\n'
+  writeFileSync(legacy, content)
+  const restored = await start()
+  await restored.loader.await()
+  expect(restored.agentDefaultModel.currentSelection().model).toBe('original')
+  expect(readFileSync(legacy, 'utf8')).toBe(content)
+  expect(existsSync(`${legacy}.imported`)).toBe(false)
+})
+
 it('persists a model edit, updates the real consumer without remounting, and restores it at restart', async () => {
   const { ctx, profile, start } = await fixture()
   const consumer = ctx.agentDefaultModel

@@ -98,6 +98,11 @@ interface PreparedInvocation {
   readonly invocation: GatewayInvocation
 }
 
+/** Optional hosted FD199 service, structurally consumed without a mobile dependency. */
+interface HostedDesktopWriteFence {
+  runDesktopOperation<T>(operation: () => Promise<T>): Promise<T>
+}
+
 /** Carrier inputs `GatewayInvocation.uplink()` decodes on first use. */
 interface UplinkSource {
   /** Carrier items; an immediately ended iterable when the carrier has none. */
@@ -338,12 +343,21 @@ export class TypertGatewayService extends Service implements TypertGateway {
 
   /**
    * Invoke one live Remote method through strict generated reflection or SRC markers.
+   * Hosted FD199 compositions fence the complete unary operation; streams remain unfenced.
    * @param request - decoded endpoint and exact named wire arguments.
    * @returns the business result without output decoding.
    * @throws {@link TypertGatewayError} for dispatch, provider, or boundary failures; lookup-policy and business errors retain identity.
    */
   async invoke(request: InvokeRemoteRequest): Promise<unknown> {
-    return this.invokePrepared(await this.prepareInvocation(request, new AbortController()))
+    return this.runDesktopOperation(async () =>
+      this.invokePrepared(await this.prepareInvocation(request, new AbortController())))
+  }
+
+  private async runDesktopOperation<T>(operation: () => Promise<T>): Promise<T> {
+    // Hosted startup can mount the fence after Gateway activation. Only absence
+    // bypasses it; a malformed mounted service fails closed when invoked.
+    const fence = this.ctx.get('fd199DesktopWriteFence') as HostedDesktopWriteFence | undefined
+    return fence === undefined ? operation() : fence.runDesktopOperation(operation)
   }
 
   private async invokePrepared(prepared: PreparedInvocation): Promise<unknown> {
@@ -409,6 +423,23 @@ export class TypertGatewayService extends Service implements TypertGateway {
     return cancellableStream(source, prepared.endpoint, prepared.invocation)
   }
 
+  /**
+   * Dispatch a unary Remote call or Client event result through shared validation and the hosted fence.
+   * @param endpoint - canonical Remote endpoint or Gateway-owned result name.
+   * @param payload - decoded carrier payload.
+   * @param signal - caller cancellation.
+   * @param peer - Peer the call speaks for; absent means the operator's in-process carrier.
+   * @returns the carrier-safe result or Remote failure envelope.
+   */
+  wireRpc(
+    endpoint: string,
+    payload: unknown,
+    signal: AbortSignal,
+    peer?: PeerScope,
+  ): Promise<ConnectionRpcResult> {
+    return this.dispatchRpc(endpoint, payload, signal, peer ?? this.operatorPeer())
+  }
+
   private async dispatchRpc(
     endpoint: string,
     payload: unknown,
@@ -417,13 +448,15 @@ export class TypertGatewayService extends Service implements TypertGateway {
   ): Promise<ConnectionRpcResult> {
     if (endpoint === REMOTE_EVENT_RESULT_ENDPOINT) {
       try {
-        const result = parseRemoteEventResultPayload(payload)
-        const client = this.remoteEventClients.get(result.clientId)
-        if (client === undefined) {
-          throw new Error('typert gateway: Remote event result identifies no active event stream')
-        }
-        this.receiveRemoteEventResult(client, result)
-        return { ok: true, value: undefined }
+        return await this.runDesktopOperation(() => {
+          const result = parseRemoteEventResultPayload(payload)
+          const client = this.remoteEventClients.get(result.clientId)
+          if (client === undefined) {
+            throw new Error('typert gateway: Remote event result identifies no active event stream')
+          }
+          this.receiveRemoteEventResult(client, result)
+          return Promise.resolve({ ok: true as const, value: undefined })
+        })
       } catch (error) {
         return rpcFailure(error)
       }
@@ -668,15 +701,17 @@ export class TypertGatewayService extends Service implements TypertGateway {
     peer: PeerScope,
   ): Promise<ConnectionRpcResult> {
     try {
-      const prepared = await this.prepareInvocation(
-        remoteRequest(endpoint, payload, signal, peer),
-        new AbortController(),
-      )
-      const value = await this.invokePrepared(prepared)
-      // A void or explicitly absent business result carries no `value` field;
-      // JSON has no `undefined`, and the envelope's optional slot is the one
-      // representation of absence that both args and results already use.
-      return encodeRpcResult(value, prepared.descriptor.result)
+      return await this.runDesktopOperation(async () => {
+        const prepared = await this.prepareInvocation(
+          remoteRequest(endpoint, payload, signal, peer),
+          new AbortController(),
+        )
+        const value = await this.invokePrepared(prepared)
+        // A void or explicitly absent business result carries no `value` field;
+        // JSON has no `undefined`, and the envelope's optional slot is the one
+        // representation of absence that both args and results already use.
+        return encodeRpcResult(value, prepared.descriptor.result)
+      })
     } catch (error) {
       return rpcFailure(error)
     }

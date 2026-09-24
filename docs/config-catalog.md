@@ -194,7 +194,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/api/gateway/src/index.ts:145`](../packages/api/gateway/src/index.ts)
+Source: [`packages/api/gateway/src/index.ts:150`](../packages/api/gateway/src/index.ts)
 
 <a id="deepseek-aidsh-api-job-controller"></a>
 
@@ -2305,6 +2305,45 @@ Depends on: [`LocalConfig`](#deepseek-aidsh-pwsh-local)
 
 Source: [`packages/shell/pwsh-sandbox/src/index.ts:40`](../packages/shell/pwsh-sandbox/src/index.ts)
 
+<a id="deepseek-aidsh-remote-gateway"></a>
+
+## `@deepseek-ai/dsh-remote-gateway`
+
+Requires: `apiProxy` · `remoteDevices`
+
+```ts config-catalog
+/** Gateway memory limits. They are deployment settings, not wire constants. */
+export interface Config extends RemoteGatewayOptions {}
+
+/** Deployment-selected memory bounds for one live Host gateway. */
+export interface RemoteGatewayOptions {
+  /** Maximum retained completed idempotency entries for one trusted device. */
+  readonly maxIdempotencyEntriesPerDevice: number
+  /** Maximum ordered Host-event entries retained for one trusted device. */
+  readonly maxEventEntriesPerDevice: number
+}
+```
+
+Source: [`packages/mobile/remote-gateway/src/index.ts:68`](../packages/mobile/remote-gateway/src/index.ts)
+
+<a id="deepseek-aidsh-remote-host-v3"></a>
+
+## `@deepseek-ai/dsh-remote-host-v3`
+
+Requires: `storageDomain` · `remoteDevices` · `remoteGateway`
+
+```ts config-catalog
+/** Deployment-selected Host V3 composition values. */
+export interface Config {
+  /** Starts the inherited-pipe gateway handoff only for a signed Host-app-owned runtime child. */
+  enabled: boolean
+  /** Absolute executable path the signed Host app must attest before its inherited pipe is accepted. */
+  hostAppPath: string
+}
+```
+
+Source: [`packages/mobile/remote-host-v3/src/index.ts:82`](../packages/mobile/remote-host-v3/src/index.ts)
+
 <a id="deepseek-aidsh-repeat-tool-reminder"></a>
 
 ## `@deepseek-ai/dsh-repeat-tool-reminder`
@@ -2688,6 +2727,22 @@ export type Config = SessionTitleLlmConfig
 Depends on: [`SessionTitleLlmConfig`](../packages/session/session-title-llm/src/index.ts)
 
 Source: [`packages/session/session-title-first-prompt-llm/src/index.ts:15`](../packages/session/session-title-first-prompt-llm/src/index.ts)
+
+<a id="deepseek-aidsh-settings"></a>
+
+## `@deepseek-ai/dsh-settings`
+
+Requires: `configEditor` · `profileContext`
+
+```ts config-catalog
+/** Application-owned legacy settings import policy. */
+export interface SettingsFormsOptions {
+  /** Disable automatic legacy-file migration when an application owns its own validated import. */
+  importLegacyDocument?: boolean
+}
+```
+
+Source: [`packages/settings/settings/src/index.ts:223`](../packages/settings/settings/src/index.ts)
 
 <a id="deepseek-aidsh-shell-env"></a>
 
@@ -3195,7 +3250,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/core/system-prompt/src/index.ts:247`](../packages/core/system-prompt/src/index.ts)
+Source: [`packages/core/system-prompt/src/index.ts:248`](../packages/core/system-prompt/src/index.ts)
 
 <a id="deepseek-aidsh-terminal-bash"></a>
 
@@ -4179,6 +4234,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-experimental-client-ui-agent-team` ([`packages/experimental/client-ui-agent-team/src/index.ts`](../packages/experimental/client-ui-agent-team/src/index.ts))
 - `@deepseek-ai/dsh-experimental-client-ui-voice-input` ([`packages/experimental/client-ui-voice-input/src/index.ts`](../packages/experimental/client-ui-voice-input/src/index.ts))
 - `@deepseek-ai/dsh-experimental-computer-use-cua-driver-native` — requires `computerUse` · `tools` · `systemPrompt` ([`packages/experimental/computer-use-cua-driver-native/src/index.ts`](../packages/experimental/computer-use-cua-driver-native/src/index.ts))
+- `@deepseek-ai/dsh-experimental-computer-use-policy` — requires `computerUse` · `tools` · `systemPrompt` ([`packages/experimental/computer-use-policy/src/index.ts`](../packages/experimental/computer-use-policy/src/index.ts))
 - `@deepseek-ai/dsh-fs-observation-policy` ([`packages/fs/fs-observation-policy/src/index.ts`](../packages/fs/fs-observation-policy/src/index.ts))
 - `@deepseek-ai/dsh-fs-ssh` — requires `ssh` · `sandboxPolicy` ([`packages/ssh/fs-ssh/src/index.ts`](../packages/ssh/fs-ssh/src/index.ts))
 - `@deepseek-ai/dsh-goal-round-driver` — requires `agents` · `goals` · `sessions` ([`packages/goal/goal-round-driver/src/index.ts`](../packages/goal/goal-round-driver/src/index.ts))
@@ -4188,6 +4244,11 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-llm` ([`packages/llm/llm/src/index.ts`](../packages/llm/llm/src/index.ts))
 - `@deepseek-ai/dsh-lsp` ([`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts))
 - `@deepseek-ai/dsh-mcp-resources` — requires `tools` ([`packages/mcp/mcp-resources/src/index.ts`](../packages/mcp/mcp-resources/src/index.ts))
+- `@deepseek-ai/dsh-progress-narration` — requires `systemPrompt` ([`packages/preset/progress-narration/src/index.ts`](../packages/preset/progress-narration/src/index.ts))
+- `@deepseek-ai/dsh-remote-api` — requires `typertGateway` · `sessionController` · `workspaceController` · `sessions` · `agents` · `sessionProjections` ([`packages/mobile/remote-api/src/index.ts`](../packages/mobile/remote-api/src/index.ts))
+- `@deepseek-ai/dsh-remote-devices` — requires `storageDomain` ([`packages/mobile/remote-devices/src/index.ts`](../packages/mobile/remote-devices/src/index.ts))
+- `@deepseek-ai/dsh-remote-host-fd199` — requires `remoteHostV3` ([`packages/mobile/remote-host-fd199/src/index.ts`](../packages/mobile/remote-host-fd199/src/index.ts))
+- `@deepseek-ai/dsh-remote-host-identity` — requires `remoteDevices` ([`packages/mobile/remote-host-identity/src/index.ts`](../packages/mobile/remote-host-identity/src/index.ts))
 - `@deepseek-ai/dsh-sandbox-ssh` — requires `ssh` ([`packages/ssh/sandbox-ssh/src/index.ts`](../packages/ssh/sandbox-ssh/src/index.ts))
 - `@deepseek-ai/dsh-schedule` — requires `agents` · `sessions` · `tools` · `sessionPersistence` ([`packages/schedule/schedule/src/index.ts`](../packages/schedule/schedule/src/index.ts))
 - `@deepseek-ai/dsh-session` ([`packages/core/session/src/index.ts`](../packages/core/session/src/index.ts))
@@ -4195,7 +4256,6 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-session-projection` ([`packages/session/session-projection/src/index.ts`](../packages/session/session-projection/src/index.ts))
 - `@deepseek-ai/dsh-session-stats` — requires `sessionProjections` ([`packages/session/session-stats/src/index.ts`](../packages/session/session-stats/src/index.ts))
 - `@deepseek-ai/dsh-session-turn-outline` — requires `sessionProjections` ([`packages/session/session-turn-outline/src/index.ts`](../packages/session/session-turn-outline/src/index.ts))
-- `@deepseek-ai/dsh-settings` — requires `configEditor` · `profileContext` ([`packages/settings/settings/src/index.ts`](../packages/settings/settings/src/index.ts))
 - `@deepseek-ai/dsh-skill-badge` — requires `skills` ([`packages/skill/skill-badge/src/index.ts`](../packages/skill/skill-badge/src/index.ts))
 - `@deepseek-ai/dsh-storage` ([`packages/storage/storage/src/index.ts`](../packages/storage/storage/src/index.ts))
 - `@deepseek-ai/dsh-subprocess-local` ([`packages/subprocess/subprocess-local/src/index.ts`](../packages/subprocess/subprocess-local/src/index.ts))
@@ -4264,7 +4324,10 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-native-command` ([`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts))
 - `@deepseek-ai/dsh-output-retention` ([`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts))
 - `@deepseek-ai/dsh-package-manifest` ([`packages/util/package-manifest/src/index.ts`](../packages/util/package-manifest/src/index.ts))
+- `@deepseek-ai/dsh-pairing-protocol` ([`packages/mobile/pairing-protocol/src/index.ts`](../packages/mobile/pairing-protocol/src/index.ts))
 - `@deepseek-ai/dsh-remote-mock` ([`packages/test-support/remote-mock/src/index.ts`](../packages/test-support/remote-mock/src/index.ts))
+- `@deepseek-ai/dsh-remote-relay-protocol` ([`packages/mobile/remote-relay-protocol/src/index.ts`](../packages/mobile/remote-relay-protocol/src/index.ts))
+- `@deepseek-ai/dsh-remote-wire` ([`packages/mobile/remote-wire/src/index.ts`](../packages/mobile/remote-wire/src/index.ts))
 - `@deepseek-ai/dsh-sandbox-windows-acl` ([`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts))
 - `@deepseek-ai/dsh-scope` ([`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts))
 - `@deepseek-ai/dsh-sdk-client` ([`packages/sdk/client/src/index.ts`](../packages/sdk/client/src/index.ts))

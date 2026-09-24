@@ -124,6 +124,18 @@ flowchart LR
   pkg_storage_domain["storage-domain"]
   svc_storageDomain["ctx.storageDomain<br/>Domain data facility"]
   pkg_workspace["workspace"]
+  pkg_remote_api["remote-api"]
+  svc_apiProxy["ctx.apiProxy<br/>Mobile API compatibility"]
+  pkg_remote_gateway["remote-gateway"]
+  pkg_remote_host_fd199["remote-host-fd199"]
+  pkg_remote_host_v3["remote-host-v3"]
+  pkg_remote_devices["remote-devices"]
+  svc_remoteDevices["ctx.remoteDevices<br/>Trusted remote-device directory"]
+  pkg_remote_host_identity["remote-host-identity"]
+  svc_remoteEnrollment["ctx.remoteEnrollment<br/>Local remote-enrollment controller"]
+  svc_remoteGateway["ctx.remoteGateway<br/>Authenticated remote Host gateway"]
+  svc_remoteHostIdentity["ctx.remoteHostIdentity<br/>Secure-store-backed Host identity"]
+  svc_remoteHostV3["ctx.remoteHostV3<br/>Remote V3 route controller"]
   svc_messageFeedback["ctx.messageFeedback<br/>Lifecycle-bound message feedback"]
   pkg_command_feedback["command-feedback"]
   svc_sessionFeedback["ctx.sessionFeedback<br/>Session-level feedback recorder"]
@@ -353,6 +365,12 @@ flowchart LR
   pkg_ptc_runtime --> svc_ptcRuntime
   pkg_ptc_runtime_node --> svc_ptcRuntime
   pkg_pwsh_local --> svc_shell
+  pkg_remote_api --> svc_apiProxy
+  pkg_remote_devices --> svc_remoteDevices
+  pkg_remote_gateway --> svc_remoteGateway
+  pkg_remote_host_identity --> svc_remoteEnrollment
+  pkg_remote_host_identity --> svc_remoteHostIdentity
+  pkg_remote_host_v3 --> svc_remoteHostV3
   pkg_sandbox --> svc_sandbox
   pkg_sandbox_local --> svc_sandbox
   pkg_sandbox_policy --> svc_sandboxPolicy
@@ -422,6 +440,9 @@ flowchart LR
   svc_agents --> pkg_acp
   svc_agents --> pkg_agent_loop
   svc_agents --> pkg_subagent_in_process_driver
+  svc_apiProxy --> pkg_remote_gateway
+  svc_apiProxy --> pkg_remote_host_fd199
+  svc_apiProxy --> pkg_remote_host_v3
   svc_approval --> pkg_acp
   svc_approval --> pkg_tool_bash
   svc_approval --> pkg_tools
@@ -475,6 +496,11 @@ flowchart LR
   svc_profileContext --> pkg_plugin_manager
   svc_ptcRuntime --> pkg_tools
   svc_ptcRuntime --> pkg_workflow_ptc
+  svc_remoteDevices --> pkg_remote_gateway
+  svc_remoteDevices --> pkg_remote_host_identity
+  svc_remoteDevices --> pkg_remote_host_v3
+  svc_remoteGateway --> pkg_remote_host_v3
+  svc_remoteHostV3 --> pkg_remote_host_fd199
   svc_sandbox --> pkg_bash_sandbox
   svc_sandbox --> pkg_terminal_bash
   svc_sandboxPolicy --> pkg_bash_sandbox
@@ -607,6 +633,12 @@ flowchart LR
 | `ctx.sessionTelemetry` | `seam` | [`session-telemetry`](../packages/session/session-telemetry) | [`session-telemetry-otel`](../packages/session/session-telemetry-otel) | - | - | The seam captures, redacts, and hands session records to one backend; nothing else consumes the service — its output leaves the process. |
 | `ctx.storage` | `seam` | [`storage`](../packages/storage/storage) | [`storage-json`](../packages/storage/storage-json), [`storage-sqlite`](../packages/storage/storage-sqlite) | [`storage-domain`](../packages/storage/storage-domain) | - | Backends register side by side under names; data forms (domain first) mount on the hub and translate typed operations into opaque KV-unit primitives. |
 | `ctx.storageDomain` | `core` | [`storage-domain`](../packages/storage/storage-domain) | - | [`workspace`](../packages/workspace/workspace) | - | Waits for every configured backend, then publishes the domain form as one lifecycle-bound service for typed durable state. |
+| `ctx.apiProxy` | `core` | [`remote-api`](../packages/mobile/remote-api) | - | [`remote-gateway`](../packages/mobile/remote-gateway), [`remote-host-fd199`](../packages/mobile/remote-host-fd199), [`remote-host-v3`](../packages/mobile/remote-host-v3) | - | Projects the existing mobile protocol through the current Host controllers and authenticated Gateway connection. |
+| `ctx.remoteDevices` | `core` | [`remote-devices`](../packages/mobile/remote-devices) | - | [`remote-gateway`](../packages/mobile/remote-gateway), [`remote-host-identity`](../packages/mobile/remote-host-identity), [`remote-host-v3`](../packages/mobile/remote-host-v3) | - | Owns durable public enrollment metadata and post-durability device changes; private keys and relay credentials stay outside the directory. |
+| `ctx.remoteEnrollment` | `core` | [`remote-host-identity`](../packages/mobile/remote-host-identity) | - | - | - | Issues and confirms local-only enrollment routes against the Host identity without mounting a network enrollment endpoint. |
+| `ctx.remoteGateway` | `core` | [`remote-gateway`](../packages/mobile/remote-gateway) | - | [`remote-host-v3`](../packages/mobile/remote-host-v3) | - | Attaches an already authenticated and decrypted connection to the Host API; it mounts no listener and emits payload-free audit records. |
+| `ctx.remoteHostIdentity` | `core` | [`remote-host-identity`](../packages/mobile/remote-host-identity) | - | - | - | Publishes the Host public identity while the injected native secure-store provider retains private key operations. |
+| `ctx.remoteHostV3` | `core` | [`remote-host-v3`](../packages/mobile/remote-host-v3) | - | [`remote-host-fd199`](../packages/mobile/remote-host-fd199) | - | Owns durable public route coordinates and composes an attested inherited runtime pipe with the authenticated gateway. |
 | `ctx.messageFeedback` | `core` | [`message-feedback`](../packages/feedback/message-feedback) | - | - | - | Owns per-assistant-message feedback in the canonical Session log, target validation, per-item compare-and-set, and the Host unary Remote contract. Feedback stays outside model history; log export follows the consumer policy. |
 | `ctx.sessionFeedback` | `core` | [`command-feedback`](../packages/feedback/command-feedback) | - | - | - | Records one Session-level remark with its category as a log-only feedback/record event on a live Session through the Host unary Remote contract; the /feedback command shares the same producer. |
 | `ctx.workspaceRegistry` | `core` | [`workspace`](../packages/workspace/workspace) | - | [`api-workspace-controller`](../packages/api/workspace-controller), [`api-session-controller`](../packages/api/session-controller) | - | Owns WorkspaceId-branded records over the domain facility; stable sessionIds accounts drive Host RPC and GUI projections. |

@@ -12,7 +12,12 @@ import Hmr from '@deepseek-ai/dsh-hmr'
 import DefaultModel from '@deepseek-ai/dsh-agent-default-model'
 import Settings from '../src/index.ts'
 
-export async function configurationFixture(options: { schema?: z; apply?: (ctx: Context, config: unknown) => void; hmr?: boolean } = {}) {
+export async function configurationFixture(options: {
+  schema?: z
+  apply?: (ctx: Context, config: unknown) => void
+  hmr?: boolean
+  importLegacyDocument?: boolean
+} = {}) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'settings-config-')))
   const dir = join(home, 'profiles', 'test')
   onTestFinished(() => { rmSync(home, { recursive: true, force: true }) })
@@ -23,7 +28,7 @@ export async function configurationFixture(options: { schema?: z; apply?: (ctx: 
   writeFileSync(join(bundle, 'package.json'), JSON.stringify({ name: 'test-bundle', version: '1.0.0', dsh: { bundle: { patch: 'cordis.patch.yml' } } }))
   writeFileSync(join(bundle, 'cordis.patch.yml'), JSON.stringify([{ insert: [
     { id: 'config-editor', name: 'cordis:editor' },
-    { id: 'settings', name: 'cordis:settings' },
+    { id: 'settings', name: 'cordis:settings', config: { importLegacyDocument: options.importLegacyDocument } },
     { id: 'default-model', name: 'cordis:model', config: { provider: 'test', model: 'original' } },
     { id: 'first', name: 'cordis:probe', config: { ordinary: 'fixed', token: 'private' } },
     { id: 'second', name: 'cordis:probe', config: { ordinary: 'second' } },
