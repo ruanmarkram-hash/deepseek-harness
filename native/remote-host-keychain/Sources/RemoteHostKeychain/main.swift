@@ -88,19 +88,13 @@ private func decodeBase64url(_ value: String, maximumLength: Int) throws -> Data
 }
 
 /**
- Accepts only the two canonical FD199 ownership-payload shapes for signing.
- Both are fixed-key-order JSON built by the Host's RemoteHostFd199 proofs
- module: they start with `{"exportId":"`, end with `}`, stay small, and carry
- either the export `files` array or the activation `generation` marker.
- Refusing every other byte sequence keeps this from becoming a general
- signing oracle.
+ Signs only bounded, canonical FD199 export or activation payloads admitted
+ by the version-specific validator. Invalid input never opens the protected
+ identity; admitted bytes are signed unchanged for journal recovery.
  */
 private func signStoredFd199OwnershipPayload(payload: Data) throws -> Data {
-  guard payload.count <= 4096 else { throw HelperError.invalidInput }
-  guard let text = String(data: payload, encoding: .utf8) else { throw HelperError.invalidInput }
-  guard text.hasPrefix("{\"exportId\":\""), text.hasSuffix("}") else { throw HelperError.invalidInput }
-  guard text.contains("\"files\":[") || text.contains("\"generation\":") else { throw HelperError.invalidInput }
-  guard !text.contains(where: { $0.asciiValue != nil && $0.asciiValue! < 0x20 }) else { throw HelperError.invalidInput }
+  do { try validateFd199OwnershipPayload(payload) }
+  catch { throw HelperError.invalidInput }
   let identity = try openIdentity(profile: "dsh-host-v1")
   var privateBytes = identity.signingPrivateKey
   defer { erase(&privateBytes) }

@@ -71,7 +71,7 @@ declare module '@deepseek-ai/cordis' {
  * @param ctx - Host context of the configured Web runtime child.
  * @returns the disposer releasing the authority channel and fence service.
  */
-export async function apply(ctx: Context): Promise<() => void> {
+export async function apply(ctx: Context): Promise<() => Promise<void>> {
   validateInheritedDescriptors()
   return startHostedHandoff(ctx, adoptInheritedAuthoritySocket())
 }
@@ -84,29 +84,27 @@ export async function apply(ctx: Context): Promise<() => void> {
  * @param channel - Adopted kernel-private authority channel.
  * @returns the disposer releasing the authority channel and fence service.
  */
-export async function startHostedHandoff(ctx: Context, channel: Duplex): Promise<() => void> {
+export async function startHostedHandoff(ctx: Context, channel: Duplex): Promise<() => Promise<void>> {
   const client = new Fd199ChannelClient(channel)
   const fence = new CurrentWebFd199Lifecycle('released')
   ctx.provide('fd199DesktopWriteFence', fence)
   ctx.provide('fd199AuthorityClient', client)
 
-  let disposed = false
-  const dispose = (): void => {
-    if (disposed) return
-    disposed = true
-    void client.close()
-  }
+  let disposal: Promise<void> | undefined
+  // Publish one promise before close can synchronously notify abort listeners.
+  // Both Cordis teardown and the returned disposer join owned read cleanup.
+  const dispose = (): Promise<void> => disposal ??= Promise.resolve().then(() => client.close())
   ctx.effect(() => dispose, name)
 
   const facts = await client.connect()
   const snapshot = await client.recoverSnapshot()
 
   client.onInstruction((action) => {
-    void runInstruction(ctx, fence, action, facts).catch((error: unknown) => {
+    void runInstruction(ctx, fence, action, facts).catch(async (error: unknown) => {
       // A failed instruction leaves the store-ownership question ambiguous;
       // the only safe posture is closing the fence permanently and dropping
       // the authority channel so neither peer can half-own the graph.
-      dispose()
+      await dispose()
       ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
     })
   })
@@ -150,7 +148,7 @@ async function runInstruction(
     const owner = ctx.get('fd199WebOwner')
     const client = ctx.get('fd199AuthorityClient')
     if (owner === undefined || client === undefined) throw new Fd199AuthorityError()
-    await fence.releaseForNative(() => owner.exportStoppedState(), client)
+    await fence.releaseForNative(signal => owner.exportStoppedState(signal), client)
     // `release-authorized` proves the Host durably staged the immutable
     // export and moved its journal to unactivatable `releasing`.  The actual
     // store-close proof is this awaited whole-root disposal.  The child sends

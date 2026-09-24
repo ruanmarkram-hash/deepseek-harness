@@ -2,6 +2,7 @@ import { FiberState } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import {
   publishBoundWebRuntimeRegistry,
+  webRuntimeRegistryForPlatform,
   type WebRuntimeRegistryLifecycle,
   type WebRuntimeRegistryOwner,
 } from '../src/profile-boot.ts'
@@ -35,6 +36,49 @@ function fakeRoot(): {
 }
 
 describe('Web runtime registry profile lifecycle', () => {
+  it('keeps ordinary Windows discovery without attempting a POSIX private bootstrap', async () => {
+    const root = fakeRoot()
+    const registry: WebRuntimeRegistryLifecycle = {
+      publish: vi.fn(async () => owner),
+      remove: vi.fn(async () => true),
+      publishBootstrap: vi.fn(async () => { throw new Error('POSIX ownership unavailable') }),
+      removeBootstrap: vi.fn(async () => true),
+    }
+    await expect(publishBoundWebRuntimeRegistry(root.ctx, owner.url,
+      webRuntimeRegistryForPlatform(registry, false, 'win32'))).resolves.toBe(true)
+    expect(registry.publish).toHaveBeenCalledExactlyOnceWith(owner.url)
+    expect(registry.publishBootstrap).not.toHaveBeenCalled()
+    expect(registry.remove).not.toHaveBeenCalled()
+    expect(root.warning).not.toHaveBeenCalled()
+    await root.dispose()
+    expect(registry.remove).toHaveBeenCalledExactlyOnceWith(owner)
+    expect(registry.removeBootstrap).not.toHaveBeenCalled()
+  })
+
+  it.each(['darwin', 'linux', 'win32'] as const)('never omits required hosted bootstrap on %s', async (platform) => {
+    const root = fakeRoot()
+    const registry: WebRuntimeRegistryLifecycle = {
+      publish: async () => owner,
+      remove: vi.fn(async () => true),
+      publishBootstrap: vi.fn(async () => { throw new Error('private bootstrap unavailable') }),
+      removeBootstrap: vi.fn(async () => true),
+    }
+    await expect(publishBoundWebRuntimeRegistry(root.ctx, owner.url,
+      webRuntimeRegistryForPlatform(registry, true, platform))).resolves.toBe(false)
+    expect(registry.publishBootstrap).toHaveBeenCalledExactlyOnceWith(owner)
+    expect(registry.removeBootstrap).toHaveBeenCalledExactlyOnceWith(owner)
+    expect(registry.remove).toHaveBeenCalledExactlyOnceWith(owner)
+    expect(root.effect).not.toHaveBeenCalled()
+  })
+
+  it.each(['darwin', 'linux'] as const)('preserves ordinary POSIX bootstrap on %s', (platform) => {
+    const registry: WebRuntimeRegistryLifecycle = {
+      publish: async () => owner, remove: async () => true,
+      publishBootstrap: async () => {}, removeBootstrap: async () => true,
+    }
+    expect(webRuntimeRegistryForPlatform(registry, false, platform)).toBe(registry)
+  })
+
   it('removes a record when disposal begins while publication is pending', async () => {
     const root = fakeRoot()
     let resolvePublish!: (record: WebRuntimeRegistryRecord) => void

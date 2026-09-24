@@ -1,5 +1,5 @@
 import type { z } from 'zod'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join, relative } from 'node:path'
@@ -1289,7 +1289,11 @@ describe('first-use Workspace preparation', () => {
 
   it('rejects a relative candidate before creating its directory', async () => {
     const h = await firstUse()
-    const candidate = join(h.directoryRoot, 'relative')
+    // path.relative(cwd, candidate) can return an absolute path on Windows
+    // across drives. Allocate this fixture on the repository's own volume.
+    const root = await mkdtemp(join(process.cwd(), '.dsh-relative-candidate-'))
+    onTestFinished(async () => { await rm(root, { recursive: true, force: true }) })
+    const candidate = join(root, 'relative')
     h.resolveDirectory.mockResolvedValueOnce({ path: relative(process.cwd(), candidate), title: 'Workspace' })
     await expect(h.registry.initializeDefault(h.resolveDirectory)).rejects.toThrow('fully qualified')
     await expect(realpath(candidate)).rejects.toMatchObject({ code: 'ENOENT' })

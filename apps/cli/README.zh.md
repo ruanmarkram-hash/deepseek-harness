@@ -61,4 +61,6 @@ profile 目录包含一个 `package.json`，其中记录树外插件依赖，以
 
 [Web 运行时发现](src/web-runtime-registry.ts) 将不含凭据的 `runtime/web.json` 记录与携带当前浏览器启动能力的 `runtime/web-bootstrap.json` 分开。Bootstrap 发布要求进程、启动时刻与回环 origin 一致；文件和目录属于当前用户；Harness home 不允许其他用户写入；runtime 目录权限为 `0700`；普通文件权限为 `0600`。有界且不跟随符号链接的读取拒绝不安全记录，退出的发布者只移除自己的能力文件。Desktop shell 消费该私有文件，执行 Connection 现有的根路径 token 到 cookie 交换，而不绕过浏览器认证。
 
+普通 Windows Web 仅发布不含凭据的发现记录，因为 Windows 不提供此 POSIX 所有权约定。POSIX Web 保留私有 bootstrap 发布。原生托管模式始终要求在就绪前发布私有 bootstrap；无法满足文件系统要求时拒绝启动。
+
 [Web 失败矩阵](tests/profiles/web/tests/web-failure-matrix.expected.e2e.ts)在 `test:expected` 中通过构建后的 CLI 验证启动失败与启用 `awaitWriteFinish` 的原生配置 HMR。它不调用模型 API，而是检查经过认证的 HTTP 响应、诊断、恢复、进程退出与 dispose；[启动验收测试](tests/profiles/web/tests/web-best-effort-startup.expected.e2e.ts)还覆盖随附 Web 的必需依赖与端口冲突。

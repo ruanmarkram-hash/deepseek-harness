@@ -84,7 +84,8 @@ public final class Fd199Journal: @unchecked Sendable {
       identity: identity,
       exportId: record.exportId,
       stoppedAt: record.stoppedAt,
-      manifest: record.manifest
+      manifest: record.manifest,
+      version: record.version
     )
     guard Fd199Proofs.manifestDigest(record.manifest) == record.manifestDigest else { throw Fd199Error.proof }
     if record.status == .activated {
@@ -94,7 +95,8 @@ public final class Fd199Journal: @unchecked Sendable {
         identity: identity,
         exportId: record.exportId,
         manifestDigest: record.manifestDigest,
-        generation: record.generation
+        generation: record.generation,
+        version: record.version
       )
     } else if record.activationProof != nil {
         throw Fd199Error.journal
@@ -242,7 +244,8 @@ public final class Fd199Journal: @unchecked Sendable {
       "activationProof", "exportId", "exportProof", "generation",
       "manifest", "manifestDigest", "status", "stoppedAt", "version",
     ])
-    guard let version = object["version"] as? Int, version == Fd199Proofs.recordVersion else { throw Fd199Error.journal }
+    let version = try fd199Generation(object["version"], minimum: 2)
+    guard version == 2 || version == 3 else { throw Fd199Error.journal }
     let exportId = try fd199String(object["exportId"])
     guard exportId.range(of: Fd199Journal.idPattern, options: .regularExpression) != nil else { throw Fd199Error.journal }
     let stoppedAt = try fd199String(object["stoppedAt"])
@@ -256,6 +259,7 @@ public final class Fd199Journal: @unchecked Sendable {
           manifestValue.count <= fd199MaximumFiles else { throw Fd199Error.journal }
     var manifest = [Fd199ManifestEntry]()
     var total = 0
+    var names = Set<String>()
     for entry in manifestValue {
       try fd199ExactKeys(entry, ["name", "sha256", "size"])
       let name = try fd199String(entry["name"])
@@ -263,9 +267,10 @@ public final class Fd199Journal: @unchecked Sendable {
       let size = try fd199Generation(entry["size"], minimum: 1)
       guard name.range(of: fd199ExportNamePattern, options: .regularExpression) != nil else { throw Fd199Error.journal }
       guard sha256.range(of: fd256HexPattern, options: .regularExpression) != nil else { throw Fd199Error.journal }
-      guard size <= fd199MaximumFileBytes else { throw Fd199Error.bounds }
+      guard size <= (version == 2 ? fd199MaximumFileBytes : fd199MaximumExportBytes) else { throw Fd199Error.bounds }
+      if version == 3, !names.insert(name).inserted { throw Fd199Error.journal }
       total += size
-      guard total <= 128 * 1024 * 1024 else { throw Fd199Error.bounds }
+      guard total <= fd199MaximumExportBytes else { throw Fd199Error.bounds }
       manifest.append(Fd199ManifestEntry(name: name, sha256: sha256, size: size))
     }
     let activationProof: String?

@@ -9,12 +9,14 @@
 import { z } from 'zod'
 import { Fd199AuthorityError } from './error.ts'
 
-/** Maximum encoded body bytes: one 8 MiB export file base64-encoded plus manifest overhead. */
+/** Maximum encoded body bytes, independent of logical artifact size. */
 export const REMOTE_HOST_FD199_MAX_BODY_BYTES = 16 * 1024 * 1024
 /** Maximum export files in one prepared transition, matching the sealed journal bound. */
 export const REMOTE_HOST_FD199_MAX_FILES = 8_192
-/** Maximum decoded export-file bytes, matching the sealed journal per-file bound. */
-export const REMOTE_HOST_FD199_MAX_FILE_BYTES = 8 * 1024 * 1024
+/** Maximum decoded bytes in one streaming chunk. */
+export const REMOTE_HOST_FD199_MAX_CHUNK_BYTES = 256 * 1024
+/** Maximum decoded bytes across all logical artifacts in one transition. */
+export const REMOTE_HOST_FD199_MAX_TOTAL_BYTES = 128 * 1024 * 1024
 
 /** Export artifact names the sealed FD199 grammar accepts. */
 const EXPORT_NAME = /^(?:sessions\/[A-Za-z0-9][A-Za-z0-9_-]{0,95}\.jsonl|attachments\/[a-f0-9]{64})$/
@@ -22,34 +24,39 @@ const HEX_SHA256 = /^[a-f0-9]{64}$/
 
 /** Direction-tagged union of every child-to-authority message. */
 export type ClientMessage =
-  | { readonly kind: 'hello' }
+  | { readonly kind: 'hello'; readonly protocolVersion: 2 }
   | { readonly kind: 'recover' }
   | { readonly kind: 'desktop-ready' }
-  | { readonly kind: 'prepare-file'; readonly name: string; readonly sha256: string; readonly bytesBase64: string }
+  | { readonly kind: 'prepare-file-begin'; readonly name: string }
+  | { readonly kind: 'prepare-file-chunk'; readonly offset: number; readonly bytesBase64: string }
+  | { readonly kind: 'prepare-file-end'; readonly size: number; readonly sha256: string }
   | { readonly kind: 'prepare-complete' }
   | { readonly kind: 'releasing' }
   | { readonly kind: 'activate' }
 
 /** Direction-tagged union of every authority-to-child message. */
 export type AuthorityMessage =
-  | { readonly kind: 'ready'; readonly protocolVersion: 1; readonly hostAppPath: string }
+  | { readonly kind: 'ready'; readonly protocolVersion: 2; readonly hostAppPath: string }
+  | { readonly kind: 'prepare-file-ack'; readonly name: string; readonly offset: number; readonly complete: boolean }
   | { readonly kind: 'snapshot'; readonly status: 'none' | 'exported' | 'releasing' | 'prepared' | 'activated'; readonly generation: number }
   | { readonly kind: 'release-authorized' }
   | { readonly kind: 'activated'; readonly generation: number }
   | { readonly kind: 'instruct'; readonly action: 'prepare' | 'activate' }
 
-const clientHello = z.object({ kind: z.literal('hello') }).strict()
+const clientHello = z.object({ kind: z.literal('hello'), protocolVersion: z.literal(2) }).strict()
 const clientRecover = z.object({ kind: z.literal('recover') }).strict()
 const clientDesktopReady = z.object({ kind: z.literal('desktop-ready') }).strict()
-const clientPrepareFile = z.object({
-  kind: z.literal('prepare-file'),
-  name: z.string().regex(EXPORT_NAME),
-  sha256: z.string().regex(HEX_SHA256),
-  bytesBase64: z.string().refine(value => /^[A-Za-z0-9_-]*$/.test(value) && Buffer.from(value, 'base64url').toString('base64url') === value,
+const byteOffset = z.number().int().min(0).max(REMOTE_HOST_FD199_MAX_TOTAL_BYTES)
+const clientPrepareBegin = z.object({ kind: z.literal('prepare-file-begin'), name: z.string().regex(EXPORT_NAME) }).strict()
+const clientPrepareEnd = z.object({ kind: z.literal('prepare-file-end'), size: byteOffset.min(1), sha256: z.string().regex(HEX_SHA256) }).strict()
+const clientPrepareChunk = z.object({
+  kind: z.literal('prepare-file-chunk'),
+  offset: byteOffset,
+  bytesBase64: z.string().max(Math.ceil(REMOTE_HOST_FD199_MAX_CHUNK_BYTES * 4 / 3)).refine(value => /^[A-Za-z0-9_-]+$/.test(value) && Buffer.from(value, 'base64url').toString('base64url') === value,
     'bytesBase64 must be canonical base64url'),
 }).strict().refine(
-  value => Buffer.from(value.bytesBase64, 'base64').byteLength <= REMOTE_HOST_FD199_MAX_FILE_BYTES,
-  { message: 'export file exceeds the per-file byte bound' },
+  value => Buffer.from(value.bytesBase64, 'base64url').byteLength <= REMOTE_HOST_FD199_MAX_CHUNK_BYTES,
+  { message: 'export chunk exceeds the byte bound' },
 )
 const clientPrepareComplete = z.object({ kind: z.literal('prepare-complete') }).strict()
 const clientReleasing = z.object({ kind: z.literal('releasing') }).strict()
@@ -57,7 +64,7 @@ const clientActivate = z.object({ kind: z.literal('activate') }).strict()
 
 const authorityReady = z.object({
   kind: z.literal('ready'),
-  protocolVersion: z.literal(1),
+  protocolVersion: z.literal(2),
   hostAppPath: z.string().refine(hostAppPathSchema, 'authority path must be an absolute filesystem path'),
 }).strict()
 const authoritySnapshot = z.object({
@@ -68,15 +75,17 @@ const authoritySnapshot = z.object({
 const authorityReleaseAuthorized = z.object({ kind: z.literal('release-authorized') }).strict()
 const authorityActivated = z.object({ kind: z.literal('activated'), generation: z.number().int().min(1).max(2_147_483_647) }).strict()
 const authorityInstruct = z.object({ kind: z.literal('instruct'), action: z.enum(['prepare', 'activate']) }).strict()
+const authorityPrepareAck = z.object({ kind: z.literal('prepare-file-ack'), name: z.string().regex(EXPORT_NAME), offset: byteOffset, complete: z.boolean() }).strict()
 
 const CLIENT_SCHEMAS = {
-  hello: clientHello, recover: clientRecover, 'desktop-ready': clientDesktopReady, 'prepare-file': clientPrepareFile,
+  hello: clientHello, recover: clientRecover, 'desktop-ready': clientDesktopReady,
+  'prepare-file-begin': clientPrepareBegin, 'prepare-file-chunk': clientPrepareChunk, 'prepare-file-end': clientPrepareEnd,
   'prepare-complete': clientPrepareComplete, releasing: clientReleasing, activate: clientActivate,
 } as const
 
 const AUTHORITY_SCHEMAS = {
   ready: authorityReady, snapshot: authoritySnapshot, 'release-authorized': authorityReleaseAuthorized,
-  activated: authorityActivated, instruct: authorityInstruct,
+  activated: authorityActivated, instruct: authorityInstruct, 'prepare-file-ack': authorityPrepareAck,
 } as const
 
 /** @param value - Candidate host application path announced by the authority. @returns whether it is a plausible absolute path. */

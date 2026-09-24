@@ -48,6 +48,8 @@ app 内含已签名原生 child、`DSHRemoteHostKeychain.xpc`、固定版本的 
 
 FD198/FD199 channel 使用有界 Remote Wire record 和固定的 direction-specific vocabulary。Host 会在生成 child 前关闭无关 descriptor，在 ownership transfer 需要时设置 close-on-exec，验证严格 record order 和公开 metadata，并在畸形输入、overflow、timeout、EOF 或 shutdown 时 teardown 并回收 child。Route secret 和 private key 绝不会穿过任一 channel。
 
+FD199 版本 2 通过逐片确认的 256 KiB 分片增量验证完整逻辑历史，原生内存不保留文件内容。完整导出仍受 128 MiB 总量和 8,192 个文件的上限约束。新 journal 和已签名 proof 使用版本 3；现有版本 2 记录保留原始 proof 字节、准入限制和激活版本。传输超时或验证中断绝不提升所有权。[交接参考](docs/hosted-runtime-runbook.md#fd199-streamed-history-handoff) 负责说明协议和恢复细节。
+
 认证后的 `connection.open` 携带完整的八字段连接 metadata。后续 `connection.frame` 和 child `connection.send` record 仅携带 `{ connectionId }`；child `connection.close` 精确携带 `{ connectionId, reason }`，其中 reason 必须是固定的 gateway 关闭原因。原生 frame pump 从 open record 派生此引用并比较解析后的连接 ID，拒绝额外或重复字段，不依赖 JSON 字段顺序或转义写法。陈旧的关闭消息不能停止当前连接。
 
 V3 WebSocket transport 会固定 production origin、route path、Host-token subprotocol、enrollment lifetime、route generation 和 connection epoch。其已认证 eight-flight handshake 通过受保护 agreement service 派生 directional X25519 material，认证规范 per-message data，拒绝 replay 或 substitution，并在 teardown 时清零原生 key material。

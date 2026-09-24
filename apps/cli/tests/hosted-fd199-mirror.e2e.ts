@@ -9,7 +9,7 @@
 
 import { spawn, type StdioOptions } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdtemp, realpath, readdir, lstat, rm, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, readdir, lstat, rm, readFile, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
@@ -62,6 +62,67 @@ interface IncomingRecord {
 
 type AuthorityMessageForTest = Parameters<typeof encodeAuthorityFrame>[0]
 
+/** Read only the copied profile's authoritative public Host identity; never replace it. */
+async function copiedHostEnrollmentId(home: string): Promise<string> {
+  const path = join(home, 'storages', 'remote_host_v3.json')
+  let text: string
+  try {
+    const info = await lstat(path)
+    if (!info.isFile() || info.size > 2 * 1024 * 1024) throw new Error('invalid copied Host identity store')
+    text = await readFile(path, 'utf8')
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return HOST_ENROLLMENT
+    throw new Error('copied Host identity store is unreadable')
+  }
+  let value: unknown
+  try { value = JSON.parse(text) } catch { throw new Error('invalid copied Host identity store') }
+  const object = (input: unknown): Record<string, unknown> => {
+    if (input === null || typeof input !== 'object' || Array.isArray(input)) throw new Error('invalid copied Host identity store')
+    return input as Record<string, unknown>
+  }
+  const tables = object(object(value).tables)
+  if (!Object.hasOwn(tables, 'host')) return HOST_ENROLLMENT
+  const host = object(tables.host)
+  if (!Object.hasOwn(host, 'identity')) return HOST_ENROLLMENT
+  const identity = object(host.identity)
+  const id = identity.hostEnrollmentId
+  if (Object.keys(identity).length !== 1 || typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{15,95}$/.test(id)) {
+    throw new Error('invalid copied Host identity record')
+  }
+  return id
+}
+
+describe('copied mirror Host identity reader', () => {
+  it.each([
+    { tables: {} },
+    { tables: { host: {} } },
+    { tables: { host: { identity: { hostEnrollmentId: 'existing_host_identity' } } } },
+  ])('preserves an existing identity and falls back only for absence', async (record) => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-mirror-identity-'))
+    try {
+      expect(await copiedHostEnrollmentId(home)).toBe(HOST_ENROLLMENT)
+      await mkdir(join(home, 'storages'))
+      const text = JSON.stringify(record)
+      await writeFile(join(home, 'storages', 'remote_host_v3.json'), text)
+      const expected = 'host' in record.tables && 'identity' in record.tables.host ? 'existing_host_identity' : HOST_ENROLLMENT
+      expect(await copiedHostEnrollmentId(home)).toBe(expected)
+      expect(await readFile(join(home, 'storages', 'remote_host_v3.json'), 'utf8')).toBe(text)
+    } finally { await rm(home, { recursive: true, force: true }) }
+  })
+
+  it.each(['not-json', '{}', '{"tables":null}', '{"tables":{"host":null}}', '{"tables":{"host":{"identity":null}}}',
+    '{"tables":{"host":{"identity":{}}}}', '{"tables":{"host":{"identity":{"hostEnrollmentId":"bad"}}}}'])
+  ('refuses a malformed existing identity store without replacing it', async (text) => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-mirror-identity-'))
+    try {
+      await mkdir(join(home, 'storages'))
+      await writeFile(join(home, 'storages', 'remote_host_v3.json'), text)
+      await expect(copiedHostEnrollmentId(home)).rejects.toThrow('invalid copied Host identity')
+      expect(await readFile(join(home, 'storages', 'remote_host_v3.json'), 'utf8')).toBe(text)
+    } finally { await rm(home, { recursive: true, force: true }) }
+  })
+})
+
 /** One connected socketpair as two real sockets. */
 async function connectedSocketPair(): Promise<[net.Socket, net.Socket]> {
   const server = net.createServer()
@@ -85,6 +146,10 @@ class ScriptedAuthority {
   private readonly queue: Buffer[] = []
   private sawRecover = false
   private sawPrepared = false
+  private activeFile: { name: string; size: number; hash: ReturnType<typeof createHash> } | undefined
+  private totalBytes = 0
+  private acceptedChunks = 0
+  private failure: unknown
 
   private readonly socket: net.Socket
 
@@ -95,12 +160,25 @@ class ScriptedAuthority {
     },
   ) {
     this.socket = socket
-    socket.on('data', (chunk) => { this.receive(chunk) })
+    socket.on('data', (chunk) => {
+      try {
+        this.receive(chunk)
+        // Match native ACK readiness; a polling sleep would throttle every record.
+        this.drain()
+      } catch (error) {
+        this.failure = error
+        socket.destroy()
+      }
+    })
+    socket.on('error', (error) => {
+      this.failure ??= error
+      socket.destroy()
+    })
   }
 
   private receive(chunk: Buffer): void {
     if (process.env.DSH_FD199_MIRROR_DEBUG !== undefined) {
-      console.error(`[mirror] authority chunk ${chunk.byteLength}B: ${chunk.toString('utf8').slice(0, 120)}`)
+      console.error(`[mirror] authority chunk ${chunk.byteLength}B`)
     }
     this.buffer = Buffer.concat([this.buffer, chunk])
     while (this.buffer.length >= 4) {
@@ -113,26 +191,56 @@ class ScriptedAuthority {
 
   /** Decodes and answers every queued frame; call repeatedly while waiting. */
   drain(): void {
+    if (this.failure !== undefined) throw this.failure
     while (this.queue.length > 0) {
       const body = this.queue.shift()
       if (body === undefined) return
       const message = decodeFrame('client', body)
       switch (message.kind) {
         case 'hello':
-          this.send({ kind: 'ready', protocolVersion: 1, hostAppPath: HOST_APP_PATH })
+          expect(message.protocolVersion).toBe(2)
+          this.send({ kind: 'ready', protocolVersion: 2, hostAppPath: HOST_APP_PATH })
           break
         case 'recover':
           this.sawRecover = true
           this.send(this.recoveredSnapshot)
           break
-        case 'prepare-file': {
-          if (message.kind !== 'prepare-file') break
+        case 'prepare-file-begin': {
+          expect(this.activeFile).toBeUndefined()
+          expect(this.manifest.some(entry => entry.name === message.name)).toBe(false)
+          expect(this.manifest.length).toBeLessThan(8_192)
+          this.activeFile = { name: message.name, size: 0, hash: createHash('sha256') }
+          this.send({ kind: 'prepare-file-ack', name: message.name, offset: 0, complete: false })
+          break
+        }
+        case 'prepare-file-chunk': {
+          const file = this.activeFile
+          if (file === undefined) throw new Error('export chunk without an active file')
+          expect(message.offset).toBe(file.size)
           const bytes = Buffer.from(message.bytesBase64, 'base64url')
-          expect(createHash('sha256').update(bytes).digest('hex')).toBe(message.sha256)
-          this.manifest.push({ name: message.name, sha256: message.sha256, size: bytes.byteLength })
+          expect(bytes.byteLength).toBeGreaterThan(0)
+          expect(bytes.byteLength).toBeLessThanOrEqual(256 * 1024)
+          expect(bytes.byteLength).toBeLessThanOrEqual(128 * 1024 * 1024 - this.totalBytes)
+          file.hash.update(bytes)
+          file.size += bytes.byteLength
+          this.totalBytes += bytes.byteLength
+          this.acceptedChunks += 1
+          this.send({ kind: 'prepare-file-ack', name: file.name, offset: file.size, complete: false })
+          break
+        }
+        case 'prepare-file-end': {
+          const file = this.activeFile
+          if (file === undefined) throw new Error('export end without an active file')
+          expect(file.size).toBeGreaterThan(0)
+          expect(message.size).toBe(file.size)
+          expect(file.hash.digest('hex')).toBe(message.sha256)
+          this.manifest.push({ name: file.name, sha256: message.sha256, size: file.size })
+          this.activeFile = undefined
+          this.send({ kind: 'prepare-file-ack', name: file.name, offset: file.size, complete: true })
           break
         }
         case 'prepare-complete':
+          expect(this.activeFile).toBeUndefined()
           expect(this.manifest.length).toBeGreaterThan(0)
           break
         case 'releasing':
@@ -150,6 +258,12 @@ class ScriptedAuthority {
 
   get recovered(): boolean { return this.sawRecover }
   get staged(): boolean { return this.sawPrepared }
+  get statistics(): { files: number; bytes: number; chunks: number; largest: number } {
+    return {
+      files: this.manifest.length, bytes: this.totalBytes, chunks: this.acceptedChunks,
+      largest: this.manifest.reduce((largest, entry) => Math.max(largest, entry.size), 0),
+    }
+  }
 
   send(message: AuthorityMessageForTest): void {
     const body = encodeAuthorityFrame(message)
@@ -354,6 +468,8 @@ describe.skipIf(COPIED_STATE_ONLY)('hosted FD199 mirror across real dsh web chil
   it('mirrors a desktop-created session identically to the v3 remote path after an attested activation', { timeout: 2_700_000, retry: 0 }, async () => {
     const configuredHome = process.env.DSH_FD199_HOSTED_DSH_HOME
     const home = configuredHome ?? await realpath(await mkdtemp(join(tmpdir(), 'dsh-fd199-mirror-home-')))
+    const preservedArtifacts = configuredHome === undefined ? undefined : await copiedSessionArtifacts(home)
+    const expectedHostEnrollment = await copiedHostEnrollmentId(home)
     const [firstRelayParent, firstRelayChild] = await connectedSocketPair()
     const [firstAuthorityParent, firstAuthorityChild] = await connectedSocketPair()
     const first = await spawnHostedChild('generation-1', home, firstRelayChild, firstAuthorityChild)
@@ -380,10 +496,12 @@ describe.skipIf(COPIED_STATE_ONLY)('hosted FD199 mirror across real dsh web chil
           drainFirst()
           assertChildAlive(first, 'web runtime registry')
           try {
-            return await readFile(registryPath, 'utf8')
+            const candidate = await readFile(registryPath, 'utf8')
+            if (parseWebRuntimeRegistry(candidate)?.pid === first.child.pid) return candidate
           } catch {
-            await new Promise(resolve => setTimeout(resolve, 200))
+            // The fresh owner replaces missing or stale discovery during boot.
           }
+          await new Promise(resolve => setTimeout(resolve, 200))
         }
         throw new Error('web runtime registry was never published')
       })()
@@ -402,9 +520,14 @@ describe.skipIf(COPIED_STATE_ONLY)('hosted FD199 mirror across real dsh web chil
       // 4. Attested transition: prepare streams the store export through the
       // native release barrier, then activation consumes the journal.
       console.error('[mirror] instructing prepare')
+      const prepareStartedAt = Date.now()
       firstAuthority.instruct('prepare')
       await eventually(() => {
         drainFirst()
+        if (first.child.exitCode !== null && !firstAuthority.staged) {
+          const completedBytes = firstAuthority.manifest.reduce((sum, entry) => sum + entry.size, 0)
+          throw new Error(`export stopped before release: ${firstAuthority.manifest.length} completed artifacts, ${completedBytes} bytes`)
+        }
         return firstAuthority.manifest.some(entry => entry.name === `sessions/${created.sessionId}.jsonl`)
       }, 120_000, 'the prepared manifest never contained the created session artifact')
       console.error(`[mirror] manifest entries: ${firstAuthority.manifest.length}`)
@@ -412,6 +535,12 @@ describe.skipIf(COPIED_STATE_ONLY)('hosted FD199 mirror across real dsh web chil
         drainFirst()
         return firstAuthority.staged
       }, 30_000, 'the release barrier never settled into prepared')
+      console.error(`[mirror] verified export ${JSON.stringify(firstAuthority.statistics)} in ${Date.now() - prepareStartedAt}ms`)
+      if (preservedArtifacts !== undefined) {
+        const originalSessions = new Set([...preservedArtifacts.keys()].map(path => basename(dirname(path))))
+        const exportedNames = new Set(firstAuthority.manifest.map(entry => entry.name))
+        expect([...originalSessions].every(id => exportedNames.has(`sessions/${id}.jsonl`))).toBe(true)
+      }
       // The release acknowledgement is durable before the former owner exits.
       // A fresh child, rather than the release-side process, must adopt the
       // prepared graph and receive the activation consume.
@@ -441,10 +570,12 @@ describe.skipIf(COPIED_STATE_ONLY)('hosted FD199 mirror across real dsh web chil
           drainSecond()
           assertChildAlive(second, 'adopted web runtime registry')
           try {
-            return await readFile(registryPath, 'utf8')
+            const candidate = await readFile(registryPath, 'utf8')
+            if (parseWebRuntimeRegistry(candidate)?.pid === second.child.pid) return candidate
           } catch {
-            await new Promise(resolve => setTimeout(resolve, 200))
+            // The previous owner may still have a discovery record on disk.
           }
+          await new Promise(resolve => setTimeout(resolve, 200))
         }
         throw new Error('adopting web runtime registry was never published')
       })()
@@ -467,7 +598,7 @@ describe.skipIf(COPIED_STATE_ONLY)('hosted FD199 mirror across real dsh web chil
       // the respawn before it sends its ordinary idempotent enrollment write.
       wire.send('enrollment.seed', {
         deviceId: DEVICE, label: 'Mirror Phone', signingPublicKey: SIGNING_KEY, agreementPublicKey: AGREEMENT_KEY,
-        deviceEnrollmentId: DEVICE_ENROLLMENT, hostEnrollmentId: HOST_ENROLLMENT,
+        deviceEnrollmentId: DEVICE_ENROLLMENT, hostEnrollmentId: expectedHostEnrollment,
       })
       wire.send('device.enroll', {
         deviceId: DEVICE, label: 'Mirror Phone', signingPublicKey: SIGNING_KEY, agreementPublicKey: AGREEMENT_KEY,
@@ -477,7 +608,7 @@ describe.skipIf(COPIED_STATE_ONLY)('hosted FD199 mirror across real dsh web chil
       const deviceEnrollmentId = enrolled?.metadata.deviceEnrollmentId as string
       const hostEnrollmentId = enrolled?.metadata.hostEnrollmentId as string
       expect(deviceEnrollmentId).toBe(DEVICE_ENROLLMENT)
-      expect(hostEnrollmentId).toBe(HOST_ENROLLMENT)
+      expect(hostEnrollmentId === expectedHostEnrollment).toBe(true)
 
       wire.send('route.upsert', {
         routeId: ROUTE, deviceId: DEVICE, deviceEnrollmentId,
@@ -485,15 +616,21 @@ describe.skipIf(COPIED_STATE_ONLY)('hosted FD199 mirror across real dsh web chil
       })
       wire.send('epoch.begin', { deviceId: DEVICE })
       await eventually(() => hasFrame(wire.records, 'epoch.begun'), 30_000, 'epoch was never begun')
-      wire.send('epoch.commit', { deviceId: DEVICE, connectionEpoch: 1 })
-      await eventually(() => hasFrame(wire.records, 'epoch.committed'), 30_000, 'epoch was never committed')
+      const connectionEpoch = wire.records.find(record => record.kind === WIRE_KIND['epoch.begun'])?.metadata.connectionEpoch
+      if (typeof connectionEpoch !== 'number' || !Number.isSafeInteger(connectionEpoch) || connectionEpoch < 1 || connectionEpoch > 2_147_483_647) {
+        throw new Error('epoch receipt has no valid connection epoch')
+      }
+      wire.send('epoch.commit', { deviceId: DEVICE, connectionEpoch })
+      await eventually(() => hasFrame(wire.records, 'epoch.committed', record => record.metadata.connectionEpoch === connectionEpoch),
+        30_000, 'epoch was never committed')
       wire.send('connection.open', {
         connectionId: CONNECTION, deviceId: DEVICE, enrollmentId: deviceEnrollmentId,
-        signingPublicKey: SIGNING_KEY, agreementPublicKey: AGREEMENT_KEY, routeId: ROUTE, generation: 1, connectionEpoch: 1,
+        signingPublicKey: SIGNING_KEY, agreementPublicKey: AGREEMENT_KEY, routeId: ROUTE, generation: 1, connectionEpoch,
       })
+      const requestId = `remote_request_fd19901_epoch_${connectionEpoch}`
       wire.send('connection.frame', { connectionId: CONNECTION }, new TextEncoder().encode(JSON.stringify({
-        version: 3, type: 'request', connectionEpoch: 1, requestId: 'remote_request_fd19901',
-        idempotencyKey: 'remote_retry_fd19901', method: 'session.list', payload: {},
+        version: 3, type: 'request', connectionEpoch, requestId,
+        idempotencyKey: `remote_retry_fd19901_epoch_${connectionEpoch}`, method: 'session.list', payload: {},
       })))
 
       console.error('[mirror] driving v3 enrollment and session.list')
@@ -513,7 +650,7 @@ describe.skipIf(COPIED_STATE_ONLY)('hosted FD199 mirror across real dsh web chil
       }
       expect(remoteEnvelope.version).toBe(3)
       expect(remoteEnvelope.type).toBe('response')
-      expect(remoteEnvelope.requestId).toBe('remote_request_fd19901')
+      expect(remoteEnvelope.requestId).toBe(requestId)
       expect(remoteEnvelope.result.ok, `remote session.list failed: ${JSON.stringify(remoteEnvelope.result)}`).toBe(true)
 
       // 6. The browser uses current Typert RPC while the released phone uses
@@ -524,6 +661,12 @@ describe.skipIf(COPIED_STATE_ONLY)('hosted FD199 mirror across real dsh web chil
       expect(desktopIds).toContain(created.sessionId)
       const remoteIds = remoteEnvelope.result.value.items.map(session => session.sessionId)
       expect(remoteIds.sort()).toEqual([...desktopIds].sort())
+      if (preservedArtifacts !== undefined) {
+        const after = await copiedSessionArtifacts(home)
+        expect([...preservedArtifacts].every(([path, digest]) => after.get(path) === digest)).toBe(true)
+        const originalSessions = new Set([...preservedArtifacts.keys()].map(path => basename(dirname(path))))
+        expect([...originalSessions].every(id => desktopIds.includes(id))).toBe(true)
+      }
     } finally {
       if (second !== undefined) await stopHostedChild(second)
       secondRelayParent?.destroy()

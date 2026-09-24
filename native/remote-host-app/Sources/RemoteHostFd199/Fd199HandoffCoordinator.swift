@@ -27,7 +27,7 @@ public protocol Fd199ChildProcessHandle: AnyObject {
   /** Resolves once the post-activation child has signalled V3 `runtime.ready`. */
   func waitUntilReady() throws
   /** Resolves only after the operating-system child has actually exited and been reaped. */
-  func waitUntilExited() throws
+  func waitUntilExited(timeoutMilliseconds: Int32) throws
   /** True once the child's channels have closed (it exited or was stopped). */
   var isClosed: Bool { get }
   /** Stops the child if it is still running. */
@@ -35,7 +35,7 @@ public protocol Fd199ChildProcessHandle: AnyObject {
 }
 
 /**
- Drives the full v1 ownership choreography across child generations:
+ Drives the FD199 ownership choreography across child generations:
 
  1. First spawn: the child recovers an empty journal and admits desktop work.
  2. `activatePhoneSessions()` instructs prepare; the child fences desktop,
@@ -205,12 +205,18 @@ public final class Fd199HandoffCoordinator: @unchecked Sendable {
     guard let service, let firstChild else { throw CoordinatorError.invalidState }
 
     phase = .transferringOwnership
-    try service.instruct(.prepare)
-
-    // The first process must have exited and been reaped before an adopter is
-    // spawned. Authority FD closure alone is not sufficient evidence.
-    try firstChild.waitUntilExited()
-    try service.promoteReapedReleaseToPrepared()
+    do {
+      try service.instruct(.prepare)
+      // This budget includes draining and streaming, not only process reap.
+      // Ordinary readiness retains its separate, shorter deadline.
+      try firstChild.waitUntilExited(timeoutMilliseconds: 120_000)
+      try service.promoteReapedReleaseToPrepared()
+    } catch {
+      service.stop()
+      firstChild.stop()
+      // Leave the coordinator fenced; an ambiguous release cannot admit work.
+      throw CoordinatorError.unavailable
+    }
     service.stop()
     lock.lock()
     authorityService = nil

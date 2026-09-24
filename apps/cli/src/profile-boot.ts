@@ -185,6 +185,23 @@ const webRuntimeRegistryLifecycle: WebRuntimeRegistryLifecycle = {
 }
 
 /**
+ * Ordinary Windows Web publishes noncredential discovery only: POSIX ownership
+ * cannot protect a launch capability there. Hosted mode always requires the
+ * private bootstrap and fails closed when its filesystem contract is absent.
+ * @param registry - complete public and private lifecycle operations.
+ * @param hostedRuntime - whether native hosted readiness requires bootstrap.
+ * @param platform - operating system owning filesystem permission semantics.
+ * @returns the lifecycle supported by this launch mode and platform.
+ */
+export function webRuntimeRegistryForPlatform(
+  registry: WebRuntimeRegistryLifecycle, hostedRuntime: boolean, platform = process.platform,
+): WebRuntimeRegistryLifecycle {
+  return !hostedRuntime && platform === 'win32'
+    ? { publish: registry.publish, remove: registry.remove }
+    : registry
+}
+
+/**
  * Publish a bound Web runtime and attach its owner-checked removal to the
  * root context. Disposal that wins while publication is pending removes the
  * just-published record instead of leaving stale discovery behind.
@@ -543,13 +560,13 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     let didPublishHostedRegistry = false
     if (options.profile === 'web') {
       const url = loopbackWebUrl(ctx)
-      if (url !== undefined) didPublishHostedRegistry = await publishBoundWebRuntimeRegistry(ctx, url, {
+      if (url !== undefined) didPublishHostedRegistry = await publishBoundWebRuntimeRegistry(ctx, url, webRuntimeRegistryForPlatform({
         ...webRuntimeRegistryLifecycle,
         publishBootstrap: async (owner) => {
           await publishWebRuntimeBootstrap(owner, ctx.connection.authenticatedUrl(owner.url))
         },
         removeBootstrap: removeOwnedWebRuntimeBootstrap,
-      })
+      }, hostedRuntime))
     }
     if (hostedRuntime) {
       if (!didPublishHostedRegistry) throw new Error('hosted Web runtime registry and bootstrap were not published')

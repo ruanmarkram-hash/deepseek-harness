@@ -29,6 +29,10 @@ final class ScriptedChild: @unchecked Sendable {
     try handle.write(contentsOf: frame)
   }
 
+  func send(_ messages: [Fd199ClientMessage]) throws {
+    for message in messages { try send(message) }
+  }
+
   /// Closes the child-side end so the authority observes a real EOF.
   func closeChannel() {
     handle.readabilityHandler = nil
@@ -145,16 +149,24 @@ func waitForContains(
 
 let fixtureBytes = Data("{\"id\":\"same-session\"}\n".utf8)
 
-func fixtureEntry(digest: Bool = true) -> Fd199ClientMessage {
+@Test("journal admits a verified logical history above eight MiB")
+func largeLogicalHistory() throws {
+  let identity = try Fd199StaticSigningIdentity()
+  let root = try makeJournalRoot()
+  defer { try? FileManager.default.removeItem(atPath: root) }
+  let journal = try Fd199Journal(root: root, identity: identity)
+  let manifest = [Fd199ManifestEntry(name: "sessions/large.jsonl", sha256: String(repeating: "a", count: 64), size: 10 * 1024 * 1024 + 1)]
+  let proof = try Fd199Proofs.signExport(identity, exportId: "large_history_export", stoppedAt: "2026-09-24T00:00:00Z", manifest: manifest)
+  let record = Fd199JournalRecord(version: Fd199Proofs.recordVersion, exportId: "large_history_export", stoppedAt: "2026-09-24T00:00:00Z", generation: 0, status: .prepared, exportProof: proof, activationProof: nil, manifest: manifest, manifestDigest: Fd199Proofs.manifestDigest(manifest))
+  try journal.stagePrepared(record)
+  #expect(try journal.recoverVerified() == record)
+}
+
+func fixtureEntry(digest: Bool = true) -> [Fd199ClientMessage] {
   let sha256 = Data(SHA256.hash(data: fixtureBytes)).hexString
-  return .prepareFile(
-    name: "sessions/session_00000001.jsonl",
-    sha256: digest ? sha256 : String(repeating: "a", count: 64),
-    bytesBase64: Data(fixtureBytes).base64EncodedString()
-      .replacingOccurrences(of: "+", with: "-")
-      .replacingOccurrences(of: "/", with: "_")
-      .replacingOccurrences(of: "=", with: "")
-  )
+  return [.prepareFileBegin(name: "sessions/session_00000001.jsonl"),
+          .prepareFileChunk(offset: 0, bytesBase64: base64url(fixtureBytes)),
+          .prepareFileEnd(size: fixtureBytes.count, sha256: digest ? sha256 : String(repeating: "a", count: 64))]
 }
 
 func makeJournalRoot() throws -> String {
@@ -169,6 +181,8 @@ func makeJournalRoot() throws -> String {
 func wireRoundTrip() throws {
   let messages: [Fd199AuthorityMessage] = [
     .ready(hostAppPath: "/Applications/DSH Host.app/Contents/MacOS/DSH Host"),
+    .prepareFileAck(name: "sessions/a.jsonl", offset: 0, complete: false),
+    .prepareFileAck(name: "sessions/a.jsonl", offset: 262144, complete: true),
     .snapshot(status: .none, generation: 0),
     .snapshot(status: .activated, generation: 3),
     .releaseAuthorized,
@@ -230,7 +244,7 @@ func journalLifecycle() throws {
   let digest = Fd199Proofs.manifestDigest(manifest)
   let exportProof = try Fd199Proofs.signExport(identity, exportId: "export_identity_0001", stoppedAt: "2026-08-21T00:00:00Z", manifest: manifest)
   let prepared = Fd199JournalRecord(
-    version: 2, exportId: "export_identity_0001", stoppedAt: "2026-08-21T00:00:00Z",
+    version: Fd199Proofs.recordVersion, exportId: "export_identity_0001", stoppedAt: "2026-08-21T00:00:00Z",
     generation: 0, status: .prepared, exportProof: exportProof, activationProof: nil,
     manifest: manifest, manifestDigest: digest
   )
@@ -240,7 +254,7 @@ func journalLifecycle() throws {
 
   let activationProof = try Fd199Proofs.signActivation(identity, exportId: prepared.exportId, manifestDigest: digest, generation: 1)
   let activated = Fd199JournalRecord(
-    version: 2, exportId: prepared.exportId, stoppedAt: prepared.stoppedAt,
+    version: Fd199Proofs.recordVersion, exportId: prepared.exportId, stoppedAt: prepared.stoppedAt,
     generation: 1, status: .activated, exportProof: exportProof, activationProof: activationProof,
     manifest: manifest, manifestDigest: digest
   )
@@ -264,7 +278,7 @@ func journalTamperRejection() throws {
   let manifest = [Fd199ManifestEntry(name: "sessions/session_00000001.jsonl", sha256: Data(SHA256.hash(data: fixtureBytes)).hexString, size: fixtureBytes.count)]
   let exportProof = try Fd199Proofs.signExport(identity, exportId: "export_identity_0001", stoppedAt: "2026-08-21T00:00:00Z", manifest: manifest)
   let prepared = Fd199JournalRecord(
-    version: 2, exportId: "export_identity_0001", stoppedAt: "2026-08-21T00:00:00Z",
+    version: Fd199Proofs.recordVersion, exportId: "export_identity_0001", stoppedAt: "2026-08-21T00:00:00Z",
     generation: 0, status: .prepared, exportProof: exportProof, activationProof: nil,
     manifest: manifest, manifestDigest: Fd199Proofs.manifestDigest(manifest)
   )
@@ -295,7 +309,7 @@ func journalPromotionRejectsTamperedReleasingRecord() throws {
   let journal = try Fd199Journal(root: root, identity: identity)
   let manifest = [Fd199ManifestEntry(name: "sessions/session_00000001.jsonl", sha256: Data(SHA256.hash(data: fixtureBytes)).hexString, size: fixtureBytes.count)]
   let record = Fd199JournalRecord(
-    version: 2, exportId: "export_identity_0001", stoppedAt: "2026-08-21T00:00:00Z",
+    version: Fd199Proofs.recordVersion, exportId: "export_identity_0001", stoppedAt: "2026-08-21T00:00:00Z",
     generation: 0, status: .exported,
     exportProof: try Fd199Proofs.signExport(identity, exportId: "export_identity_0001", stoppedAt: "2026-08-21T00:00:00Z", manifest: manifest),
     activationProof: nil, manifest: manifest, manifestDigest: Fd199Proofs.manifestDigest(manifest)
@@ -478,6 +492,8 @@ private final class ScriptedGenerationHandle: Fd199AuthorityChannelProviding, @u
   private(set) var outputHandler: (@Sendable (Fd199HostedChildOutput) -> Void)?
   private var closed = false
   private var didWaitForReady = false
+  var failExitWait = false
+  private(set) var exitWaitBudget: Int32?
   private let lock = NSLock()
 
   var isClosed: Bool {
@@ -514,7 +530,9 @@ private final class ScriptedGenerationHandle: Fd199AuthorityChannelProviding, @u
     lock.lock(); didWaitForReady = true; lock.unlock()
   }
 
-  func waitUntilExited() throws {
+  func waitUntilExited(timeoutMilliseconds: Int32) throws {
+    exitWaitBudget = timeoutMilliseconds
+    if failExitWait { throw Fd199HandoffCoordinator.CoordinatorError.unavailable }
     let deadline = Date().addingTimeInterval(30)
     while !isClosed, Date() < deadline { usleep(1_000) }
     guard isClosed else { throw Fd199HandoffCoordinator.CoordinatorError.unavailable }
@@ -527,6 +545,42 @@ private final class ScriptedGenerationHandle: Fd199AuthorityChannelProviding, @u
   func stop() {
     markClosedAndCloseAuthority()
   }
+}
+
+@Test("handoff deadline failure stops both channels without promoting or spawning an adopter")
+func handoffTimeoutStaysFenced() throws {
+  let root = try makeJournalRoot()
+  defer { try? FileManager.default.removeItem(atPath: root) }
+  let identity = try Fd199StaticSigningIdentity()
+  let (hostRelay, peerRelay) = try authoritySocketPair()
+  defer { try? peerRelay.close() }
+  let (hostAuthority, peerAuthority) = try authoritySocketPair()
+  let child = ScriptedChild(handle: peerAuthority)
+  defer { child.closeChannel() }
+  let handle = ScriptedGenerationHandle(hostRelay: hostRelay, hostAuthority: hostAuthority)
+  handle.failExitWait = true
+  var spawns = 0
+  let coordinator = Fd199HandoffCoordinator(identity: identity, hostAppPath: "/Applications/DSHHost.app", journalDirectory: root, spawn: {
+    spawns += 1
+    return handle
+  })
+  defer { coordinator.stop() }
+  Thread.detachNewThread {
+    do {
+      try child.send(.hello)
+      try waitForFrames(child, 1)
+      try child.send(.recover)
+      try waitForFrames(child, 2)
+      try child.send(.desktopReady)
+    } catch { Issue.record("timeout peer setup failed: \(error)") }
+  }
+  try coordinator.start()
+  #expect(throws: Fd199HandoffCoordinator.CoordinatorError.self) { try coordinator.activatePhoneSessions() }
+  #expect(handle.exitWaitBudget == 120_000)
+  #expect(handle.isClosed)
+  #expect(spawns == 1)
+  #expect(coordinator.phase == .transferringOwnership)
+  #expect(try Fd199Journal(root: root, identity: identity).recoverVerified() == nil)
 }
 
 @Test("coordinator drives prepare, relaunch, and activation across child generations")
@@ -654,14 +708,14 @@ func coordinatorActivatedRestartWaitsForBothReadinessFacts() throws {
   let exportProof = try Fd199Proofs.signExport(identity, exportId: exportId, stoppedAt: stoppedAt, manifest: manifest)
   let activationProof = try Fd199Proofs.signActivation(identity, exportId: exportId, manifestDigest: Fd199Proofs.manifestDigest(manifest), generation: 1)
   try journal.stagePrepared(Fd199JournalRecord(
-    version: 2, exportId: exportId, stoppedAt: stoppedAt, generation: 0,
+    version: Fd199Proofs.recordVersion, exportId: exportId, stoppedAt: stoppedAt, generation: 0,
     status: .prepared, exportProof: exportProof, activationProof: nil,
     manifest: manifest, manifestDigest: Fd199Proofs.manifestDigest(manifest)
   ))
   let prepared = try journal.recoverVerified()
   guard let prepared else { Issue.record("missing prepared journal"); return }
   #expect(try journal.transitionPrepared(expected: prepared, next: Fd199JournalRecord(
-    version: 2, exportId: exportId, stoppedAt: stoppedAt, generation: 1,
+    version: Fd199Proofs.recordVersion, exportId: exportId, stoppedAt: stoppedAt, generation: 1,
     status: .activated, exportProof: exportProof, activationProof: activationProof,
     manifest: manifest, manifestDigest: Fd199Proofs.manifestDigest(manifest)
   )))

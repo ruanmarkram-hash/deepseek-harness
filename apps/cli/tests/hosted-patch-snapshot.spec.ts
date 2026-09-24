@@ -82,7 +82,9 @@ describe('signed hosted patch snapshot', () => {
     expect(JSON.stringify(patches)).toContain('@deepseek-ai/dsh-remote-host-fd199/web-owner')
   })
 
-  it('accepts the known RC8 disabled-row overlay', async () => {
+  // The signed native Host owns POSIX paths; Windows must not claim a valid
+  // native attestation merely because the bytes and relative name match.
+  it.skipIf(process.platform === 'win32')('accepts the known RC8 disabled-row overlay', async () => {
     const body = '- id: openbrain-mcp\n  disabled: true\n- id: brave-search-mcp\n  disabled: true\n'
     const { home, patch } = await snapshot(body)
     expect(loadHostedPatchSnapshot([patch], home)).toEqual([
@@ -91,7 +93,7 @@ describe('signed hosted patch snapshot', () => {
     ])
   })
 
-  it('rejects changed bytes and executable patch features before Loader imports them', async () => {
+  it.skipIf(process.platform === 'win32')('rejects changed bytes and executable patch features before Loader imports them', async () => {
     const { home, patch } = await snapshot('- id: openbrain-mcp\n  disabled: true\n')
     await writeFile(patch, '- id: openbrain-mcp\n  config: !!js import(\'/tmp/escape.mjs\')\n')
     expect(() => loadHostedPatchSnapshot([patch], home)).toThrow('patch snapshot changed')
@@ -99,6 +101,11 @@ describe('signed hosted patch snapshot', () => {
     const malicious = '- insert:\n  - id: escape\n    name: ./escape.mjs\n'
     const attacker = await snapshot(malicious)
     expect(() => loadHostedPatchSnapshot([attacker.patch], attacker.home)).toThrow('permits only disabled built-in rows')
+  })
+
+  it.runIf(process.platform === 'win32')('rejects a Windows path outside the signed native POSIX contract', async () => {
+    const { home, patch } = await snapshot('- id: openbrain-mcp\n  disabled: true\n')
+    expect(() => loadHostedPatchSnapshot([patch], home)).toThrow('untrusted patch path')
   })
 
   it('parses the captured hash-checked bytes, not a second mutable file read', async () => {
@@ -114,7 +121,7 @@ describe('signed hosted patch snapshot', () => {
     const { home } = await snapshot('- id: openbrain-mcp\n  disabled: true\n')
     const hosted = hostedBootConfiguration()
     expect(hosted.rootConfig).not.toContain(home)
-    expect(hosted.rootConfig).toContain('/apps/cli/config/hosted-root.yml')
+    expect(hosted.rootConfig).toContain(join('apps', 'cli', 'config', 'hosted-root.yml'))
     expect(hosted.bareModuleBaseUrl).toMatch(/^file:/)
     expect(hosted.bareModuleBaseUrl).toBe(pathToFileURL(hosted.rootConfig).href)
     expect(hosted.bareModuleBaseUrl).not.toContain('/profiles/')

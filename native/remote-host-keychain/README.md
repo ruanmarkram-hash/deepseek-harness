@@ -14,6 +14,8 @@ Each connection must match the exact derived live process path, strict live and 
 
 The XPC interface exposes only public identity open, exact 32-byte X25519 agreement, constrained FD199 ownership-payload signing, and per-route epoch lease and transaction calls. The signing method accepts only the two canonical bounded FD199 ownership payload forms; it is not a general signing oracle. There is no JSON operation envelope, arbitrary profile selector, Keychain read operation, route-token operation, or generic signing or agreement API.
 
+FD199 signing validates the complete payload before opening the protected identity. Payloads are bounded at 2 MiB, matching the production journal ceiling, and must reproduce the exact canonical version-2 or version-3 export or activation bytes. Export validation retains the 8,192-file and 128 MiB aggregate limits, the version-2 8 MiB file limit, and version-3 unique names. Exact fields, bounded integers, names and digests are checked; duplicate JSON keys, alternate encodings and unsupported versions are refused. Accepted bytes are signed unchanged, preserving existing version-2 proofs.
+
 Epoch ownership is held by the authenticated XPC connection rather than a pathname or exported token. Explicit close and XPC invalidation release leases after a crash. Revocation may acquire the short serialized Keychain transaction while another Host owns the connection lease, allowing the durable revocation fence to reject that owner's next admission check.
 
 ## Keychain behavior

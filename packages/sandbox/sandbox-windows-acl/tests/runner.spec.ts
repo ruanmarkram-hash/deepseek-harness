@@ -539,11 +539,24 @@ describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
     mkdirSync(child)
     writeFileSync(join(granted, 'file.txt'), 'x')
     writeFileSync(join(child, 'deep.txt'), 'x')
+    // Preserve the inherited fixture DACL before the grant changes it. The
+    // probe below runs with the ordinary host token, whose explicit ACEs and
+    // enabled privileges can explain a platform-specific FullControl result.
+    const before = spawnSync('pwsh', ['-NoLogo', '-NonInteractive', '-NoProfile', '-Command', `
+'ROOT-BEFORE: ' + (Get-Acl -LiteralPath '${granted}').Sddl
+'CHILD-BEFORE: ' + (Get-Acl -LiteralPath '${child}').Sddl
+`], { encoding: 'utf8', timeout: 10_000 })
     const grant = AclWriteGrant.create(workspaceWriteSid(granted))
     grant.add(granted, true)
     try {
+      const newChild = join(granted, 'after-grant')
+      mkdirSync(newChild)
       const probe = `
 $ErrorActionPreference='SilentlyContinue'
+'ROOT-AFTER: ' + (Get-Acl -LiteralPath '${granted}').Sddl
+'CHILD-AFTER: ' + (Get-Acl -LiteralPath '${child}').Sddl
+'NEW-CHILD: ' + (Get-Acl -LiteralPath '${newChild}').Sddl
+whoami /priv
 Add-Type -Namespace P -Name F -MemberDefinition @'
 [DllImport("kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode, EntryPoint="CreateFileW")]
 public static extern IntPtr CreateFileW(string n, uint a, uint s, IntPtr sa, uint d, uint f, IntPtr t);
@@ -552,17 +565,22 @@ public static extern bool CloseHandle(IntPtr h);
 '@ | Out-Null
 function TryOpen([string]$label, [string]$path) {
   $h = [P.F]::CreateFileW($path, 0x10000000, 7, [IntPtr]::Zero, 3, 0x02000000, [IntPtr]::Zero)
-  if ($h -eq [IntPtr]::new(-1)) { "$($label): DENIED" } else { [void][P.F]::CloseHandle($h); "$($label): OK" }
+  $errorCode = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+  if ($h -eq [IntPtr]::new(-1)) { "$($label): DENIED (Win32Error=$errorCode)" } else { [void][P.F]::CloseHandle($h); "$($label): OK" }
 }
 TryOpen 'FILE' '${join(granted, 'file.txt')}'
 TryOpen 'NESTED-FILE' '${join(child, 'deep.txt')}'
 TryOpen 'DIRECTORY' '${child}'
+TryOpen 'AFTER-GRANT-CHILD' '${newChild}'
 `
       const result = spawnSync('pwsh', ['-NoLogo', '-NonInteractive', '-NoProfile', '-Command', probe], { encoding: 'utf8', timeout: 60_000 })
-      expect(result.status, `stderr: ${result.stderr}`).toBe(0)
-      expect(result.stdout).toContain('FILE: OK')
-      expect(result.stdout).toContain('NESTED-FILE: OK')
-      expect(result.stdout).toContain('DIRECTORY: DENIED')
+      const diagnostic = `before status=${String(before.status)} signal=${String(before.signal)} error=${String(before.error)}\n${before.stdout}\n${before.stderr}\nprobe status=${String(result.status)} signal=${String(result.signal)} error=${String(result.error)}\n${result.stdout}\n${result.stderr}`
+      expect(result.error, diagnostic).toBeUndefined()
+      expect(result.signal, diagnostic).toBeNull()
+      expect(result.status, diagnostic).toBe(0)
+      expect(result.stdout, diagnostic).toContain('FILE: OK')
+      expect(result.stdout, diagnostic).toContain('NESTED-FILE: OK')
+      expect(result.stdout, diagnostic).toContain('DIRECTORY: DENIED')
     } finally {
       grant.dispose()
       rmSync(granted, { recursive: true, force: true })

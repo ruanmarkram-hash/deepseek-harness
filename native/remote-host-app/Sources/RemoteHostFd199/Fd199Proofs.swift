@@ -85,18 +85,18 @@ public struct Fd199StaticSigningIdentity: Fd199SigningIdentity {
 /// exact UTF-8 of the fixed-key-order JSON the TypeScript peer and the Swift
 /// authority both reproduce; no serialization library participates.
 public enum Fd199Proofs {
-  /// The journal record version this module writes and accepts.
-  public static let recordVersion = 2
+  /// Newly exported records use version 3; recovery separately admits version 2.
+  public static let recordVersion = 3
 
   /**
    Builds the canonical export-proof payload: the stopped-owner fact, the
    export identity, the stopped instant, and every manifest entry digest.
    */
-  public static func exportPayload(exportId: String, stoppedAt: String, manifest: [Fd199ManifestEntry]) -> Data {
+  public static func exportPayload(exportId: String, stoppedAt: String, manifest: [Fd199ManifestEntry], version: Int = recordVersion) -> Data {
     let entries = manifest.map { entry in
       "{\"name\":\(jsonString(entry.name)),\"sha256\":\(jsonString(entry.sha256)),\"size\":\(entry.size)}"
     }.joined(separator: ",")
-    let text = "{\"exportId\":\(jsonString(exportId)),\"files\":[\(entries)],\"ownerState\":\"web-owner-stopped\",\"stoppedAt\":\(jsonString(stoppedAt)),\"version\":\(recordVersion)}"
+    let text = "{\"exportId\":\(jsonString(exportId)),\"files\":[\(entries)],\"ownerState\":\"web-owner-stopped\",\"stoppedAt\":\(jsonString(stoppedAt)),\"version\":\(version)}"
     return Data(text.utf8)
   }
 
@@ -104,8 +104,8 @@ public enum Fd199Proofs {
    Builds the canonical activation-proof payload: the export identity, its
    manifest digest, and the exact ownership generation being consumed.
    */
-  public static func activationPayload(exportId: String, manifestDigest: String, generation: Int) -> Data {
-    let text = "{\"exportId\":\(jsonString(exportId)),\"generation\":\(generation),\"manifestDigest\":\(jsonString(manifestDigest)),\"version\":\(recordVersion)}"
+  public static func activationPayload(exportId: String, manifestDigest: String, generation: Int, version: Int = recordVersion) -> Data {
+    let text = "{\"exportId\":\(jsonString(exportId)),\"generation\":\(generation),\"manifestDigest\":\(jsonString(manifestDigest)),\"version\":\(version)}"
     return Data(text.utf8)
   }
 
@@ -126,9 +126,10 @@ public enum Fd199Proofs {
     _ identity: Fd199SigningIdentity,
     exportId: String,
     stoppedAt: String,
-    manifest: [Fd199ManifestEntry]
+    manifest: [Fd199ManifestEntry],
+    version: Int = recordVersion
   ) throws -> String {
-    base64url(try identity.signature(exportPayload(exportId: exportId, stoppedAt: stoppedAt, manifest: manifest)))
+    base64url(try identity.signature(exportPayload(exportId: exportId, stoppedAt: stoppedAt, manifest: manifest, version: version)))
   }
 
   /**
@@ -138,9 +139,10 @@ public enum Fd199Proofs {
     _ identity: Fd199SigningIdentity,
     exportId: String,
     manifestDigest: String,
-    generation: Int
+    generation: Int,
+    version: Int = recordVersion
   ) throws -> String {
-    base64url(try identity.signature(activationPayload(exportId: exportId, manifestDigest: manifestDigest, generation: generation)))
+    base64url(try identity.signature(activationPayload(exportId: exportId, manifestDigest: manifestDigest, generation: generation, version: version)))
   }
 
   /**
@@ -151,13 +153,14 @@ public enum Fd199Proofs {
     identity: Fd199SigningIdentity,
     exportId: String,
     stoppedAt: String,
-    manifest: [Fd199ManifestEntry]
+    manifest: [Fd199ManifestEntry],
+    version: Int = recordVersion
   ) throws {
     let signature = try decodeProof(proofText)
     guard let publicKey = try? Curve25519.Signing.PublicKey(rawRepresentation: identity.publicKey) else {
       throw Fd199Error.proof
     }
-    guard publicKey.isValidSignature(signature, for: exportPayload(exportId: exportId, stoppedAt: stoppedAt, manifest: manifest)) else {
+    guard publicKey.isValidSignature(signature, for: exportPayload(exportId: exportId, stoppedAt: stoppedAt, manifest: manifest, version: version)) else {
       throw Fd199Error.proof
     }
   }
@@ -170,13 +173,14 @@ public enum Fd199Proofs {
     identity: Fd199SigningIdentity,
     exportId: String,
     manifestDigest: String,
-    generation: Int
+    generation: Int,
+    version: Int = recordVersion
   ) throws {
     let signature = try decodeProof(proofText)
     guard let publicKey = try? Curve25519.Signing.PublicKey(rawRepresentation: identity.publicKey) else {
       throw Fd199Error.proof
     }
-    guard publicKey.isValidSignature(signature, for: activationPayload(exportId: exportId, manifestDigest: manifestDigest, generation: generation)) else {
+    guard publicKey.isValidSignature(signature, for: activationPayload(exportId: exportId, manifestDigest: manifestDigest, generation: generation, version: version)) else {
       throw Fd199Error.proof
     }
   }

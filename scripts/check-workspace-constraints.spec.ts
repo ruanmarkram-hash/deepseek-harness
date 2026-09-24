@@ -229,7 +229,7 @@ describe('dsh family version coherence', () => {
     const manifest = { name: `@deepseek-ai/dsh-${app}`, version, private: true }
     expect(checkWorkspaceManifest({ dir, manifest })).toEqual([])
     expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, private: false } }))
-      .toContain(`${dir}/package.json: ${manifest.name}: package.json must set "private": true`)
+      .toContain(`${join(dir, 'package.json')}: ${manifest.name}: package.json must set "private": true`)
   })
 
   it('rejects a package carrying a stale shared version', () => {

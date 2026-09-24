@@ -1,10 +1,12 @@
 /** An explicit file-card request exercises SVG delivery without naming the present tool. */
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import type { IncomingMessage } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium, type Browser, type Page } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import WebSocket, { WebSocketServer } from 'ws'
 import type {} from '@deepseek-ai/dsh-tool-present/types'
 import { deriveReplayScript, parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 import {
@@ -28,8 +30,39 @@ describe('web e2e: requested SVG is explicitly delivered', () => {
   let cwd: string
   let replayRoot: string | undefined
   const connectionDiagnostics: string[] = []
+  const restoreSocketDiagnostics: (() => void)[] = []
 
   beforeAll(async () => {
+    // Observe this worker's real sockets without replacing transport behavior.
+    // A close code alone cannot distinguish a heartbeat termination from other
+    // abnormal closes, so retain the terminating call site and last Pong too.
+    // The forwarding spy supplies the actual server receiver with .call below.
+    // oxlint-disable-next-line typescript/unbound-method
+    const handleUpgrade = WebSocketServer.prototype.handleUpgrade
+    const upgrade = vi.spyOn(WebSocketServer.prototype, 'handleUpgrade').mockImplementation(function (this: WebSocketServer, request, socket, head, callback) {
+      handleUpgrade.call(this, request, socket, head, (websocket: WebSocket, admittedRequest: IncomingMessage) => {
+        const openedAt = Date.now()
+        let lastPongAt: number | undefined
+        const pong = (): void => { lastPongAt = Date.now() }
+        const closed = (code: number, reason: Buffer): void => {
+          connectionDiagnostics.push(`Host WebSocket closed code=${code} reason=${JSON.stringify(reason.toString())} after ${Date.now() - openedAt}ms`)
+        }
+        websocket.on('pong', pong)
+        websocket.on('close', closed)
+        const terminate = websocket.terminate.bind(websocket)
+        const terminated = vi.spyOn(websocket, 'terminate').mockImplementation(() => {
+          connectionDiagnostics.push(`Host WebSocket terminate after ${Date.now() - openedAt}ms; last Pong=${lastPongAt === undefined ? 'none' : `${Date.now() - lastPongAt}ms ago`}\n${new Error('termination call site').stack}`)
+          terminate()
+        })
+        restoreSocketDiagnostics.push(() => {
+          websocket.off('pong', pong)
+          websocket.off('close', closed)
+          terminated.mockRestore()
+        })
+        callback(websocket, admittedRequest)
+      })
+    })
+    restoreSocketDiagnostics.push(() => { upgrade.mockRestore() })
     let replayOverride: string | undefined
     if (MODE !== 'record') {
       replayRoot = await mkdtemp(join(tmpdir(), 'dsh-present-svg-replay-'))
@@ -73,7 +106,11 @@ describe('web e2e: requested SVG is explicitly delivered', () => {
       try {
         await scaffold?.close()
       } finally {
-        if (replayRoot !== undefined) await rm(replayRoot, { recursive: true, force: true })
+        try {
+          if (replayRoot !== undefined) await rm(replayRoot, { recursive: true, force: true })
+        } finally {
+          for (const restore of restoreSocketDiagnostics.splice(0).reverse()) restore()
+        }
       }
     }
   })

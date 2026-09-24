@@ -14,6 +14,8 @@ helper 会在监听或访问 Keychain 前验证自身 strict code signature 和�
 
 XPC interface 只暴露 public identity open、精确 32-byte X25519 agreement、受约束的 FD199 ownership-payload signing，以及 per-route epoch lease 和 transaction call。signing method 只接受两种规范且有界的 FD199 ownership payload form；它不是通用 signing oracle。这里没有 JSON operation envelope、任意 profile selector、Keychain read operation、route-token operation，也没有 generic signing 或 agreement API。
 
+FD199 signing 在打开受保护 identity 前验证完整 payload。Payload 上限为 2 MiB，与生产 journal 上限一致，并且必须精确重现规范的 version-2 或 version-3 export 或 activation byte。Export validation 保留 8,192-file 和 128 MiB aggregate limit、version-2 的 8 MiB file limit，以及 version-3 的名称唯一性要求。验证器检查精确字段、有界整数、名称和 digest；重复 JSON key、非规范编码及不支持的版本都会被拒绝。获准 byte 原样签名，保留现有 version-2 proof。
+
 Epoch ownership 绑定到已认证 XPC connection，而不是 pathname 或导出 token。显式关闭和 XPC invalidation 会在 crash 后释放 lease。即使另一 Host 持有 connection lease，revocation 仍可获取短暂的 serialized Keychain transaction，使 durable revocation fence 拒绝该 owner 的下一次 admission check。
 
 ## Keychain 行为

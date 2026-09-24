@@ -25,7 +25,9 @@ afterEach(async () => {
   await Promise.all(homes.splice(0).map(home => rm(home, { recursive: true, force: true })))
 })
 
-describe('private Web browser bootstrap', () => {
+// These real-filesystem checks prove the signed Host's POSIX ownership contract.
+// Windows rejection is tested separately, without pretending NTFS chmod is POSIX.
+describe.skipIf(process.platform === 'win32')('private Web browser bootstrap', () => {
   const token = Buffer.alloc(32, 7).toString('base64url')
   const url = 'http://127.0.0.1:43123'
   const authenticatedUrl = `${url}/?token=${token}`
@@ -135,6 +137,16 @@ async function testHome(): Promise<string> {
 }
 
 describe('Web runtime registry', () => {
+  it.runIf(process.platform === 'win32')('retains public discovery while private bootstrap fails closed without POSIX ownership', async () => {
+    const home = await realpath(await testHome())
+    const owner = await publishWebRuntimeRegistry({ home, url: 'http://127.0.0.1:43123' })
+    const authenticatedUrl = `${owner.url}/?token=${Buffer.alloc(32, 7).toString('base64url')}`
+    await expect(publishWebRuntimeBootstrap(owner, authenticatedUrl, home)).rejects.toThrow('runtime directory must be private')
+    expect(parseWebRuntimeRegistry(await readFile(webRuntimeRegistryPath(home), 'utf8'))).toEqual(owner)
+    await expect(readFile(webRuntimeBootstrapPath(home))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await removeOwnedWebRuntimeRegistry(owner, home)).toBe(true)
+  })
+
   it('atomically publishes a versioned, loopback-only JSON record', async () => {
     const home = await testHome()
     const record = await publishWebRuntimeRegistry({

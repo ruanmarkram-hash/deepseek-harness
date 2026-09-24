@@ -668,17 +668,52 @@ private final class RuntimeEnrollmentExchange: @unchecked Sendable, RelayRuntime
 }
 
 private final class BlockingRuntimeEnrollmentExchange: @unchecked Sendable, RelayRuntimeEnrollmentExchange {
-  private let started = DispatchSemaphore(value: 0)
+  private let lock = NSLock()
+  private var started = false
+  private var requestExpired = false
+  private var requestWaiter: CheckedContinuation<Bool, Never>?
   private let release = DispatchSemaphore(value: 0)
   private let response = RuntimeEnrollmentExchange().response
 
   func enroll(_ device: RelayEnrollmentDevice) throws -> RemoteWireRecord {
-    started.signal()
-    _ = release.wait(timeout: .now() + 1)
+    lock.lock()
+    started = true
+    let waiter = requestWaiter
+    requestWaiter = nil
+    lock.unlock()
+    waiter?.resume(returning: true)
+    guard release.wait(timeout: .now() + 1) == .success else { throw RelayEnrollmentError.unavailable }
     return response
   }
 
-  func waitForRequest() -> Bool { started.wait(timeout: .now() + 1) == .success }
+  func waitForRequest() async -> Bool {
+    let timeout = Task {
+      do { try await Task.sleep(for: .seconds(1)) } catch { return }
+      expireRequestWait()
+    }
+    defer { timeout.cancel() }
+    return await withCheckedContinuation { continuation in
+      lock.lock()
+      if started {
+        lock.unlock()
+        continuation.resume(returning: true)
+      } else if requestExpired {
+        lock.unlock()
+        continuation.resume(returning: false)
+      } else {
+        requestWaiter = continuation
+        lock.unlock()
+      }
+    }
+  }
+  private func expireRequestWait() {
+    lock.lock()
+    requestExpired = true
+    let waiter = requestWaiter
+    requestWaiter = nil
+    lock.unlock()
+    waiter?.resume(returning: false)
+  }
   func allowReceipt() { release.signal() }
 }
 
@@ -715,8 +750,9 @@ private final class BlockingRuntimeEnrollmentExchange: @unchecked Sendable, Rela
   let composition = try RelayHostPairingComposition.makeForTest(host: host, store: store, exchange: exchange, provisioner: provisioner, random: EnrollmentRandom(), now: { Date(timeIntervalSince1970: 1_787_011_200) })
   let candidate = try composition.acceptIPhoneIdentity(localEnrollmentDevice())
   let confirmation = Task { try await composition.confirmLocally(candidate) }
-  #expect(exchange.waitForRequest())
-  #expect(composition.lifecycle.state == .preparingRuntimeReceipt)
+  let requested = await exchange.waitForRequest()
+  #expect(requested)
+  if requested { #expect(composition.lifecycle.state == .preparingRuntimeReceipt) }
   exchange.allowReceipt()
   _ = try await confirmation.value
 }
@@ -889,12 +925,21 @@ private final class EnrollmentResultBox: @unchecked Sendable {
   let supervisor = try testSupervisor(host, runtime: runtime)
   let response = RuntimeEnrollmentExchange().response
   let responseBytes = try RemoteWire.encode(response) + Data([0, 0, 0])
-  DispatchQueue.global().async {
-    _ = runtime.availableData
-    try? runtime.write(contentsOf: responseBytes)
-  }
   let exchange = try supervisor.enrollmentExchange()
-  #expect(throws: RelayEnrollmentError.unavailable) { try exchange.enroll(try localEnrollmentDevice()) }
+  let completed = DispatchSemaphore(value: 0)
+  let result = EnrollmentResultBox()
+  DispatchQueue.global().async {
+    result.set(Result { try exchange.enroll(try localEnrollmentDevice()) })
+    completed.signal()
+  }
+  // Keep all runtime-side FileHandle access on this thread, before its defer
+  // closes the fixture. A late scheduled responder must not read a closed FD.
+  let request = try runtimeRequest(runtime)
+  #expect(request.kind == .deviceEnroll)
+  try runtime.write(contentsOf: responseBytes)
+  #expect(completed.wait(timeout: .now() + 1) == .success)
+  guard let completedResult = result.get() else { throw RelayEnrollmentError.unavailable }
+  #expect(throws: RelayEnrollmentError.unavailable) { try completedResult.get() }
   #expect(supervisor.isStoppedForTesting)
 }
 
@@ -913,11 +958,12 @@ private final class EnrollmentResultBox: @unchecked Sendable {
   let supervisor = try testSupervisor(host, runtime: runtime, timeout: 10)
   let runtimeDescriptor = runtime.fileDescriptor
   let partialSent = DispatchSemaphore(value: 0)
-  DispatchQueue.global().async {
-    // Capture the raw descriptor before dispatch. The test's defer can close
-    // its FileHandle after the assertion, so an asynchronous fixture must not
-    // touch FileHandle state while that teardown races.
+  let responderReady = DispatchSemaphore(value: 0)
+  let responderFinished = DispatchSemaphore(value: 0)
+  Thread.detachNewThread {
+    defer { responderFinished.signal() }
     var readiness = pollfd(fd: runtimeDescriptor, events: Int16(POLLIN), revents: 0)
+    responderReady.signal()
     guard poll(&readiness, 1, 1_000) > 0 else { return }
     var request = [UInt8](repeating: 0, count: 64)
     _ = read(runtimeDescriptor, &request, request.count)
@@ -926,6 +972,9 @@ private final class EnrollmentResultBox: @unchecked Sendable {
     partialSent.signal()
     usleep(100_000)
   }
+  responderReady.wait()
+  // The descriptor remains owned until the dedicated responder has stopped.
+  defer { responderFinished.wait() }
   let exchange = try supervisor.enrollmentExchange()
   let started = DispatchTime.now().uptimeNanoseconds
   #expect(throws: RelayEnrollmentError.unavailable) { try exchange.enroll(try localEnrollmentDevice()) }

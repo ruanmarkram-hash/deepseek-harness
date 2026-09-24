@@ -1,5 +1,8 @@
 /**
- * FD199-gated transfer of an already configured DSH Web service graph.
+ * Legacy test-only model of a configured DSH Web service graph handoff.
+ * Its version-2 capabilities and whole-file arrays remain separate from the
+ * production streaming client and Swift journal; no production entrypoint
+ * calls these helpers.
  *
  * The native carrier retains both the configured graph and its credentials.
  * TypeScript receives neither an ApiProxy nor a reusable activation token: it
@@ -87,10 +90,10 @@ export class NativeOwnedConfiguredDshHandoffError extends Error {
 }
 
 /**
- * Executes the Web-owner half of FD199. The native transaction owns the
+ * Executes the legacy model's Web-owner handoff. The supplied native transaction owns the
  * release/attest/stage boundary, so a crash cannot expose a released source
- * without durable native recovery state. This is not wired into the current
- * dsh web launch path: native must explicitly provide the capability.
+ * without durable native recovery state. Tests supply this capability;
+ * the production dsh web launch uses the remote-host-fd199 package instead.
  */
 export async function prepareConfiguredDshWebOwnerHandoff(
   owner: ConfiguredDshWebOwner,
@@ -112,8 +115,8 @@ export async function prepareConfiguredDshWebOwnerHandoff(
 /**
  * Starts the fixed FD198 remote gateway after native has atomically verified
  * and consumed the current FD199 activation. The Host gets an opaque stop
- * lease only, never a configured DSH API object. No production entrypoint
- * invokes it until the current Web owner supplies the required capability.
+ * lease only, never a configured DSH API object. This legacy helper has test
+ * callers only and does not start the production hosted runtime.
  */
 export async function startActivatedConfiguredDshHostRuntime(
   native: NativeActivatedConfiguredDshCapability,

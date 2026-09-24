@@ -49,6 +49,10 @@ export const coverageExemptHeavySuites: readonly CoverageExemptSuite[] = [
   { filter: 'scripts/oxlint-contract.spec.ts', exclude: 'scripts/oxlint-contract.spec.ts' },
   { filter: 'scripts/change-scope.spec.ts', exclude: 'scripts/change-scope.spec.ts' },
   { filter: 'scripts/translation-pairing-merge.spec.ts', exclude: 'scripts/translation-pairing-merge.spec.ts' },
+  // Executes scripts and the TypeScript compiler only; package src is parsed
+  // as compiler input, not executed. Keep every schema assertion in the plain
+  // gate without paying V8 instrumentation overhead on the full compiler graph.
+  { filter: 'scripts/persistence-schema.spec.ts', exclude: 'scripts/persistence-schema.spec.ts' },
   // Built-artifact proof. Packer/runtime src is threshold-excluded, and the
   // suite self-skips on unbuilt checkouts; the serial-windows complete
   // reference still starts this uninstrumented gate after its build gate, so

@@ -244,7 +244,13 @@ public final class Fd199HostedChildSupervisor: Fd199AuthorityChannelProviding, @
 
   /** Waits for the owned OS process to exit and reaps it before replacement. */
   public func waitUntilExited() throws {
-    let deadline = DispatchTime.now().uptimeNanoseconds + UInt64(readyWaitMilliseconds) * 1_000_000
+    try waitUntilExited(timeoutMilliseconds: readyWaitMilliseconds)
+  }
+
+  /** Uses an explicit ownership-transfer budget without changing normal readiness. */
+  public func waitUntilExited(timeoutMilliseconds: Int32) throws {
+    guard timeoutMilliseconds > 0 else { throw Fd199HostedChildSupervisorError.invalidState }
+    let deadline = DispatchTime.now().uptimeNanoseconds + UInt64(timeoutMilliseconds) * 1_000_000
     while true {
       lock.lock()
       let pid = childPID

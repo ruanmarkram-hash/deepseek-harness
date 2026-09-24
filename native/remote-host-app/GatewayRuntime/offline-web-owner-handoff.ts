@@ -1,4 +1,9 @@
-/** Offline-only FD199 Web-owner handoff state machine. */
+/**
+ * Legacy test-only Web-owner handoff model, frozen at schema version 2.
+ * Its `files` entries use `bytes`, not the production Swift journal's
+ * `manifest` entries with `size`. It retains the 8 MiB file limit and does
+ * not implement production FD199 wire version 2 or journal version 3.
+ */
 import { createHash } from 'node:crypto'
 
 const VERSION = 2; const MAX_FILES = 8_192; const MAX_BYTES = 128 * 1024 * 1024; const MAX_FILE_BYTES = 8 * 1024 * 1024
@@ -44,7 +49,7 @@ export class OfflineWebOwnerHandoffError extends Error { constructor() { super('
 export class OfflineWebOwnerHandoff {
   private writes = Promise.resolve()
   private constructor(private readonly journal: NativeFd199PrivateJournal, private readonly authority: NativeFd199HandoffAuthority) {}
-  /** Opens one native-owned private journal. Production remains inert until FD199 is linked. */
+  /** Opens the legacy model's supplied journal; no production entrypoint uses this helper. */
   static async open(authority: NativeFd199HandoffAuthority): Promise<OfflineWebOwnerHandoff> { try { return new OfflineWebOwnerHandoff(await authority.openPrivateJournal(), authority) } catch { throw new OfflineWebOwnerHandoffError() } }
   /** Recovers only a re-verified export and, if active, a re-verified signed transition. */
   async recover(): Promise<OfflineWebOwnerHandoffState | undefined> {

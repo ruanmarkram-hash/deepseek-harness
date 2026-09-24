@@ -15,7 +15,9 @@ public enum Fd199ClientMessage: Equatable, Sendable {
   case hello
   case recover
   case desktopReady
-  case prepareFile(name: String, sha256: String, bytesBase64: String)
+  case prepareFileBegin(name: String)
+  case prepareFileChunk(offset: Int, bytesBase64: String)
+  case prepareFileEnd(size: Int, sha256: String)
   case prepareComplete
   case releasing
   case activate
@@ -24,6 +26,7 @@ public enum Fd199ClientMessage: Equatable, Sendable {
 /// Direction-tagged authority-to-child messages.
 public enum Fd199AuthorityMessage: Equatable, Sendable {
   case ready(hostAppPath: String)
+  case prepareFileAck(name: String, offset: Int, complete: Bool)
   case snapshot(status: Fd199OwnershipStatus, generation: Int)
   case releaseAuthorized
   case activated(generation: Int)
@@ -46,16 +49,20 @@ public enum Fd199InstructionAction: Equatable, Sendable {
 }
 
 /// The only protocol version this module speaks.
-public let fd199ProtocolVersion = 1
+public let fd199ProtocolVersion = 2
 
-/// Maximum encoded body bytes: one 8 MiB export file base64-encoded plus overhead.
+/// Maximum encoded control body bytes.
 public let fd199MaximumBodyBytes = 16 * 1024 * 1024
 
 /// Maximum export files in one prepared transition.
 public let fd199MaximumFiles = 8_192
 
-/// Maximum decoded export-file bytes.
+/// Legacy version 2 journal logical-file bound.
 public let fd199MaximumFileBytes = 8 * 1024 * 1024
+/// Maximum decoded bytes in one streaming chunk.
+public let fd199MaximumChunkBytes = 256 * 1024
+/// Maximum decoded bytes across the complete export.
+public let fd199MaximumExportBytes = 128 * 1024 * 1024
 
 let fd199ExportNamePattern = "^sessions\\/[A-Za-z0-9][A-Za-z0-9_-]{0,95}\\.jsonl$|^attachments\\/[a-f0-9]{64}$"
 let fd256HexPattern = "^[a-f0-9]{64}$"
@@ -70,6 +77,12 @@ public func fd199DecodeAuthorityFrame(_ body: Data) throws -> Fd199AuthorityMess
   let object = try fd199StrictObject(body)
   guard let kind = object["kind"] as? String else { throw Fd199Error.malformed }
   switch kind {
+  case "prepare-file-ack":
+    try fd199ExactKeys(object, ["kind", "name", "offset", "complete"])
+    let name = try fd199ExportName(object["name"])
+    guard let complete = object["complete"] as? Bool,
+          CFGetTypeID(object["complete"] as CFTypeRef) == CFBooleanGetTypeID() else { throw Fd199Error.malformed }
+    return .prepareFileAck(name: name, offset: try fd199Generation(object["offset"], minimum: 0), complete: complete)
   case "ready":
     try fd199ExactKeys(object, ["kind", "protocolVersion", "hostAppPath"])
     guard object["protocolVersion"] as? Int == fd199ProtocolVersion else { throw Fd199Error.malformed }
@@ -106,7 +119,8 @@ public func fd199DecodeClientFrame(_ body: Data) throws -> Fd199ClientMessage {
   guard let kind = object["kind"] as? String else { throw Fd199Error.malformed }
   switch kind {
   case "hello":
-    try fd199ExactKeys(object, ["kind"])
+    try fd199ExactKeys(object, ["kind", "protocolVersion"])
+    guard try fd199Generation(object["protocolVersion"], minimum: 2) == fd199ProtocolVersion else { throw Fd199Error.malformed }
     return .hello
   case "recover":
     try fd199ExactKeys(object, ["kind"])
@@ -114,17 +128,22 @@ public func fd199DecodeClientFrame(_ body: Data) throws -> Fd199ClientMessage {
   case "desktop-ready":
     try fd199ExactKeys(object, ["kind"])
     return .desktopReady
-  case "prepare-file":
-    try fd199ExactKeys(object, ["kind", "name", "sha256", "bytesBase64"])
-    let name = try fd199String(object["name"])
+  case "prepare-file-begin":
+    try fd199ExactKeys(object, ["kind", "name"])
+    return .prepareFileBegin(name: try fd199ExportName(object["name"]))
+  case "prepare-file-end":
+    try fd199ExactKeys(object, ["kind", "size", "sha256"])
     let sha256 = try fd199String(object["sha256"])
-    let bytesBase64 = try fd199String(object["bytesBase64"])
-    guard name.range(of: fd199ExportNamePattern, options: .regularExpression) != nil else { throw Fd199Error.malformed }
     guard sha256.range(of: fd256HexPattern, options: .regularExpression) != nil else { throw Fd199Error.malformed }
+    return .prepareFileEnd(size: try fd199Generation(object["size"], minimum: 1), sha256: sha256)
+  case "prepare-file-chunk":
+    try fd199ExactKeys(object, ["kind", "offset", "bytesBase64"])
+    let bytesBase64 = try fd199String(object["bytesBase64"])
     guard !bytesBase64.isEmpty, bytesBase64.range(of: "^[A-Za-z0-9_-]*$", options: .regularExpression) != nil else { throw Fd199Error.malformed }
     guard let decoded = Data(base64Encoded: fd199PaddedBase64url(bytesBase64)),
-          decoded.count <= fd199MaximumFileBytes else { throw Fd199Error.bounds }
-    return .prepareFile(name: name, sha256: sha256, bytesBase64: bytesBase64)
+          !decoded.isEmpty, decoded.count <= fd199MaximumChunkBytes else { throw Fd199Error.bounds }
+    guard base64url(decoded) == bytesBase64 else { throw Fd199Error.malformed }
+    return .prepareFileChunk(offset: try fd199Generation(object["offset"], minimum: 0), bytesBase64: bytesBase64)
   case "prepare-complete":
     try fd199ExactKeys(object, ["kind"])
     return .prepareComplete
@@ -146,13 +165,17 @@ public func fd199EncodeClientMessage(_ message: Fd199ClientMessage) throws -> Da
   let text: String
   switch message {
   case .hello:
-    text = "{\"kind\":\"hello\"}"
+    text = "{\"kind\":\"hello\",\"protocolVersion\":2}"
   case .recover:
     text = "{\"kind\":\"recover\"}"
   case .desktopReady:
     text = "{\"kind\":\"desktop-ready\"}"
-  case let .prepareFile(name, sha256, bytesBase64):
-    text = "{\"kind\":\"prepare-file\",\"name\":\(jsonString(name)),\"sha256\":\(jsonString(sha256)),\"bytesBase64\":\(jsonString(bytesBase64))}"
+  case let .prepareFileBegin(name):
+    text = "{\"kind\":\"prepare-file-begin\",\"name\":\(jsonString(name))}"
+  case let .prepareFileChunk(offset, bytesBase64):
+    text = "{\"kind\":\"prepare-file-chunk\",\"offset\":\(offset),\"bytesBase64\":\(jsonString(bytesBase64))}"
+  case let .prepareFileEnd(size, sha256):
+    text = "{\"kind\":\"prepare-file-end\",\"size\":\(size),\"sha256\":\(jsonString(sha256))}"
   case .prepareComplete:
     text = "{\"kind\":\"prepare-complete\"}"
   case .releasing:
@@ -169,6 +192,8 @@ public func fd199EncodeClientMessage(_ message: Fd199ClientMessage) throws -> Da
 public func fd199EncodeAuthorityMessage(_ message: Fd199AuthorityMessage) throws -> Data {
   let text: String
   switch message {
+  case let .prepareFileAck(name, offset, complete):
+    text = "{\"kind\":\"prepare-file-ack\",\"name\":\(jsonString(name)),\"offset\":\(offset),\"complete\":\(complete)}"
   case let .ready(hostAppPath):
     text = "{\"kind\":\"ready\",\"protocolVersion\":\(fd199ProtocolVersion),\"hostAppPath\":\(fd199JsonString(hostAppPath))}"
   case let .snapshot(status, generation):
@@ -207,6 +232,7 @@ func fd199StrictObject(_ body: Data) throws -> [String: Any] {
 struct StrictCursor {
   let characters: [Character]
   var position = 0
+  private var depth = 0
 
   init(text: String) {
     characters = Array(text)
@@ -235,6 +261,9 @@ struct StrictCursor {
   }
 
   mutating func parseValue() throws -> Any {
+    guard depth < 32 else { throw Fd199Error.bounds }
+    depth += 1
+    defer { depth -= 1 }
     skipWhitespace()
     let character = try peek()
     if character == "{" { return try parseObject() }
@@ -265,7 +294,7 @@ struct StrictCursor {
   }
 
   mutating func parseString() throws -> String {
-    _ = try take()
+    guard try take() == "\"" else { throw Fd199Error.malformed }
     var output = ""
     while true {
       guard position < characters.count else { throw Fd199Error.malformed }
@@ -351,6 +380,12 @@ func fd199String(_ value: Any?) throws -> String {
   return text
 }
 
+func fd199ExportName(_ value: Any?) throws -> String {
+  let name = try fd199String(value)
+  guard name.range(of: fd199ExportNamePattern, options: .regularExpression) != nil else { throw Fd199Error.malformed }
+  return name
+}
+
 func fd199Status(_ value: Any?) throws -> Fd199OwnershipStatus {
   guard let text = value as? String else { throw Fd199Error.malformed }
   switch text {
@@ -374,7 +409,7 @@ func fd199StatusText(_ status: Fd199OwnershipStatus) -> String {
 }
 
 func fd199Generation(_ value: Any?, minimum: Int) throws -> Int {
-  guard let number = value as? NSNumber, let integer = number as? Int,
+  guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(), let integer = number as? Int,
         integer >= minimum, integer <= 2_147_483_647, number == NSNumber(value: integer) else {
     throw Fd199Error.malformed
   }

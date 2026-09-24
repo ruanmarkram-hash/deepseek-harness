@@ -52,7 +52,7 @@ export class CurrentWebFd199Lifecycle implements Fd199DesktopWriteFence {
    * @param native - Native same-store transition authority receiving the stopped state.
    */
   releaseForNative(
-    exportStoppedState: () => Promise<readonly Fd199ExportFile[]>,
+    exportStoppedState: (signal: AbortSignal) => AsyncIterable<Fd199ExportFile>,
     native: Fd199SameStoreTransition,
   ): Promise<void> {
     if (this.transition !== undefined) return this.transition
@@ -75,7 +75,7 @@ export class CurrentWebFd199Lifecycle implements Fd199DesktopWriteFence {
   }
 
   private async release(
-    exportStoppedState: () => Promise<readonly Fd199ExportFile[]>,
+    exportStoppedState: (signal: AbortSignal) => AsyncIterable<Fd199ExportFile>,
     native: Fd199SameStoreTransition,
   ): Promise<void> {
     try {
@@ -85,8 +85,7 @@ export class CurrentWebFd199Lifecycle implements Fd199DesktopWriteFence {
       // type owns it at this typed same-process boundary.
       this.state = 'quiescing'
       if (this.active !== 0) await new Promise<void>((resolve) => { this.drained = resolve })
-      const files = await exportStoppedState()
-      await native.prepareReleasedStore({ files })
+      await native.prepareReleasedStore({ exportStoppedState })
       this.state = 'released'
     } catch {
       // A failed native transition is ambiguous about store release. Retain the

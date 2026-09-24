@@ -1,21 +1,17 @@
 /** Signed-Host FD199 ownership-handoff types. @module @deepseek-ai/dsh-remote-host-fd199/types */
 
 /** The only FD199 protocol version this client speaks. */
-export type Fd199ProtocolVersion = 1
+export type Fd199ProtocolVersion = 2
 
 /**
- * One immutable stopped-owner export file. Byte equality with the sealed
- * GatewayRuntime `QuiescedWebOwnerExportFile` is required by the shared
- * native journal format; the structural duplicate stays local because the
- * sealed closure is not a workspace package.
+ * One complete logical artifact streamed while its owner remains stopped.
+ * Chunk boundaries have no meaning in the canonical logical file.
  */
 export interface Fd199ExportFile {
   /** Repository-relative artifact name validated against the shared FD199 grammar. */
   readonly name: string
-  /** Lowercase hex SHA-256 of {@link bytes}. */
-  readonly sha256: string
-  /** Exact file bytes. */
-  readonly bytes: Uint8Array
+  /** Ordered nonempty chunks of the exact file bytes, consumed once. */
+  readonly bytes: AsyncIterable<Uint8Array>
 }
 
 /** Durable ownership facts the native journal reports after native revalidation. */
@@ -50,18 +46,17 @@ export interface Fd199DesktopWriteFence {
  */
 export interface Fd199WebOwner {
   /** Produces the complete immutable export while the graph still owns the store. */
-  exportStoppedState(): Promise<readonly Fd199ExportFile[]>
+  exportStoppedState(signal: AbortSignal): AsyncIterable<Fd199ExportFile>
 }
 
 /**
- * The atomic same-store transition the native authority performs. Structural
- * twin of the sealed GatewayRuntime capability so one client implementation
- * serves both compositions.
+ * The atomic streaming same-store transition the native authority performs.
+ * Legacy test-only GatewayRuntime array capabilities are separate contracts.
  */
 export interface Fd199SameStoreTransition {
-  readonly kind: 'native-attested-fd199-same-store-transition-v1'
+  readonly kind: 'native-attested-fd199-same-store-transition-v2'
   prepareReleasedStore(input: Readonly<{
-    files: readonly Fd199ExportFile[]
+    exportStoppedState: (signal: AbortSignal) => AsyncIterable<Fd199ExportFile>
   }>): Promise<void>
 }
 
