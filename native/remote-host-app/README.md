@@ -10,6 +10,8 @@ The release runs only as a canonical, non-symlinked `DSHHost.app` at `/Applicati
 
 The app contains the signed native children, `DSHRemoteHostKeychain.xpc`, the pinned Node executable, the bundled `dsh web` entrypoint, and its complete copied runtime closure. Production never resolves Node from `PATH`, follows a source-checkout path, or executes an external symlink farm. The outer app signature seals the fixed resource-relative layout and install-specific hosted-Web configuration before any hosted code runs.
 
+The closure assembler resolves each production dependency from its installed declaring package, preserves competing third-party versions in ordinary nested `node_modules`, and keeps first-party packages at one signed-root identity. Missing required dependencies, competing first-party identities, changed dependency edges, or newly exposed optional providers fail assembly. Offline `npm pack --dry-run --ignore-scripts --json --workspaces=false` selects published files without executing package lifecycle scripts; declared runtime assets and implicit entry files remain available, while npm excludes unpublished files. The graph owns dependency placement, every copied file must be regular and package-local, and the sealed tree contains no symlinks.
+
 `CFBundleIconFile` selects the shared `DeepSeek.icns` resource, copied into the Host before signing. The [Desktop icon packaging reference](../../apps/desktop/README.md) owns artwork generation and verification.
 
 ## Pairing and activation

@@ -57,7 +57,10 @@ declare module '@deepseek-ai/cordis' {
 }
 
 const NAME = 'dsh'
-const HOSTED_ROOT_CONFIG = realpathSync.native(fileURLToPath(new URL('../config/hosted-root.yml', import.meta.url)))
+/** Resolve native-only resources only when the signed hosted composition is requested. */
+function hostedRootConfig(): string {
+  return realpathSync.native(fileURLToPath(new URL('../config/hosted-root.yml', import.meta.url)))
+}
 
 const HOSTED_PATCH_HASH_ENV = 'DSH_HOSTED_PATCH_SHA256'
 const HOSTED_PATCH_RELATIVE_ENV = 'DSH_HOSTED_PATCH_RELATIVE'
@@ -113,7 +116,8 @@ export function parseHostedPatchSnapshotBytes(content: string, expectedHash: str
 
 /** The sealed files and resolver base a hosted child uses, never DSH_HOME. */
 export function hostedBootConfiguration(): { rootConfig: string; bareModuleBaseUrl: string } {
-  return { rootConfig: HOSTED_ROOT_CONFIG, bareModuleBaseUrl: pathToFileURL(HOSTED_ROOT_CONFIG).href }
+  const rootConfig = hostedRootConfig()
+  return { rootConfig, bareModuleBaseUrl: pathToFileURL(rootConfig).href }
 }
 
 /**
@@ -122,12 +126,13 @@ export function hostedBootConfiguration(): { rootConfig: string; bareModuleBaseU
  */
 export async function hostedRuntimeResolution(): Promise<RuntimeResolution> {
   const installation = await createRuntimeResolution({ installAnchor: INSTALL_ANCHOR, home: dirname(INSTALL_ANCHOR) })
-  return Object.freeze({ ...installation, profileDir: dirname(HOSTED_ROOT_CONFIG) })
+  return Object.freeze({ ...installation, profileDir: dirname(hostedRootConfig()) })
 }
 
 /** Builds a hosted profile solely from package names resolved at the sealed CLI anchor. */
 export function sealedHostedProfile(): Profile {
-  const profileDirectory = dirname(HOSTED_ROOT_CONFIG)
+  const rootConfig = hostedRootConfig()
+  const profileDirectory = dirname(rootConfig)
   const layers = HOSTED_WEB_BUNDLES.map((packageName) => {
     const packageDir = resolveBundleDir(NAME, packageName, INSTALL_ANCHOR, profileDirectory)
     const bundle = readProfileManifest(NAME, packageDir).dsh?.bundle
@@ -135,7 +140,7 @@ export function sealedHostedProfile(): Profile {
     const patchPaths = bundlePatchPaths(packageDir, bundle)
     return { packageName, packageDir, patchPaths, patches: patchPaths.flatMap(path => loadOverlayPatches(NAME, path)) }
   })
-  return { name: 'web', dir: profileDirectory, layers, patchPath: HOSTED_ROOT_CONFIG, patches: [] }
+  return { name: 'web', dir: profileDirectory, layers, patchPath: rootConfig, patches: [] }
 }
 
 /** The only Web-server facts the launcher needs after a Web profile binds. */

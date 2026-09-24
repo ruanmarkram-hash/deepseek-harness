@@ -1,10 +1,11 @@
 // Materialize the hosted child's dynamic-import closure INSIDE the signed app.
 // Never create external symlinks: inherited FD198/199 must not reach mutable code.
-import { cpSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { cpSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { join, dirname, relative, sep } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { collectHostedGraph, copyHostedPackages, planHostedLayout } from './hosted-module-closure.mjs'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const repo = dirname(dirname(dirname(scriptDir)))
@@ -47,46 +48,9 @@ if (manifestOnly) {
   process.exit(0)
 }
 
-const nameToTarget = new Map()
-const manifests = new Map()
-const scannedModuleRoots = new Set()
-const pnpmRoots = readdirSync(`${repo}/node_modules/.pnpm`)
-function resolveFromPnpmStore(name) {
-  const encoded = name.replace('/', '+')
-  for (const storeName of pnpmRoots) {
-    if (!storeName.startsWith(`${encoded}@`)) continue
-    const candidate = join(repo, 'node_modules/.pnpm', storeName, 'node_modules', name)
-    try { addName(name, candidate); return } catch {}
-  }
-}
-function addName(name, candidate) {
-  let target
-  try { target = realpathSync(candidate) } catch { return }
-  try { if (!statSync(target).isDirectory()) return } catch { return }
-  nameToTarget.set(name, target)
-  try { manifests.set(name, JSON.parse(readFileSync(join(target, 'package.json'), 'utf8'))) } catch {}
-  scanNodeModules(join(target, 'node_modules'))
-}
-function scanNodeModules(directory) {
-  let canonical
-  try { canonical = realpathSync(directory) } catch { return }
-  if (scannedModuleRoots.has(canonical)) return
-  scannedModuleRoots.add(canonical)
-  let names
-  try { names = readdirSync(directory) } catch { return }
-  for (const name of names) {
-    if (name.startsWith('.')) continue
-    const full = join(directory, name)
-    let stat
-    try { stat = lstatSync(full) } catch { continue }
-    if (name.startsWith('@') && statSync(full).isDirectory()) {
-      for (const child of readdirSync(full)) addName(`${name}/${child}`, join(full, child))
-    } else addName(name, full)
-  }
-}
-scanNodeModules(`${repo}/node_modules`)
-scanNodeModules(`${repo}/apps/cli/node_modules`)
-addName('@deepseek-ai/dsh', `${repo}/apps/cli`)
+// Workspace discovery names explicit composition roots only. Dependency edges
+// below are always resolved from their own installed declaring package.
+const workspaceTargets = new Map([['@deepseek-ai/dsh', join(repo, 'apps/cli')]])
 for (const group of readdirSync(`${repo}/packages`)) {
   const groupDir = join(repo, 'packages', group)
   let packages
@@ -95,17 +59,9 @@ for (const group of readdirSync(`${repo}/packages`)) {
     const packageDir = join(groupDir, pkg)
     try {
       const manifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8'))
-      if (typeof manifest.name === 'string' && manifest.name.includes('/')) addName(manifest.name, packageDir)
+      if (typeof manifest.name === 'string') workspaceTargets.set(manifest.name, packageDir)
     } catch {}
-    scanNodeModules(join(packageDir, 'node_modules'))
   }
-}
-for (const packageDir of readdirSync(`${repo}/vendor`).map(name => join(repo, 'vendor', name))) {
-  try {
-    const manifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8'))
-    if (typeof manifest.name === 'string') addName(manifest.name, packageDir)
-  } catch {}
-  scanNodeModules(join(packageDir, 'node_modules'))
 }
 
 // `web` is a concrete profile, not an arbitrary plugin manager.  Follow just
@@ -123,32 +79,12 @@ const roots = [
   // require an experimental provider. Configuration still owns activation.
   '@deepseek-ai/dsh-experimental-computer-use-policy',
 ]
-const selected = new Set()
-const pending = roots.map(name => ({ name, optional: false }))
-while (pending.length > 0) {
-  const candidate = pending.pop()
-  if (candidate === undefined || selected.has(candidate.name)) continue
-  const { name, optional } = candidate
-  if (!nameToTarget.has(name)) resolveFromPnpmStore(name)
-  const manifest = manifests.get(name)
-  if (manifest === undefined || !nameToTarget.has(name)) {
-    // A signed child may omit only a declared optional dependency. Required
-    // and peer edges must be present in the sealed tree: treating either as a
-    // platform omission would silently defer a packaging defect to runtime.
-    if (optional) {
-      console.warn(`omitting unavailable optional package: ${name}`)
-      continue
-    }
-    throw new Error(`required hosted runtime package is unavailable: ${name}`)
-  }
-  selected.add(name)
-  for (const dependency of Object.keys(manifest.dependencies ?? {})) pending.push({ name: dependency, optional: false })
-  for (const dependency of Object.keys(manifest.peerDependencies ?? {})) {
-    const peerMetadata = manifest.peerDependenciesMeta?.[dependency]
-    pending.push({ name: dependency, optional: peerMetadata?.optional === true })
-  }
-  for (const dependency of Object.keys(manifest.optionalDependencies ?? {})) pending.push({ name: dependency, optional: true })
-}
+const graph = collectHostedGraph(roots.map(name => {
+  const target = workspaceTargets.get(name)
+  if (target === undefined) throw new Error(`required hosted composition root is unavailable: ${name}`)
+  return { name, target }
+}))
+const placements = planHostedLayout(graph, outDir)
 
 // Loader entries are dynamic bare imports.  The signed closure must therefore
 // contain current published JS for every selected workspace package, not just
@@ -164,10 +100,9 @@ const workspaceSourcePrefixes = [
   join(repo, 'vendor') + sep,
   join(repo, 'apps') + sep,
 ]
-const bundlePackages = [...selected]
-  .map(name => ({ name, target: nameToTarget.get(name) }))
-  .filter((entry) => entry.target !== undefined
-    && workspaceSourcePrefixes.some(prefix => entry.target.startsWith(prefix)))
+const bundlePackages = [...graph.nodes.values()]
+  .map(({ manifest, target }) => ({ name: manifest.name, target }))
+  .filter((entry) => workspaceSourcePrefixes.some(prefix => entry.target.startsWith(prefix)))
   .filter((entry) => {
     try { return typeof JSON.parse(readFileSync(join(entry.target, 'package.json'), 'utf8')).scripts?.bundle === 'string' }
     catch { return false }
@@ -213,34 +148,8 @@ if (!fd199SourceText.includes("kind: 'releasing'")
   || /kind:\s*["']released["']/.test(fd199PublishedText)) {
   throw new Error('stale FD199 published runtime: run npm run bundle in packages/mobile/remote-host-fd199 before assembly')
 }
-for (const name of [...selected].sort((a, b) => a.localeCompare(b))) {
-  const target = nameToTarget.get(name)
-  if (target === undefined) throw new Error(`selected hosted runtime package disappeared: ${name}`)
-  const destination = join(outDir, name)
-  mkdirSync(dirname(destination), { recursive: true })
-  // The closure is flattened at the sealed root; nested package-manager links
-  // cannot escape the app because every resolvable name is collected above.
-  const manifest = manifests.get(name)
-  const published = Array.isArray(manifest?.files) ? manifest.files : undefined
-  const allowedPrefixes = published?.map(file => String(file).replace(/\*.*$/, '').replace(/\/$/, ''))
-  const publishedHasGlob = published?.some(file => String(file).includes('*')) === true
-  cpSync(target, destination, {
-    recursive: true,
-    dereference: true,
-    filter: source => {
-      const rel = relative(target, source).split(sep).join('/')
-      if (rel === '') return true
-      if (rel === 'node_modules' || rel.startsWith('node_modules/')) return false
-      if (rel.split('/').some(part => ['test', 'tests', 'docs', '.git', '.github'].includes(part))) return false
-      if (rel.split('/').includes('src') && name !== 'koffi'
-        && !allowedPrefixes?.some(prefix => rel === prefix || rel.startsWith(`${prefix}/`) || prefix.startsWith(`${rel}/`))) return false
-      if (rel.endsWith('.md') || rel.endsWith('.ts') || rel.endsWith('.map')) return false
-      if (rel === 'package.json') return true
-      if (name === '@img/colour' || allowedPrefixes === undefined || publishedHasGlob) return true
-      return allowedPrefixes.some(prefix => prefix !== '' && (rel === prefix || rel.startsWith(`${prefix}/`) || prefix.startsWith(`${rel}/`)))
-    },
-  })
-}
+// npm selects package files; the canonical installed graph owns all dependency placements.
+await copyHostedPackages(graph, placements)
 
 // Published runtime code must resolve through a package export inside the
 // sealed closure. A `.../src/foo.ts` specifier works in the development graph
@@ -261,5 +170,5 @@ function assertNoSourceTypeScriptImports(directory) {
 assertNoSourceTypeScriptImports(outDir)
 
 const entries = writeTreeManifest(hostedChild, manifestOut)
-console.log(`copied ${selected.size} reachable runtime packages into signed HostedChild/node_modules`)
+console.log(`copied ${graph.nodes.size} installed runtime identities into ${placements.size} signed package locations`)
 console.log(`sealed ${entries} hosted child files -> ${manifestOut}`)
