@@ -4,20 +4,25 @@ import RemoteHostFd199
 /** The retained child owner; starting it never requires a phone handshake. */
 protocol HostedRuntimeCarrier: AnyObject, Sendable {
   var phase: Fd199HandoffCoordinator.Phase { get }
+  var canReuseSeededChild: Bool { get }
   func startHostedRuntime() throws
   func stop()
 }
 
 extension Fd199HandoffCoordinator: HostedRuntimeCarrier {
   func startHostedRuntime() throws { try start() }
+  var canReuseSeededChild: Bool { hasLiveChild }
 }
 
 /** An inert phone session bound to one child owner and authorized credential. */
 protocol HostedRuntimePhoneSession: AnyObject, Sendable {
   /** Monotonic terminal state; stop still awaits all owned transport cleanup. */
   var isEnded: Bool { get }
+  /** True only if the child received the old connection close and can admit another epoch. */
+  var canReconnect: Bool { get }
   func activate() async throws
   func resume() async throws
+  func reconnect() async throws
   func stop() async
 }
 
@@ -68,9 +73,15 @@ final class HostedRuntimeLifecycle<Carrier: HostedRuntimeCarrier, Session: Hoste
   func activate(makeCarrier: () throws -> Carrier, makeSession: (Carrier) throws -> Session) async throws {
     let (token, retainedOwner, endedSession) = try reserveActivation()
     defer { finish(token) }
+    var reconnecting = false
     let owner: Carrier
     if let endedSession {
-      owner = try await replaceEndedOwner(token, retainedOwner, endedSession, makeCarrier: makeCarrier)
+      await endedSession.stop()
+      try lock.withLock {
+        guard operation == token, !canceled, !stopping, carrier === retainedOwner else { throw invalidState }
+      }
+      reconnecting = endedSession.canReconnect && retainedOwner.canReuseSeededChild
+      owner = reconnecting ? retainedOwner : try replaceEndedOwner(token, retainedOwner, makeCarrier: makeCarrier)
     } else {
       owner = retainedOwner
     }
@@ -85,6 +96,7 @@ final class HostedRuntimeLifecycle<Carrier: HostedRuntimeCarrier, Session: Hoste
       }
       switch phase {
       case .desktopAdmitted: try await candidate.activate()
+      case .servingPhoneSessions where reconnecting: try await candidate.reconnect()
       case .servingPhoneSessions: try await candidate.resume()
       case .idle, .transferringOwnership: throw invalidState
       }
@@ -93,12 +105,12 @@ final class HostedRuntimeLifecycle<Carrier: HostedRuntimeCarrier, Session: Hoste
       }
     } catch {
       await candidate.stop()
-      // Enrollment seed is one-shot in the child. A failed handshake therefore
-      // requires a fresh child, but never resets the activated journal or keys.
-      owner.stop()
+      if !reconnecting { owner.stop() }
       lock.withLock {
-        if session === candidate { session = nil }
-        if carrier === owner { carrier = nil }
+        if !reconnecting {
+          if session === candidate { session = nil }
+          if carrier === owner { carrier = nil }
+        }
       }
       throw error
     }
@@ -155,16 +167,15 @@ final class HostedRuntimeLifecycle<Carrier: HostedRuntimeCarrier, Session: Hoste
     }
   }
 
-  /** An explicit retry replaces the seeded child only after its old transport is quiescent. */
+  /** The unsafe-to-reuse path still replaces the child after its old transport is quiescent. */
   private func replaceEndedOwner(
-    _ token: UUID, _ previous: Carrier, _ endedSession: Session,
+    _ token: UUID, _ previous: Carrier,
     makeCarrier: () throws -> Carrier
-  ) async throws -> Carrier {
-    await endedSession.stop()
+  ) throws -> Carrier {
     previous.stop()
     defer {
       lock.withLock {
-        if session === endedSession { session = nil }
+        if session?.isEnded == true { session = nil }
         if carrier === previous { carrier = nil }
       }
     }

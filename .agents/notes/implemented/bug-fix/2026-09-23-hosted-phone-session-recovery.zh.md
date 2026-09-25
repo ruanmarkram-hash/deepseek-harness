@@ -12,7 +12,7 @@ Status: implemented
 
 [hosted 运行时生命周期](../../../../native/remote-host-app/Sources/RemoteHostApp/HostedRuntimeLifecycle.swift)在所保留手机会话进入单调的结束状态后，允许显式激活。一个 reservation 覆盖等待旧会话清理、停止已经 seeded 的 child、启动替代 child，以及激活新手机会话的整个过程。生产组合复用现有原生 credential、已签名 journal 和已完成提交的 epoch 状态。后台 transport 回调不会重启本地 Web 运行时。
 
-会话关闭会停止转发，并等待 receiver 和 outbound writer 均结束，随后才允许替换。EOF 从独立任务请求清理，因为关闭操作本身需要等待 receiver。并发 stop 调用会共同等待同一次清理完成。Stop 保持生命周期 reservation 的取消状态，直到迟到的 factory 或启动返回并清理其 candidate；替代对象不能与该清理重叠。
+会话关闭会停止转发，并等待 receiver 和 outbound writer 均结束，随后才允许替换。EOF 从独立任务请求清理，因为关闭操作本身需要等待 receiver。并发 stop 调用会共同等待同一次清理完成。Stop 保持生命周期 reservation 的取消状态，直到迟到的 factory 或启动返回并清理其 candidate；替代对象不能与该清理重叠。后续的[自动重新监听决策](2026-09-25-hosted-phone-automatic-rearm.zh.md)不再要求替换健康的已 seeded child。
 
 ## 考虑过的替代方案
 

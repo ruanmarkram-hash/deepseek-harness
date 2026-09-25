@@ -40,9 +40,9 @@ app 内含已签名原生 child、`DSHRemoteHostKeychain.xpc`、固定版本的 
 
 被拒绝的输入只报告固定 phase 和类别：畸形 flight、route tuple 不匹配、epoch 不匹配、无效 key material，或精确白名单内的 relay control 原因。Relay 报告始终终止连接，绝不授权本地 revocation、epoch 更改或 credential 替换。未知、过大、含重复 key 或额外字段的 control envelope 仍视为畸形输入；原始 frame 和任意服务器文本绝不显示。
 
-原生 epoch ledger 只允许一个 live Host route owner，仅在认证 handshake 后提交 epoch，并能在不跳过 next epoch 的情况下协调 lost receipt。已建立的手机 transport 结束后，本地 Web runtime 保持可用，直到显式执行 **Activate paired phone** 重试。此操作会等待已结束 transport 的清理完成，停止已经 seeded 的 child，再通过保留的 route 按 Host 发出的 next epoch 启动新的 child 和手机 session。活动中的手机 session 会拒绝重叠激活。Host 正常重启后，启动本地 runtime 仍要求显式激活手机。
+原生 epoch ledger 只允许一个 live Host route owner，仅在认证 handshake 后提交 epoch，并能在不跳过 next epoch 的情况下协调 lost receipt。已建立的手机 transport 结束后，Host 会清理该连接、向已经 seeded 的 child 确认关闭，并通过保留的 route 自动等待手机按 Host 签发的 next epoch 重试。健康的 child 和本地 Web runtime 保持可用。若已 seeded 的 child 不再能安全复用，激活会在清理后启动替代 child。活动中的手机 session 会拒绝重叠激活。手机仍需显式重试及所有者认证；Host 正常重启后，启动本地 runtime 仍要求显式激活手机。
 
-激活失败或替代 child 启动失败会退役已经 seeded 的 child；请先执行 **Start hosted runtime**，再执行 **Activate paired phone** 来重试。配对 credential、已签名 journal 和原生 epoch 保持不变。Stop 会取消 pending activation，并等待进行中的生命周期清理完成，随后才允许另一个 owner。[恢复决策](../../.agents/notes/implemented/bug-fix/2026-09-23-hosted-phone-session-recovery.zh.md)记录了一次性 enrollment 和清理要求。
+首次激活失败或替代 child 启动失败会退役已经 seeded 的 child；请先执行 **Start hosted runtime**，再执行 **Activate paired phone** 来重试。重连等待失败时，Host 会保留健康的已 seeded child，并持续重试监听，直到 Stop 或撤销。配对 credential、已签名 journal 和原生 epoch 保持不变。Stop 会取消 pending activation，并等待进行中的生命周期清理完成，随后才允许另一个 owner。[重连决策](../../.agents/notes/implemented/bug-fix/2026-09-25-hosted-phone-automatic-rearm.zh.md)记录了 child 复用和清理要求。
 
 **Revoke paired phone…** 要求 Host 再次确认。它会退役 hosted child 的公开 route state，安装 durable native revocation fence，停止保留的 relay，执行幂等 remote deletion 和本地 Keychain cleanup，清除 hosted owner，并允许之后重新配对。含糊的 remote 或本地 cleanup 结果保持可恢复，且绝不会恢复可用 invitation。
 

@@ -3,11 +3,11 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write apps/mobile/README.md
 /dsh-mobile:
-  en: 04f2bcde86535998
-  zh: 03a59e1c1a25e9b8
+  en: 01cf4d3131c0530f
+  zh: 71c40b4e30934049
 /dsh-mobile/pairing-and-connection:
-  en: 038fc761206d9181
-  zh: 16788e5f2c4a7a84
+  en: cdbd29121c2f6aa6
+  zh: add97930c204afe9
 /dsh-mobile/mobile-scope:
   en: f3aa98f4cf4560e1
   zh: 42b76d1abf6cd2d1

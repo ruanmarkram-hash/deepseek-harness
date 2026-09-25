@@ -96,6 +96,16 @@ func hostedFramePumpStopWaitsForDrain() async throws {
   await pump.waitForDrain()
 }
 
+@Test("a stopped phone connection retains one strict close reference for the child")
+func hostedFramePumpSuppliesCloseReference() throws {
+  let pump = HostedRelayFramePump(sendToPhone: { _ in }, failed: {})
+  #expect(pump.closeReference() == nil)
+  try pump.install(metadata: openMetadata())
+  #expect(pump.closeReference() == referenceMetadata)
+  pump.clear()
+  #expect(pump.closeReference() == nil)
+}
+
 @Test("hosted frame pump rejects malformed phone JSON and non-current child metadata")
 func hostedFramePumpFailsClosedOnMalformedOrSubstitutedFrames() throws {
   let metadata = try openMetadata()

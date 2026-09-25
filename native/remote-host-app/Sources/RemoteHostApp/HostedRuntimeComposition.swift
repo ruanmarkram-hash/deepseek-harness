@@ -56,6 +56,10 @@ final class HostedRuntimeController: @unchecked Sendable {
   private let store: RelaySecretStore
   private let connectionCoordinator: RelayHostRouteConnectionCoordinator
   private let lifecycle = HostedRuntimeLifecycle<Fd199HandoffCoordinator, AuthorizedHostedPhoneSession>()
+  private lazy var rearm = HostedPhoneRearmLoop(activate: { [weak self] in
+    guard let self else { return }
+    try await self.activateOnce()
+  })
 
   init(agreement: any RelayProtectedAgreement & RelayHostPublicIdentityProvider, store: RelaySecretStore, connectionCoordinator: RelayHostRouteConnectionCoordinator) {
     self.agreement = agreement
@@ -114,6 +118,12 @@ final class HostedRuntimeController: @unchecked Sendable {
  its seeded child first. Credentials stay in the native Host.
  */
   func activatePhoneSessions() async throws {
+    rearm.arm()
+    do { try await activateOnce() }
+    catch { rearm.disarm(); throw error }
+  }
+
+  private func activateOnce() async throws {
     try await lifecycle.activate(makeCarrier: HostedRuntimeComposition.makeCoordinator) { coordinator in
       let artifacts = try RemoteHostV3HostedChildPackaging.loadAndValidateBundledArtifacts()
       try PairingStateRepair.requireSettled(home: URL(fileURLWithPath: artifacts.webConfiguration.dshHome, isDirectory: true))
@@ -126,7 +136,8 @@ final class HostedRuntimeController: @unchecked Sendable {
         credential: credential,
         agreement: agreement,
         epochLedger: RelayConnectionEpochLedger(store: store),
-        connectionCoordinator: connectionCoordinator
+        connectionCoordinator: connectionCoordinator,
+        onTransportEnded: { [weak self] in self?.rearm.request() }
       )
       coordinator.setChildOutputHandler { [weak session] output in session?.childOutput(output) }
       return AuthorizedHostedPhoneSession(session: session, credential: credential)
@@ -135,11 +146,13 @@ final class HostedRuntimeController: @unchecked Sendable {
 
   /** Stops relay delivery and both hosted-child channels. */
   func stop() async {
+    rearm.disarm()
     await lifecycle.stop()
   }
 
   /** Revokes the native route, retires the child's copy, and clears all retained runtime owners. */
   @MainActor func revokePhoneSessions(_ revoke: () async throws -> Void) async throws {
+    rearm.disarm()
     guard let credential = try store.activeRouteCredential() ?? store.revokedCleanupRouteCredential() ?? store.pendingRouteCredential() else {
       throw Fd199HandoffCoordinator.CoordinatorError.unavailable
     }
@@ -174,7 +187,9 @@ private final class AuthorizedHostedPhoneSession: HostedRuntimePhoneSession, @un
 
   func activate() async throws { try await session.activate(credential: credential) }
   var isEnded: Bool { session.isEnded }
+  var canReconnect: Bool { session.canReconnect }
   func resume() async throws { try await session.resume(credential: credential) }
+  func reconnect() async throws { try await session.reconnect(credential: credential) }
   func stop() async { await session.stop() }
 }
 

@@ -688,6 +688,9 @@ func coordinatorFullChoreography() throws {
   try waitFor({ readyBox.value }, timeoutSeconds: 30)
   try waitFor({ g1Done.value && g2Done.value }, timeoutSeconds: 30)
   #expect(coordinator.phase == .servingPhoneSessions)
+  #expect(coordinator.hasLiveChild)
+  g2Handle.markClosedAndCloseAuthority()
+  #expect(!coordinator.hasLiveChild)
 
   coordinator.stop()
 }

@@ -19,15 +19,19 @@ final class HostedRelaySession: Fd199RelayBridge.SessionOwner, @unchecked Sendab
   private let lock = NSLock()
   private let coordinator: Fd199HandoffCoordinator
   private let socket: RelayHostSocketSupervisor
+  private let onTransportEnded: @Sendable () -> Void
   private var bridge: Fd199RelayBridge?
   private var receiveTask: Task<Void, Never>?
   private var stopped = false
+  private var openedConnection = false
+  private var reusableChild = true
   private var stopCompleted = false
   private var stopWaiters: [CheckedContinuation<Void, Never>] = []
   var isEnded: Bool { lock.withLock { stopped } }
+  var canReconnect: Bool { lock.withLock { stopCompleted && reusableChild } }
   private lazy var framePump = HostedRelayFramePump(
     sendToPhone: { [socket] payload in try await socket.sendCiphertext(payload) },
-    failed: { [weak self] in Task { await self?.stop() } }
+    failed: { [weak self] in Task { await self?.stop(rearm: true) } }
   )
   private let enrollmentReceipt = HostedChildEnrollmentReceipt()
   private let epochSynchronization = HostedChildEpochSynchronization()
@@ -37,9 +41,11 @@ final class HostedRelaySession: Fd199RelayBridge.SessionOwner, @unchecked Sendab
     credential: RelayRouteCredential,
     agreement: RelayProtectedAgreement,
     epochLedger: RelayConnectionEpochLedger,
-    connectionCoordinator: RelayHostRouteConnectionCoordinator
+    connectionCoordinator: RelayHostRouteConnectionCoordinator,
+    onTransportEnded: @escaping @Sendable () -> Void = {}
   ) {
     self.coordinator = coordinator
+    self.onTransportEnded = onTransportEnded
     socket = RelayHostSocketSupervisor(
       credential: credential,
       agreement: agreement,
@@ -73,6 +79,15 @@ final class HostedRelaySession: Fd199RelayBridge.SessionOwner, @unchecked Sendab
     try await configureActivatedRelay(credential: credential)
   }
 
+  /** Reopens the already-seeded child after the previous phone connection is fully closed. */
+  func reconnect(credential: RelayRouteCredential) async throws {
+    try assertNotStopped()
+    guard coordinator.phase == .servingPhoneSessions else {
+      throw Fd199HandoffCoordinator.CoordinatorError.invalidState
+    }
+    try await connectToRelay(credential: credential)
+  }
+
   private func configureActivatedRelay(credential: RelayRouteCredential) async throws {
     guard let bridge else { throw Fd199BridgeError.detached }
     try staged("enrollment-seed") { try bridge.enrollmentSeed(
@@ -102,6 +117,11 @@ final class HostedRelaySession: Fd199RelayBridge.SessionOwner, @unchecked Sendab
       hostEnrollmentId: credential.hostEnrollmentId,
       generation: credential.generation
     ) }
+    try await connectToRelay(credential: credential)
+  }
+
+  private func connectToRelay(credential: RelayRouteCredential) async throws {
+    guard let bridge else { throw Fd199BridgeError.detached }
     try await stagedAsync("relay-socket") { try await socket.start() }
     let epoch = try await stagedAsync("connection-epoch") { try await socket.establishedConnectionEpoch() }
     let metadata = try staged("connection-metadata") { try makeConnectionMetadata(
@@ -110,12 +130,21 @@ final class HostedRelaySession: Fd199RelayBridge.SessionOwner, @unchecked Sendab
       epoch: epoch
     ) }
     try staged("frame-pump") { try framePump.install(metadata: metadata) }
-    try staged("epoch-synchronization") {
-      try epochSynchronization.synchronizeThenOpen(
-        request: RelayFinalizedEpochWire.request(credential: credential, epoch: epoch),
-        send: { [coordinator] record in try coordinator.sendPublicRecord(record) },
-        open: { try self.assertNotStopped(); try bridge.connectionOpened(metadata: metadata) }
-      )
+    do {
+      try staged("epoch-synchronization") {
+        try epochSynchronization.synchronizeThenOpen(
+          request: RelayFinalizedEpochWire.request(credential: credential, epoch: epoch),
+          send: { [coordinator] record in try coordinator.sendPublicRecord(record) },
+          open: {
+            try self.assertNotStopped()
+            try bridge.connectionOpened(metadata: metadata)
+            self.lock.withLock { self.openedConnection = true }
+          }
+        )
+      }
+    } catch {
+      lock.withLock { reusableChild = false }
+      throw error
     }
     guard installReceiveTask() else {
       await socket.stop()
@@ -156,16 +185,24 @@ final class HostedRelaySession: Fd199RelayBridge.SessionOwner, @unchecked Sendab
 
   /** Stops forwarding and waits for the receiver, socket, and outbound writer. Concurrent callers join cleanup. */
   func stop() async {
+    await stop(rearm: false)
+  }
+
+  private func stop(rearm: Bool) async {
     epochSynchronization.stop()
-    guard let (task, bridge) = detachForStop() else {
+    guard let (task, bridge, closeReference) = detachForStop() else {
       await waitForStop()
       return
     }
     task?.cancel()
-    bridge?.detachOwner()
     await socket.stop()
     await task?.value
     await framePump.waitForDrain()
+    if let bridge, let closeReference {
+      do { try bridge.connectionClosed(metadata: closeReference) }
+      catch { lock.withLock { reusableChild = false } }
+    }
+    bridge?.detachOwner()
     let waiters = lock.withLock {
       stopCompleted = true
       let waiters = stopWaiters
@@ -173,6 +210,7 @@ final class HostedRelaySession: Fd199RelayBridge.SessionOwner, @unchecked Sendab
       return waiters
     }
     for waiter in waiters { waiter.resume() }
+    if rearm { onTransportEnded() }
   }
 
   private func waitForStop() async {
@@ -200,7 +238,7 @@ final class HostedRelaySession: Fd199RelayBridge.SessionOwner, @unchecked Sendab
 
   func hostedChildDidClose(metadata: Data) {
     guard framePump.isCurrentClose(metadata: metadata) else { return }
-    Task { [weak self] in await self?.stop() }
+    Task { [weak self] in await self?.stop(rearm: true) }
   }
 
   // MARK: - Phone ingress
@@ -212,7 +250,7 @@ final class HostedRelaySession: Fd199RelayBridge.SessionOwner, @unchecked Sendab
         try acceptPhonePlaintext(plaintext)
       } catch {
         // Cleanup joins this receive task, so EOF must request it from a separate task.
-        Task { [weak self] in await self?.stop() }
+        Task { [weak self] in await self?.stop(rearm: true) }
         return
       }
     }
@@ -233,7 +271,7 @@ final class HostedRelaySession: Fd199RelayBridge.SessionOwner, @unchecked Sendab
     return true
   }
 
-  private func detachForStop() -> (Task<Void, Never>?, Fd199RelayBridge?)? {
+  private func detachForStop() -> (Task<Void, Never>?, Fd199RelayBridge?, Data?)? {
     lock.lock()
     defer { lock.unlock() }
     guard !stopped else { return nil }
@@ -241,8 +279,9 @@ final class HostedRelaySession: Fd199RelayBridge.SessionOwner, @unchecked Sendab
     let task = receiveTask
     receiveTask = nil
     let bridge = self.bridge
+    let closeReference = openedConnection ? framePump.closeReference() : nil
     framePump.clear()
-    return (task, bridge)
+    return (task, bridge, closeReference)
   }
 
   /** The encrypted carrier already carries one canonical JSON application envelope. */

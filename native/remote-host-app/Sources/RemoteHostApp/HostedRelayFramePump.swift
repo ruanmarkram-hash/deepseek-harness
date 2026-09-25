@@ -45,6 +45,11 @@ final class HostedRelayFramePump: @unchecked Sendable {
     lock.unlock()
   }
 
+  /** The strict connection id that must be closed in the child before a later epoch opens. */
+  func closeReference() -> Data? {
+    lock.withLock { stopped ? nil : reference?.metadata }
+  }
+
   /** After clear, waits for the last in-flight phone write and its failure callback. */
   func waitForDrain() async {
     let task = lock.withLock { drainTask }

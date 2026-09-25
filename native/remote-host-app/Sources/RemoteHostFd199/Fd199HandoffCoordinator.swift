@@ -93,6 +93,12 @@ public final class Fd199HandoffCoordinator: @unchecked Sendable {
     set { lock.lock(); phaseValue = newValue; lock.unlock() }
   }
 
+  /** A seeded owner is reusable only while its adopted child channels remain open. */
+  public var hasLiveChild: Bool {
+    let current = lock.withLock { (phaseValue, child) }
+    return current.0 == .servingPhoneSessions && current.1?.isClosed == false
+  }
+
   /**
    Installs the one Host-owned receiver for fixed child effects. The receiver
    is retained across the release/relaunch cycle and is never a generic IPC

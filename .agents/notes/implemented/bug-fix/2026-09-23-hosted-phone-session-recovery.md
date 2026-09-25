@@ -12,7 +12,7 @@ An established phone transport can end while the local Web child remains healthy
 
 The [hosted runtime lifecycle](../../../../native/remote-host-app/Sources/RemoteHostApp/HostedRuntimeLifecycle.swift) admits explicit activation when its retained phone session has a monotonic ended state. A single reservation covers waiting for the old session's cleanup, stopping its seeded child, starting a replacement child, and activating a fresh phone session. The production composition reuses the existing native credential, signed journal, and finalized epoch state. No background transport callback restarts the local Web runtime.
 
-Session shutdown closes forwarding and joins both the receiver and outbound writer before replacement. EOF requests cleanup from a separate task because shutdown waits for the receiver itself. Concurrent stop callers join the same completed cleanup. Stop keeps the lifecycle reservation canceled until any late factory or startup returns and disposes its candidate; a replacement cannot overlap that cleanup.
+Session shutdown closes forwarding and joins both the receiver and outbound writer before replacement. EOF requests cleanup from a separate task because shutdown waits for the receiver itself. Concurrent stop callers join the same completed cleanup. Stop keeps the lifecycle reservation canceled until any late factory or startup returns and disposes its candidate; a replacement cannot overlap that cleanup. The later [automatic rearm decision](2026-09-25-hosted-phone-automatic-rearm.md) supersedes mandatory child replacement for a healthy seeded child.
 
 ## Alternatives considered
 

@@ -55,6 +55,7 @@ private final class LifecycleCarrier: HostedRuntimeCarrier, @unchecked Sendable 
   private var currentPhase: Fd199HandoffCoordinator.Phase = .idle
   let restoredPhase: Fd199HandoffCoordinator.Phase
   let events: LifecycleEvents
+  var alive = true
   var onStart: @Sendable () throws -> Void = {}
   var onStop: @Sendable () -> Void = {}
   init(_ phase: Fd199HandoffCoordinator.Phase, _ events: LifecycleEvents) {
@@ -62,6 +63,7 @@ private final class LifecycleCarrier: HostedRuntimeCarrier, @unchecked Sendable 
     self.events = events
   }
   var phase: Fd199HandoffCoordinator.Phase { lock.withLock { currentPhase } }
+  var canReuseSeededChild: Bool { alive && phase == .servingPhoneSessions }
   func startHostedRuntime() throws {
     events.record("child.start")
     try onStart()
@@ -80,6 +82,7 @@ private final class LifecyclePhone: HostedRuntimePhoneSession, @unchecked Sendab
   private let lock = NSLock()
   private var ended = false
   var isEnded: Bool { lock.withLock { ended } }
+  var canReconnect = false
   var onStop: @Sendable () async -> Void = {}
   let events: LifecycleEvents
   let suspension: LifecycleSuspension?
@@ -91,6 +94,7 @@ private final class LifecyclePhone: HostedRuntimePhoneSession, @unchecked Sendab
   }
   func activate() async throws { try await run("phone.activate") }
   func resume() async throws { try await run("phone.resume") }
+  func reconnect() async throws { try await run("phone.reconnect") }
   private func run(_ event: String) async throws {
     events.record(event)
     await suspension?.suspend()
@@ -268,6 +272,52 @@ func hostedLifecycleExplicitEndedRecovery() async throws {
   await #expect(throws: Fd199HandoffCoordinator.CoordinatorError.self) {
     try await lifecycle.activate { _ in Issue.record("Live replacement superseded"); return LifecyclePhone(events) }
   }
+  await lifecycle.stop()
+}
+
+@Test("ended phone can rearm its transport without restarting the live Web child")
+func hostedLifecycleRearmsRetainedChild() async throws {
+  let events = LifecycleEvents()
+  let lifecycle = TestLifecycle()
+  let owner = LifecycleCarrier(.servingPhoneSessions, events)
+  let first = LifecyclePhone(events)
+  first.canReconnect = true
+  try lifecycle.start { owner }
+  try await lifecycle.activate { _ in first }
+  await first.stop()
+
+  let second = LifecyclePhone(events)
+  try await lifecycle.activate(makeCarrier: {
+    Issue.record("Reconnect restarted the live Web child")
+    throw LifecycleTestError.handshakeTimeout
+  }) { retained in
+    #expect(retained === owner)
+    return second
+  }
+  #expect(lifecycle.currentCarrier === owner)
+  #expect(!events.values.contains("child.stop"))
+  #expect(events.values.suffix(2) == ["phone.stop", "phone.reconnect"])
+  await lifecycle.stop()
+}
+
+@Test("a closed child cannot be reused even when its phone transport closed cleanly")
+func hostedLifecycleReplacesDeadSeededChild() async throws {
+  let events = LifecycleEvents()
+  let lifecycle = TestLifecycle()
+  let old = LifecycleCarrier(.servingPhoneSessions, events)
+  let first = LifecyclePhone(events)
+  first.canReconnect = true
+  try lifecycle.start { old }
+  try await lifecycle.activate { _ in first }
+  await first.stop()
+  old.alive = false
+  let replacement = LifecycleCarrier(.servingPhoneSessions, events)
+  try await lifecycle.activate(makeCarrier: { replacement }) { owner in
+    #expect(owner === replacement)
+    return LifecyclePhone(events)
+  }
+  #expect(lifecycle.currentCarrier === replacement)
+  #expect(events.values.contains("child.stop"))
   await lifecycle.stop()
 }
 
