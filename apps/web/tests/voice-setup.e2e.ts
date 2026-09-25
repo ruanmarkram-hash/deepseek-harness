@@ -34,7 +34,10 @@ it('guides a newly enabled voice plugin to installation and lets the user postpo
   const card = page.locator('[data-plugin-package="@deepseek-ai/dsh-experimental-voice-input-bundle"]')
   expect(await card.getByRole('status').count()).toBe(0)
   await toggle.click()
-  await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('false')
+  // Disabling reboots the voice bundle and then refreshes the Host inventory.
+  // Four concurrent browser workers can take longer than Vitest's default poll
+  // window to complete that round trip, even though the switch was clicked.
+  await expect.poll(() => toggle.getAttribute('aria-checked'), { timeout: 15_000 }).toBe('false')
   await toggle.click()
   await dialog.getByRole('button', { name: 'Go to setup', exact: true }).click()
   await page.getByRole('button', { name: 'Download and prepare', exact: true }).waitFor()
