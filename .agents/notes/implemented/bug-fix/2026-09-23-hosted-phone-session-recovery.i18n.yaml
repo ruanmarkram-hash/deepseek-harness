@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-09-23-hosted-phone-session-recovery.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-23-hosted-phone-session-recovery.md
+/agent-note-explicit-recovery-of-ended-hosted-phone-sessions:
+  en: 8b7c91ca11b7711f
+  zh: 1bb31c02e2665bae
+/agent-note-explicit-recovery-of-ended-hosted-phone-sessions/problem:
+  en: aa80cae5097861b6
+  zh: 97a70f65ea444493
+/agent-note-explicit-recovery-of-ended-hosted-phone-sessions/decision:
+  en: 81161114fb785f5f
+  zh: c9fdf3a2f6cc9dc9
+/agent-note-explicit-recovery-of-ended-hosted-phone-sessions/alternatives-considered:
+  en: 1f5690cb2fc8b62f
+  zh: 787557e46530b5e8
+/agent-note-explicit-recovery-of-ended-hosted-phone-sessions/consequences:
+  en: 71a683debcd7eb21
+  zh: d51a8cbec0f7424a

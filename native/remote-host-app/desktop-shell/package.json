@@ -1,0 +1,12 @@
+{
+  "name": "dsh-signed-host-desktop-shell",
+  "version": "0.1.7-rc.2",
+  "description": "Private desktop renderer attached to the signed DSH Host",
+  "private": true,
+  "type": "module",
+  "main": "main.mjs",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  }
+}

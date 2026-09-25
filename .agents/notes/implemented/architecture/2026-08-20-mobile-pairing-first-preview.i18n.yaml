@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-08-20-mobile-pairing-first-preview.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-20-mobile-pairing-first-preview.md
+/agent-note-pairing-first-mobile-preview:
+  en: 49aa06b2cf64b718
+  zh: 2cee78d6b94e0bf6
+/agent-note-pairing-first-mobile-preview/problem:
+  en: 347556f9c91bb150
+  zh: 072b73260c7ea19f
+/agent-note-pairing-first-mobile-preview/decision:
+  en: 97eaafa16cd52293
+  zh: a1e24a625ce778d6
+/agent-note-pairing-first-mobile-preview/alternatives-considered:
+  en: 3ede7490f5a83503
+  zh: e37790b3fe2c4e58
+/agent-note-pairing-first-mobile-preview/consequences:
+  en: 5450387fe7ff3776
+  zh: 22af21c76b435e67

@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-08-20-accountless-mobile-pairing-protocol.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-20-accountless-mobile-pairing-protocol.md
+/agent-note-accountless-encrypted-mobile-pairing-vocabulary:
+  en: 82989bb60b6f7e86
+  zh: bcd14817caa56a9e
+/agent-note-accountless-encrypted-mobile-pairing-vocabulary/problem:
+  en: fae98d29f12c80d0
+  zh: 3a579613b63011d2
+/agent-note-accountless-encrypted-mobile-pairing-vocabulary/decision:
+  en: 710b51a139aa0ba5
+  zh: 48ffb519e69a33bf
+/agent-note-accountless-encrypted-mobile-pairing-vocabulary/alternatives-considered:
+  en: b86112e5d63224b6
+  zh: ce3ae1dd0add77e5
+/agent-note-accountless-encrypted-mobile-pairing-vocabulary/consequences:
+  en: 30cd891eedffa701
+  zh: f94963802220e4ca

@@ -1,0 +1,58 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/preset/progress-narration/README.md
+/:
+  en: ff99d3ded8204590
+  zh: 81b35b52a8a136a5
+/deepseek-ai-dsh-progress-narration:
+  en: 62d6f0283c6e37b4
+  zh: 98f93160547b21ba
+/deepseek-ai-dsh-progress-narration/summary:
+  en: 0d79f3e047d2040e
+  zh: a817d512883aa54e
+/deepseek-ai-dsh-progress-narration/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 09388d293f9be9cb
+/deepseek-ai-dsh-progress-narration/use-this-package:
+  en: 4b71f85bf5327657
+  zh: 4d6a61b5ae263241
+/deepseek-ai-dsh-progress-narration/use-this-package/when-to-choose-it:
+  en: 95bca0ec8ca78916
+  zh: c2c86a42ba29f923
+/deepseek-ai-dsh-progress-narration/use-this-package/minimal-configuration:
+  en: 7c5c8dea3da721b3
+  zh: 0f9503ae3006444a
+/deepseek-ai-dsh-progress-narration/understand-the-implementation:
+  en: a1ba29cb40a3759e
+  zh: ab25841cf79142ae
+/deepseek-ai-dsh-progress-narration/understand-the-implementation/source-map:
+  en: 3265fc289eea3e77
+  zh: 1b41f2d35f6f0b83
+/deepseek-ai-dsh-progress-narration/further-exploration:
+  en: 99d15671c153ab92
+  zh: 5900e7d7bee5c1ff
+/deepseek-ai-dsh-progress-narration/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-progress-narration/model-experience/progress-narration-policy:
+  en: bb3d8a9c7b735cb4
+  zh: 237069823fbf99d3
+/deepseek-ai-dsh-progress-narration/model-experience/progress-narration-policy/what-the-model-sees:
+  en: 97a41f4d710df1c1
+  zh: 0934ff4e70b136af
+/deepseek-ai-dsh-progress-narration/model-experience/progress-narration-policy/what-the-model-sees/verbatim-progress-policy:
+  en: bf389ad6eca625d7
+  zh: 8098bc465c5dde5a
+/deepseek-ai-dsh-progress-narration/model-experience/progress-narration-policy/token-effect:
+  en: fff01e5dda68b3a5
+  zh: 4cca5b94cc16c653
+/deepseek-ai-dsh-progress-narration/model-experience/progress-narration-policy/kv-cache-effect:
+  en: e51cd2d043767778
+  zh: 65fe1c4477772c86
+/deepseek-ai-dsh-progress-narration/known-limitations-and-deferred-work:
+  en: 2ae21eff4bdc74c5
+  zh: 874cb66322f3875f
+/deepseek-ai-dsh-progress-narration/known-limitations-and-deferred-work/dev-note:
+  en: 90a1b09bce8a1db2
+  zh: 3d4d9e943a69d422

@@ -1,0 +1,8 @@
+version: 1
+scenario: native-computer-use-policy
+profile: headless
+composition: native-computer-use-policy
+recording: authored
+header:
+  class: native-computer-use-policy
+  pin: true

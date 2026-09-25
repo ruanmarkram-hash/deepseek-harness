@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-09-21-native-pairing-dialog-layout.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-21-native-pairing-dialog-layout.md
+/agent-note-native-pairing-dialog-sizing:
+  en: 1a63640f1ed4eff4
+  zh: 71c9c706114316a0
+/agent-note-native-pairing-dialog-sizing/problem:
+  en: 43a63e9c005660af
+  zh: 10a0014627e22ee0
+/agent-note-native-pairing-dialog-sizing/decision:
+  en: 6875a4fd895b2f70
+  zh: 2c111b24ed98f564
+/agent-note-native-pairing-dialog-sizing/alternatives-considered:
+  en: b7d1b5544ff386b0
+  zh: 143db2d7cd63993b
+/agent-note-native-pairing-dialog-sizing/consequences:
+  en: d9e17533e37f72c8
+  zh: d39a3d0e529508fe

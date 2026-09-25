@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-08-20-mobile-v3-owner-client.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-20-mobile-v3-owner-client.md
+/agent-note-mobile-v3-owner-client:
+  en: aab099f20e6e3b45
+  zh: b2a651d947367663
+/agent-note-mobile-v3-owner-client/problem:
+  en: e35d2dbe4a311035
+  zh: 6c11a6c6ea97073b
+/agent-note-mobile-v3-owner-client/decision:
+  en: 4e5e346554ed9ba2
+  zh: 43ed8ca04e99b55e
+/agent-note-mobile-v3-owner-client/verification:
+  en: c7fabc423381a12e
+  zh: 81a18b224309b3d2
+/agent-note-mobile-v3-owner-client/alternatives-considered:
+  en: c07f6fb8d7d1e013
+  zh: 4838aee18d4971e8
+/agent-note-mobile-v3-owner-client/consequences:
+  en: f8f59e18ac36f4fa
+  zh: f4004bd2ebc1a8f3

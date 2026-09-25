@@ -1,0 +1,34 @@
+# Bilingual-pair consistency record for releasing-dsh-remote-pairing.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/cookbook/releasing-dsh-remote-pairing.md
+/release-dsh-remote-pairing:
+  en: 70db8a568048e4c9
+  zh: ab11dd6e6499e42f
+/release-dsh-remote-pairing/prerequisites:
+  en: 24b9809f18fd6961
+  zh: 449b23ffce78d215
+/release-dsh-remote-pairing/1-freeze-and-verify-clean-source:
+  en: 48751d8d169f9647
+  zh: 652068765334ade8
+/release-dsh-remote-pairing/2-deploy-the-production-relay:
+  en: bf95faa2516063a1
+  zh: eda295c66e77bcbe
+/release-dsh-remote-pairing/3-build-the-signed-host-candidate:
+  en: dc4a6dff335354ac
+  zh: 9ddf7122fd99ee96
+/release-dsh-remote-pairing/4-relocate-and-smoke-test-before-notarization:
+  en: 4c8f43d120a898e6
+  zh: 49fa3c406bf13fb7
+/release-dsh-remote-pairing/5-perform-exactly-one-final-notarization:
+  en: 1fc4cffd10ca0819
+  zh: a515e2cb4ddf61aa
+/release-dsh-remote-pairing/6-build-submit-and-wait-for-testflight:
+  en: d11e4e89ce88e838
+  zh: 75e7e2a057eab346
+/release-dsh-remote-pairing/7-run-the-different-network-iphone-matrix:
+  en: 2d1eab43dd656705
+  zh: 7d8bccc5d39548df
+/release-dsh-remote-pairing/8-final-release-record:
+  en: 3d601718b33c82eb
+  zh: 8038044627f903a5

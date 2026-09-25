@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-09-21-mobile-pairing-scan-confirmation.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-21-mobile-pairing-scan-confirmation.md
+/agent-note-mobile-pairing-scan-confirmation:
+  en: 806debc579954506
+  zh: 3c58d867d4f19410
+/agent-note-mobile-pairing-scan-confirmation/problem:
+  en: 5055866ddeefe492
+  zh: 6678d3ab0a9709e1
+/agent-note-mobile-pairing-scan-confirmation/decision:
+  en: ce9ecf2dacd524db
+  zh: 25b69a6dbd0594a4
+/agent-note-mobile-pairing-scan-confirmation/alternatives-considered:
+  en: 43d2eca580e23dde
+  zh: c3abf57d7b629806
+/agent-note-mobile-pairing-scan-confirmation/consequences:
+  en: 11bed4a4cefea7d0
+  zh: fc48d6dd9404bf89

@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-08-20-cloudflare-mobile-pairing-relay.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-20-cloudflare-mobile-pairing-relay.md
+/agent-note-cloudflare-mobile-pairing-relay:
+  en: 3d165b80a35157c1
+  zh: e0cd4f5958acf36d
+/agent-note-cloudflare-mobile-pairing-relay/problem:
+  en: 08747a10cc411d69
+  zh: d8bb0b8d162c92c7
+/agent-note-cloudflare-mobile-pairing-relay/decision:
+  en: 880a60b476accd81
+  zh: c1d56236ed516a92
+/agent-note-cloudflare-mobile-pairing-relay/alternatives-considered:
+  en: e1f0bcc9205bab8f
+  zh: 8c7943955d79c459
+/agent-note-cloudflare-mobile-pairing-relay/consequences:
+  en: cf651d4483fccd3f
+  zh: 6a3b8208121f0fed

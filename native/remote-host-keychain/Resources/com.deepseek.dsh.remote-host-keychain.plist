@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.deepseek.dsh.remote-host-keychain</string>
+  <key>MachServices</key>
+  <dict>
+    <key>com.deepseek.dsh.remote-host-keychain</key>
+    <true/>
+  </dict>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__DSH_REMOTE_HOST_KEYCHAIN_EXECUTABLE__</string>
+  </array>
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>

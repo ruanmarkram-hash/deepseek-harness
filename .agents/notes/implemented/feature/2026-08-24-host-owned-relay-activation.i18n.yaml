@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-08-24-host-owned-relay-activation.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-24-host-owned-relay-activation.md
+/agent-note-the-signed-host-retains-one-fd199-lifecycle-and-opens-the-relay-only-after-activation:
+  en: 1dfc3a30cd3f7542
+  zh: a973e24637ed0b12
+/agent-note-the-signed-host-retains-one-fd199-lifecycle-and-opens-the-relay-only-after-activation/problem:
+  en: bcbe12c133726567
+  zh: 6932b1f809b372d3
+/agent-note-the-signed-host-retains-one-fd199-lifecycle-and-opens-the-relay-only-after-activation/decision:
+  en: 4a730daa050feb37
+  zh: 8e7523cf8e1ee2da
+/agent-note-the-signed-host-retains-one-fd199-lifecycle-and-opens-the-relay-only-after-activation/verification:
+  en: 4097d8c36a1c7181
+  zh: e5f526b44b57ffbe
+/agent-note-the-signed-host-retains-one-fd199-lifecycle-and-opens-the-relay-only-after-activation/alternatives-considered:
+  en: b15c95f750a3ada4
+  zh: dcf154447220df7f
+/agent-note-the-signed-host-retains-one-fd199-lifecycle-and-opens-the-relay-only-after-activation/consequences:
+  en: 83720b3996e8f5d7
+  zh: d0c23c3479bc0cc7

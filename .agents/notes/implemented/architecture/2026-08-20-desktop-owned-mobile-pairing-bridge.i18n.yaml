@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-08-20-desktop-owned-mobile-pairing-bridge.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-20-desktop-owned-mobile-pairing-bridge.md
+/agent-note-desktop-owned-mobile-pairing-bridge:
+  en: 3305cd2f94c82b64
+  zh: 35a75db8d7b074d5
+/agent-note-desktop-owned-mobile-pairing-bridge/problem:
+  en: 311640ef85fda56c
+  zh: dd09ec473988e231
+/agent-note-desktop-owned-mobile-pairing-bridge/decision:
+  en: 269f85f0d2b404a9
+  zh: 587294f4f405e3cf
+/agent-note-desktop-owned-mobile-pairing-bridge/alternatives-considered:
+  en: b814beb2ca07e4c6
+  zh: 900f6e3b035c342a
+/agent-note-desktop-owned-mobile-pairing-bridge/consequences:
+  en: d7d48a1d4a86be1b
+  zh: 8a2e1afad0a19e07

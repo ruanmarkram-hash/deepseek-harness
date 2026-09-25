@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-09-23-mobile-disconnect-notices.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-23-mobile-disconnect-notices.md
+/agent-note-mobile-disconnect-notices:
+  en: 891cc8d01c971ea1
+  zh: 9dd91225ee05db27
+/agent-note-mobile-disconnect-notices/problem:
+  en: eb34f7f54456a3d1
+  zh: ac5526a91c41d65f
+/agent-note-mobile-disconnect-notices/decision:
+  en: 6edb9ac8a0c1edeb
+  zh: fba9b0e41d632cba
+/agent-note-mobile-disconnect-notices/alternatives-considered:
+  en: fe3c96ce9f2a6664
+  zh: 725cf602b3a114a5
+/agent-note-mobile-disconnect-notices/consequences:
+  en: 02b5d4d50e670737
+  zh: 9f2fd0f40a57cf09
+/agent-note-mobile-disconnect-notices/verification:
+  en: 5c1bed43747e7bf0
+  zh: 95a0e82a8f8f4365

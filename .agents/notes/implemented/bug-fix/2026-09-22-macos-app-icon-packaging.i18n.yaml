@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-09-22-macos-app-icon-packaging.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-22-macos-app-icon-packaging.md
+/agent-note-shared-macos-app-icon-packaging:
+  en: 5a0c3c797ec63a04
+  zh: ecf884fed6ce6607
+/agent-note-shared-macos-app-icon-packaging/problem:
+  en: 6b9071628b9c2dc7
+  zh: 442c39636ea3642b
+/agent-note-shared-macos-app-icon-packaging/decision:
+  en: 6455f5822867e1e0
+  zh: 9ed1b427f7d6b209
+/agent-note-shared-macos-app-icon-packaging/alternatives-considered:
+  en: e1ecb7b3c100c1e4
+  zh: 07f148cd1d43ab4a
+/agent-note-shared-macos-app-icon-packaging/consequences:
+  en: af4285d445213b37
+  zh: 47966ab5678d0e19

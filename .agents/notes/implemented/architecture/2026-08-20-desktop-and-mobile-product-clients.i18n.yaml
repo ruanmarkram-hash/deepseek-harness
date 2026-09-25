@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-08-20-desktop-and-mobile-product-clients.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-20-desktop-and-mobile-product-clients.md
+/agent-note-desktop-and-mobile-product-clients:
+  en: e11216ec5903d1e0
+  zh: f1fa069eb9d2c979
+/agent-note-desktop-and-mobile-product-clients/problem:
+  en: 6b4e89b4733ef74d
+  zh: 2a30c5b99d35b943
+/agent-note-desktop-and-mobile-product-clients/decision:
+  en: 47d4a6635e1c4438
+  zh: 7327dd9fabba6e34
+/agent-note-desktop-and-mobile-product-clients/alternatives-considered:
+  en: 10b1347102714f4f
+  zh: 92375efadacb4f2b
+/agent-note-desktop-and-mobile-product-clients/consequences:
+  en: 63d4529bacbf61d0
+  zh: 58f48af164aa478c

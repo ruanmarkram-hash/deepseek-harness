@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-09-23-native-finalized-epoch-projection.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-23-native-finalized-epoch-projection.md
+/agent-note-native-finalized-epoch-projection:
+  en: 0a00a1579700f2ed
+  zh: 56100235269f1a4c
+/agent-note-native-finalized-epoch-projection/problem:
+  en: a72972f484821529
+  zh: c37d93b2240d907e
+/agent-note-native-finalized-epoch-projection/decision:
+  en: aff4f5b8503f836c
+  zh: 6ca4513db0ac19ec
+/agent-note-native-finalized-epoch-projection/alternatives-considered:
+  en: 188632a906d84048
+  zh: ee3232bfd76089c8
+/agent-note-native-finalized-epoch-projection/consequences:
+  en: 4ce6b6ed72047886
+  zh: 4e4c96d13990b766

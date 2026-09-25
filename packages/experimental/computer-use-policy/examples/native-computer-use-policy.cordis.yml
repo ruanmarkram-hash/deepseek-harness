@@ -1,0 +1,11 @@
+# Package-owned explicit opt-in for profiles that already provide tools, systemPrompt,
+# and a user-approval service plus an interactive answerer.
+# The policy owns the unchanged native provider; do not also mount it separately.
+# Missing approval support denies every call, including desktop observations.
+- insert:
+    - id: computer-use
+      name: '@deepseek-ai/dsh-computer-use'
+    - id: progress-narration
+      name: '@deepseek-ai/dsh-progress-narration'
+    - id: native-computer-use-policy
+      name: '@deepseek-ai/dsh-experimental-computer-use-policy'

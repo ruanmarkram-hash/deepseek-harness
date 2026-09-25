@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-09-23-host-paired-phone-rendezvous.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-23-host-paired-phone-rendezvous.md
+/agent-note-host-paired-phone-rendezvous:
+  en: 355abc015d4d6e27
+  zh: 300d3f3f51da1230
+/agent-note-host-paired-phone-rendezvous/problem:
+  en: 9cae2ebe3f55c3b9
+  zh: 3ecd6f455d9315db
+/agent-note-host-paired-phone-rendezvous/decision:
+  en: 1c45948e70fba926
+  zh: afc979c0df551a75
+/agent-note-host-paired-phone-rendezvous/alternatives-considered:
+  en: bec90997cad0da86
+  zh: a0466ff01e84d7cb
+/agent-note-host-paired-phone-rendezvous/consequences:
+  en: 47238c3b028fa10d
+  zh: dcf4b9afcbb83727
+/agent-note-host-paired-phone-rendezvous/verification:
+  en: 4c86a78913d6d0b1
+  zh: 9d677e23f925ba89

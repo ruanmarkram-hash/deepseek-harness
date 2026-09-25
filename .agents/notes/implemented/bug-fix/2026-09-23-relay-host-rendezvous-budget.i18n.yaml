@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-09-23-relay-host-rendezvous-budget.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-23-relay-host-rendezvous-budget.md
+/agent-note-relay-host-rendezvous-budget:
+  en: 42b3878a35ce5920
+  zh: 9f0636b1223da16d
+/agent-note-relay-host-rendezvous-budget/problem:
+  en: 59b223e50e59d130
+  zh: 398bf207c11af59c
+/agent-note-relay-host-rendezvous-budget/decision:
+  en: c94e64f1cb0609a2
+  zh: 4a36e53b4059688d
+/agent-note-relay-host-rendezvous-budget/alternatives-considered:
+  en: 0803614952057697
+  zh: d1a3a00552fad468
+/agent-note-relay-host-rendezvous-budget/consequences:
+  en: bca3d81bb06b15bd
+  zh: e20af17e3392abba

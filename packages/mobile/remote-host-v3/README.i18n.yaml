@@ -1,0 +1,46 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/mobile/remote-host-v3/README.md
+/:
+  en: 92f5c55eea8de583
+  zh: 9b7571376a3b889e
+/dsh-remote-host-v3:
+  en: 860ece028f044cd5
+  zh: a5f4e3db25f9185d
+/dsh-remote-host-v3/summary:
+  en: c71e0c1654a9e22d
+  zh: 846e6bddb215676e
+/dsh-remote-host-v3/table-of-contents:
+  en: 6ff4a98dde28c069
+  zh: 3f9cbf1a04ddd622
+/dsh-remote-host-v3/signed-host-app-handoff:
+  en: 76895ad8ad32909d
+  zh: 2f4a41aba0167f20
+/dsh-remote-host-v3/private-remote-wire-contract:
+  en: b9b5abd8c351d581
+  zh: fe9426553339c27a
+/dsh-remote-host-v3/configuration:
+  en: c49c27a6c5d2f015
+  zh: 91605215aff735a1
+/dsh-remote-host-v3/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/dsh-remote-host-v3/model-experience/host-v3-transport:
+  en: 3ce6e1f8f71e2214
+  zh: 3ce6e1f8f71e2214
+/dsh-remote-host-v3/model-experience/host-v3-transport/what-the-model-sees:
+  en: fdab30040f0e96ec
+  zh: 74aa1f8759258355
+/dsh-remote-host-v3/model-experience/host-v3-transport/token-effect:
+  en: d444235e5198287f
+  zh: 7af90b02ff879158
+/dsh-remote-host-v3/model-experience/host-v3-transport/kv-cache-effect:
+  en: 0b4b5bf36312ccef
+  zh: 0454267e62a9f9bf
+/dsh-remote-host-v3/known-limitations-and-deferred-work:
+  en: d08d2874aa20c947
+  zh: a41610288a73ae93
+/dsh-remote-host-v3/known-limitations-and-deferred-work/dev-note:
+  en: b836f01bd0bceb4a
+  zh: 8b999d990ef7ce29

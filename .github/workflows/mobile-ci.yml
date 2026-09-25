@@ -1,0 +1,39 @@
+name: Mobile shell
+
+on:
+  pull_request:
+    paths:
+      - 'apps/mobile/**'
+      - 'apps/mobile-relay/**'
+      - 'packages/mobile/**'
+      - 'native/remote-host-app/**'
+      - 'tsconfig.base.json'
+      - 'tsconfig.host.json'
+      - '.github/workflows/mobile-ci.yml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec vitest run packages/mobile apps/mobile/tests
+      - run: pnpm --filter @deepseek-ai/dsh-mobile-relay run test
+      - run: pnpm exec tsc --project apps/mobile-relay/tsconfig.json --noEmit
+      - run: ./node_modules/.bin/tsc --project apps/mobile/tsconfig.json --noEmit
+      - run: pnpm --filter @deepseek-ai/dsh-mobile exec expo config --type public
+      - run: pnpm --filter @deepseek-ai/dsh-mobile run export

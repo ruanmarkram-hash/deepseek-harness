@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-09-23-hosted-startup-without-phone.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-23-hosted-startup-without-phone.md
+/agent-note-hosted-startup-without-a-phone:
+  en: 16aab0ef9f721a0b
+  zh: 0516663b2591db05
+/agent-note-hosted-startup-without-a-phone/problem:
+  en: 52a05516e1e25c80
+  zh: d2d2ffcf9faa94fa
+/agent-note-hosted-startup-without-a-phone/decision:
+  en: 7f0930291b09d544
+  zh: 4fb8c6d0f1938ead
+/agent-note-hosted-startup-without-a-phone/alternatives-considered:
+  en: 67ac43d36d00d8bf
+  zh: 17a682a73bb6517b
+/agent-note-hosted-startup-without-a-phone/consequences:
+  en: 71f0b6eea4d251c2
+  zh: a6061480ea39b9d1
+/agent-note-hosted-startup-without-a-phone/verification:
+  en: dfd44d17055000a1
+  zh: c7172218363056d5

@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-09-25-hosted-phone-automatic-rearm.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-25-hosted-phone-automatic-rearm.md
+/agent-note-automatic-rearm-of-a-hosted-phone-route:
+  en: 620918fac8ed0679
+  zh: 3ffcb1d3eabc7497
+/agent-note-automatic-rearm-of-a-hosted-phone-route/problem:
+  en: a93d76c821bed923
+  zh: 7e367336ed749a04
+/agent-note-automatic-rearm-of-a-hosted-phone-route/decision:
+  en: af3e2a23610784a2
+  zh: 779d148b30ef71b5
+/agent-note-automatic-rearm-of-a-hosted-phone-route/alternatives-considered:
+  en: 7c50ae7e8a6a1b2a
+  zh: 10f13216ebea608a
+/agent-note-automatic-rearm-of-a-hosted-phone-route/consequences:
+  en: b07df6c6ad224c45
+  zh: 50488d26fec9948f

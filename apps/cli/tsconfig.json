@@ -8,6 +8,12 @@
     "src"
   ],
   "references": [
+    { "path": "../../packages/client/connection/tsconfig.host.json" },
+    { "path": "../../packages/boot/config-editor" },
+    { "path": "../../packages/settings/settings" },
+    { "path": "../../packages/mobile/remote-api" },
+    { "path": "../../packages/preset/progress-narration" },
+    { "path": "../../packages/experimental/computer-use-policy" },
     {
       "path": "../../vendor/cordis"
     },
@@ -33,9 +39,6 @@
       "path": "../../packages/bundle/web-app"
     },
     {
-      "path": "../../packages/host/apiproxy"
-    },
-    {
       "path": "../../packages/host/webserver"
     },
     {
@@ -57,6 +60,12 @@
       "path": "../../packages/util/home-paths"
     },
     {
+      "path": "../../packages/util/atomic-write"
+    },
+    {
+      "path": "../../packages/mobile/remote-host-fd199"
+    },
+    {
       "path": "../../packages/mcp/mcp-client"
     },
     {
@@ -66,10 +75,22 @@
       "path": "../../packages/session-query/session-query-sqlite"
     },
     {
+      "path": "../../packages/session-query/session-query"
+    },
+    {
       "path": "../../packages/shell/shell-env"
     },
     {
       "path": "../../packages/shell/tool-bash"
+    },
+    {
+      "path": "../../packages/boot/plugin-manager"
+    },
+    {
+      "path": "../../packages/host/hosted-plugin-controls"
+    },
+    {
+      "path": "../../packages/util/atomic-write"
     }
   ]
 }

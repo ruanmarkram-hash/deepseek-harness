@@ -1,0 +1,55 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/web/web-search-brave/README.md
+/:
+  en: 5153f0f3e486836f
+  zh: df1d945f895e2e81
+/deepseek-ai-dsh-web-search-brave:
+  en: 23b3b489226ea646
+  zh: d406f4628ddf7e69
+/deepseek-ai-dsh-web-search-brave/summary:
+  en: 462b47fdd0bcd474
+  zh: d871a8035c990b18
+/deepseek-ai-dsh-web-search-brave/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 09388d293f9be9cb
+/deepseek-ai-dsh-web-search-brave/use-this-package:
+  en: 2b79a27be1c22270
+  zh: 7d3b8490caf934b9
+/deepseek-ai-dsh-web-search-brave/use-this-package/when-to-choose-it:
+  en: fe56444be6096e94
+  zh: e8ad92613b71e24a
+/deepseek-ai-dsh-web-search-brave/use-this-package/minimal-configuration:
+  en: e32ffb3a88ed0647
+  zh: 386cb83cc7e06bfc
+/deepseek-ai-dsh-web-search-brave/use-this-package/results-and-failures:
+  en: 31008ae95456e737
+  zh: dc056f47e0cd992c
+/deepseek-ai-dsh-web-search-brave/understand-the-implementation:
+  en: d990142082f54054
+  zh: e32532c58ebfe9ee
+/deepseek-ai-dsh-web-search-brave/further-exploration:
+  en: 7d567fb0c1fc17f4
+  zh: 1673c9e09241b6ff
+/deepseek-ai-dsh-web-search-brave/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-web-search-brave/model-experience/conversation-tool-result-indirectly:
+  en: 666f5753c99783ab
+  zh: 0a816c7b6761a9cc
+/deepseek-ai-dsh-web-search-brave/model-experience/conversation-tool-result-indirectly/what-the-model-sees:
+  en: 4065b4fc0c694265
+  zh: de51987dfe5d015f
+/deepseek-ai-dsh-web-search-brave/model-experience/conversation-tool-result-indirectly/token-effect:
+  en: 50778631d0022946
+  zh: 8164182a7112fff4
+/deepseek-ai-dsh-web-search-brave/model-experience/conversation-tool-result-indirectly/kv-cache-effect:
+  en: 2ace18d222346d97
+  zh: 356ded1bf9024ff3
+/deepseek-ai-dsh-web-search-brave/known-limitations-and-deferred-work:
+  en: 462976b373c08b42
+  zh: 7ae846d88093c00b
+/deepseek-ai-dsh-web-search-brave/known-limitations-and-deferred-work/dev-note:
+  en: e67f633dc6fe7773
+  zh: 3bb0c20c93f16f98
